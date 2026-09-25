@@ -165,9 +165,9 @@ create trigger story_comment_tombstone_clears_reaction
 --
 -- The two fields are narrowed further than 103 narrows them, because the
 -- audience is strangers:
---   * the name is shown only once chosen: a member's display_name counts after
---     first-run setup (profile_completed_at, 040/122), a provider's always.
---     Anyone else is member_handle(), the same fallback every surface uses;
+--   * the name is shown only once chosen, and only in the shape a name can be
+--     chosen in (public_display_name, below). Anyone else is member_handle(),
+--     the same fallback every surface uses;
 --   * the avatar is shown only if it is one of the bundled `clay:` avatars,
 --     and never as a URL. avatar_url is client-writable (070's header), and a
 --     URL check cannot tell our Storage host from a lookalike: the shape
@@ -187,6 +187,63 @@ create trigger story_comment_tombstone_clears_reaction
 -- error message. With it, the caller's filters only see rows that passed the
 -- WHERE; leakproof ones like `story_id = X` are still pushed into the index.
 -- https://www.postgresql.org/docs/16/rules-privileges.html
+--
+-- The public name, stated once for every story surface a stranger reads: the
+-- comment feed here, the provider's viewer list (149) and the Blocked screen
+-- (152).
+--
+-- profiles.display_name is client-writable with no shape of its own: 040's
+-- check_display_name is the claim screen's validator, not a constraint, and
+-- nothing guards the column (003's guard covers role, verification and
+-- balance, not the name). A member could PATCH it to a contact line followed
+-- by 300 newlines, and every stranger who opened a comment sheet read it at
+-- full height. So a member's name is published only in the shape
+-- check_display_name accepts (3-24 of [a-zA-Z0-9_], after the trim it
+-- applies), and only after first-run setup (profile_completed_at, 040/122).
+-- A provider's is the directory's stage name, which may hold spaces and
+-- hyphens ("Pandit Raghav", 085), so it gets the looser test the caption
+-- uses: at least one visible character (story_text_trim), one line, no
+-- control characters, at most 40. Anything else is member_handle(), so a
+-- name that is not a name degrades to the handle rather than to nothing.
+-- Takes the row, so each surface passes what it already joined.
+create or replace function public.public_display_name(p public.profiles)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = public
+as $$
+  select coalesce(
+    case
+      when p.role = 'provider'
+       and public.story_text_trim(p.display_name) is not null
+       and length(public.story_text_trim(p.display_name)) <= 40
+       and public.story_text_line_breaks(p.display_name) = 0
+       and not public.story_text_has_control(p.display_name)
+        then public.story_text_trim(p.display_name)
+      when p.role <> 'provider'
+       and p.profile_completed_at is not null
+       and btrim(p.display_name) ~ '^[a-zA-Z0-9_]{3,24}$'
+        then btrim(p.display_name)
+    end,
+    public.member_handle(p.id)
+  );
+$$;
+
+comment on function public.public_display_name(public.profiles) is
+  'The name a stranger is shown for a profile on the story surfaces (148, 149, '
+  '152): a member''s username in check_display_name''s shape once set up, a '
+  'provider''s stage name if it is one visible line of at most 40, else '
+  'member_handle().';
+
+-- Called inside the views, whose functions run with the caller's EXECUTE
+-- rights ("the user of a view must have permissions to call all functions
+-- used by the view"), so authenticated needs it. It reads only the row it is
+-- handed, so a caller learns nothing it did not pass in.
+-- https://www.postgresql.org/docs/16/rules-privileges.html
+revoke all on function public.public_display_name(public.profiles) from public, anon;
+grant execute on function public.public_display_name(public.profiles) to authenticated, service_role;
+
 create or replace view public.story_comment_feed
 with (security_invoker = false, security_barrier = true) as
   select
@@ -194,11 +251,7 @@ with (security_invoker = false, security_barrier = true) as
     c.story_id,
     c.body,
     c.created_at,
-    coalesce(
-      case when a.role = 'provider' or a.profile_completed_at is not null
-           then nullif(btrim(a.display_name), '') end,
-      public.member_handle(a.id)
-    ) as author_display_name,
+    public.public_display_name(a) as author_display_name,
     case when a.avatar_url like 'clay:%' then a.avatar_url end as author_avatar_url,
     (c.author_id = auth.uid()) as is_own,
     cr.emoji as creator_reaction

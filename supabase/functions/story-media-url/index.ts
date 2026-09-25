@@ -18,9 +18,24 @@
  * caller may see (their own, or a listed provider's they are not blocked
  * with, when they are a member). The signature is the service role's, over
  * that row's media_path and nothing the client sent, for at most 60 seconds
- * and never past the story's own expiry. What remains is that window: a URL
- * minted just before a delete or a block works for the rest of it, the same
- * bound voice notes accept (src/api/voice.ts).
+ * and never past the story's own expiry.
+ *
+ * Those 60 seconds bound who can MINT a working link, not how long a link
+ * already fetched keeps working, and this used to claim both. On Pro and above
+ * the Smart CDN caches the response, and "that cached response can continue
+ * to be served for the same signed URL until the CDN cache duration expires,
+ * even if the token in that URL has already expired"; the asset is cached
+ * "for as long as possible", and the cache is dropped when the object is
+ * updated or deleted (up to 60 seconds to propagate). So for a viewer who
+ * already opened the story, the real cutoff is the OBJECT going: a provider's
+ * delete, or the expiry, which the media purge now acts on at its first
+ * ten-minute tick past the 24 hours (story_objects_to_purge, 151), and a
+ * block, which deletes nothing, does not cut off a URL the blocked viewer
+ * already holds; they could as well have kept the bytes. A new URL is never
+ * minted for them. Streaming the bytes through here with `no-store` would
+ * close it, at the cost of every view passing through a function; not done,
+ * and stated.
+ * https://supabase.com/docs/guides/storage/cdn/smart-cdn
  *
  * Mint it on open, not on render, for voice.ts's reason: every URL is a
  * credential with a lifetime.

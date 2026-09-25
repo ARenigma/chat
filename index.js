@@ -18,15 +18,9 @@ import {
 } from '@react-native-firebase/messaging';
 import App from './App';
 import { name as appName } from './app.json';
-import {
-  notifyCall,
-  notifyChatRequest,
-  notifyConversation,
-  notifyEngagement,
-  readCallPush,
-  readConversationPush,
-  readEngagementPush,
-} from './src/lib/conversations';
+import { handleBackgroundPush } from './src/lib/push';
+import { finishPendingSignOuts } from './src/api/auth';
+import { declineFromNotification } from './src/lib/chatRequestDecline';
 
 /*
  * LogBox's yellow chip docks over the welcome CTA and swallows Maestro / adb
@@ -70,34 +64,30 @@ if (__DEV__) {
  *     who the conversations are with.
  *
  * A push that arrives while the app is in the foreground never reaches this
- * handler; RNFirebase hands it to `onMessage` instead. `onForegroundPush` in
- * src/lib/push.ts routes the last two kinds there the same way, posting the
- * same notification on the in-app channel (a banner with no sound) and skipping
- * the conversation on screen — so a change to the routing here is a change to
- * make there too.
+ * handler; RNFirebase hands it to `onMessage` instead. The routing itself is
+ * `handleBackgroundPush` in src/lib/push.ts, next to `onForegroundPush`, which
+ * routes the last two kinds the same way, posting the same notification on the
+ * in-app channel (a banner with no sound) and skipping the conversation on
+ * screen. Both post nothing while no session is stored on the device, and this
+ * one then retries any sign-out whose server half is still pending
+ * (`finishPendingSignOuts`), since a headless context never mounts the boot
+ * effect that otherwise does.
  */
-setBackgroundMessageHandler(getMessaging(), async remote => {
-  const call = readCallPush(remote.data);
-  if (call !== null) {
-    await notifyCall(call);
-    return;
-  }
-  const nudge = readEngagementPush(remote.data);
-  if (nudge !== null) {
-    await notifyEngagement(nudge);
-    return;
-  }
-  const push = readConversationPush(remote.data);
-  if (push === null) {
-    return;
-  }
-  // A provider-initiated chat request carries a requestId (migration 105);
-  // route it to the notification with Accept/Decline action buttons.
-  if (push.requestId) {
-    await notifyChatRequest(push);
-    return;
-  }
-  await notifyConversation(push, 'wants to have a chat with you');
-});
+setBackgroundMessageHandler(getMessaging(), remote =>
+  handleBackgroundPush(remote, finishPendingSignOuts),
+);
+
+/*
+ * The Decline button on a chat-request notification, run with or without the
+ * app open (ChatRequestDeclineService starts React when it is not running).
+ * At module scope for the same reason as the FCM handler above: a headless
+ * context runs this file and mounts nothing, so a listener inside the tree is
+ * never reached. The name is ChatRequestDeclineService.TASK.
+ * https://reactnative.dev/docs/headless-js-android
+ */
+AppRegistry.registerHeadlessTask(
+  'ChatRequestDecline',
+  () => declineFromNotification,
+);
 
 AppRegistry.registerComponent(appName, () => App);

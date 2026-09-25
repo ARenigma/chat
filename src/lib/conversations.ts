@@ -1,4 +1,5 @@
 import { NativeModules } from 'react-native';
+import { isUuid } from './ids';
 
 /**
  * The bridge to Android's conversation notifications.
@@ -27,6 +28,10 @@ interface Native {
     // `notifyConversation`'s, below. See `NotifyOptions`.
     inApp: boolean,
     silent: boolean,
+    // The account the push was for, or '' when the sender named none. The
+    // native side puts it on the tap's link (`for=`), so a tap that lands
+    // after that account signed out opens nothing in the next one (App.tsx).
+    recipientId: string,
   ): Promise<boolean>;
   notifyEngagement(
     peerId: string,
@@ -43,6 +48,7 @@ interface Native {
     avatarUrl: string,
     inApp: boolean,
     silent: boolean,
+    recipientId: string,
   ): Promise<boolean>;
   notifyCall(
     callId: string,
@@ -50,6 +56,7 @@ interface Native {
     callerName: string,
     avatarUrl: string,
     medium: string,
+    recipientId: string,
   ): Promise<boolean>;
   clearCall(callId: string): Promise<void>;
   startCallForegroundService(
@@ -60,6 +67,8 @@ interface Native {
   ): void;
   stopCallForegroundService(): void;
   clear(conversationId: string): Promise<void>;
+  clearRequest(conversationId: string, requestId: string): Promise<void>;
+  clearAll(): Promise<void>;
   ensureChannel(): Promise<void>;
   pushLog(warn: boolean, message: string): void;
 }
@@ -89,6 +98,21 @@ export interface ConversationPush {
    * builds shipped before send-push was redeployed.
    */
   readonly requestId?: string;
+  /**
+   * The account the push is for (send-push's `recipientId`, migration 143),
+   * or undefined from a sender deployed before it. Read by the push gate
+   * (`pushIsForSignedInAccount`) and carried on the notification's link.
+   */
+  readonly recipientId?: string;
+}
+
+/**
+ * The `recipientId` a push names, when it is an id. It reaches a URI on the
+ * native side, so anything that is not a uuid is dropped here rather than
+ * spliced into a query string.
+ */
+function recipientOf(value: string): string | undefined {
+  return isUuid(value) ? value : undefined;
 }
 
 /**
@@ -126,6 +150,7 @@ export function readConversationPush(
     // Present only on kind: 'contact' pushes (send-push redeploy from migration
     // 105). Absent on plain messages — the native layer checks for undefined.
     requestId: asString('requestId') || undefined,
+    recipientId: recipientOf(asString('recipientId')),
   };
 }
 
@@ -177,6 +202,8 @@ export interface CallPush {
   readonly mediaBackend: 'current' | 'livekit' | 'agora';
   readonly mediaExperimentId: string | null;
   readonly avatarUrl: string | null;
+  /** As on `ConversationPush`. */
+  readonly recipientId?: string;
 }
 
 /** Read an incoming-call payload, or `null` if it is not one. */
@@ -205,6 +232,7 @@ export function readCallPush(
     mediaBackend: mediaBackend as CallPush['mediaBackend'],
     mediaExperimentId: asString('mediaExperimentId') || null,
     avatarUrl: asString('senderAvatar') || null,
+    recipientId: recipientOf(asString('recipientId')),
   };
 }
 
@@ -218,7 +246,14 @@ export async function notifyCall(push: CallPush): Promise<boolean> {
   if (native === undefined) {
     return false;
   }
-  return native.notifyCall(push.callId, push.peerId, push.callerName, push.avatarUrl ?? '', push.medium);
+  return native.notifyCall(
+    push.callId,
+    push.peerId,
+    push.callerName,
+    push.avatarUrl ?? '',
+    push.medium,
+    push.recipientId ?? '',
+  );
 }
 
 /** Clear a call notification once it is answered, declined or gone. */
@@ -320,6 +355,7 @@ export async function notifyConversation(
     push.avatarUrl ?? '',
     options.inApp === true,
     options.silent === true,
+    push.recipientId ?? '',
   );
 }
 
@@ -330,7 +366,8 @@ export async function notifyConversation(
  * the member needs to accept or decline. The lock-screen notification stays in
  * the conversations channel (MessagingStyle) per Android guidance; CallStyle is
  * reserved for telephony. The Accept action navigates to the conversation; the
- * Decline action fires a BroadcastReceiver that declines without opening the UI.
+ * Decline action fires a BroadcastReceiver that runs `declineFromNotification`
+ * as a headless task, without opening the UI.
  * https://developer.android.com/develop/ui/views/notifications/conversations
  */
 export async function notifyChatRequest(
@@ -353,20 +390,52 @@ export async function notifyChatRequest(
     push.avatarUrl ?? '',
     options.inApp === true,
     options.silent === true,
+    push.recipientId ?? '',
   );
 }
 
 /**
  * Clear a conversation's notification once it has been read in the app. Called
- * by `useViewingConversation` whenever that conversation is on screen, and by
+ * by `useViewingConversation` whenever that conversation is on screen, by
  * `ChatRingScreen` once the server has taken the provider's decline of a
- * ringing request, or when they watch it ring out.
+ * ringing request or when the ring leaves a chat on screen. A lock-screen
+ * Decline clears through `clearChatRequest` instead.
  */
 export async function clearConversation(conversationId: string): Promise<void> {
   if (native === undefined) {
     return;
   }
   await native.clear(conversationId);
+}
+
+/**
+ * Clear a chat request's notification once its lock-screen Decline landed,
+ * and only while the entry at that conversation's id is still that request.
+ * A message posted in the seconds the Decline took replaces the entry, and
+ * `clearConversation` would have cancelled it unseen. See
+ * `Conversations.clearRequest`.
+ */
+export async function clearChatRequest(conversationId: string, requestId: string): Promise<void> {
+  if (native === undefined) {
+    return;
+  }
+  await native.clearRequest(conversationId, requestId);
+}
+
+/**
+ * Take every notification and conversation shortcut the signed-in account left
+ * on this device out of it: the shade, the lock screen, direct share and the
+ * launcher. Run on sign-out and after account deletion (src/api/auth.ts), so
+ * the next person on the phone neither sees the last account's conversations
+ * nor opens one of them into their own session with a tap. See
+ * `Conversations.clearAll` for what it removes and why.
+ * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
+ */
+export async function clearAllConversations(): Promise<void> {
+  if (native === undefined) {
+    return;
+  }
+  await native.clearAll();
 }
 
 /**

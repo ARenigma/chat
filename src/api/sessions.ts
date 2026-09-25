@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { reportSwallowed } from '../lib/sentry';
 import { track } from '../lib/telemetry';
@@ -733,6 +733,10 @@ export function useIncomingChatRequests(
         .eq('recipient_id', selfId as string)
         .eq('channel', 'chat')
         .eq('status', 'pending')
+        // Not one already answered: a provider's Accept (086) or send (077)
+        // sets only `responded_at`, and the request stays `pending` until
+        // the member confirms, so every resubscribe rang it again.
+        .is('responded_at', null)
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(1)
@@ -817,17 +821,29 @@ export function useDeclineSessionRequest() {
       if (error) throw error;
     },
     onSuccess: (_void, { conversationId }) => {
-      void queryClient.invalidateQueries({
-        queryKey: sessionKeys.pendingRequest(conversationId),
-      });
-      // 082 sets the conversation-level flag in the same RPC, so the flag's
-      // query has to be refetched or the screen keeps its stale "not declined".
-      void queryClient.invalidateQueries({
-        queryKey: sessionKeys.consent(conversationId),
-      });
-      void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
+      refetchAfterDecline(queryClient, conversationId);
     },
   });
+}
+
+/**
+ * What a landed Decline changes on screen, refetched. Shared by the in-app
+ * Decline (`useDeclineSessionRequest`) and the notification's, which runs as
+ * a headless task outside any tree and reaches a mounted one by event
+ * (`declineFromNotification`, App.tsx). An empty id refetches the list only.
+ */
+export function refetchAfterDecline(queryClient: QueryClient, conversationId: string): void {
+  if (conversationId !== '') {
+    void queryClient.invalidateQueries({
+      queryKey: sessionKeys.pendingRequest(conversationId),
+    });
+    // 082 sets the conversation-level flag in the same RPC, so the flag's
+    // query has to be refetched or the screen keeps its stale "not declined".
+    void queryClient.invalidateQueries({
+      queryKey: sessionKeys.consent(conversationId),
+    });
+  }
+  void queryClient.invalidateQueries({ queryKey: ['conversation-list'] });
 }
 
 /** Member confirms chat billing after the provider has joined (076). */

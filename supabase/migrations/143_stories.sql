@@ -202,6 +202,30 @@ create index if not exists stories_expires_at
 create unique index if not exists stories_media_path
   on public.stories (media_path);
 
+-- Story media names that are on their way out of the bucket: a deleted
+-- story's, recorded as its row goes, and every name the media purge has been
+-- handed to remove (151). Declared here rather than in 151 because
+-- create_story (section 6) reads it: a name on this list is never posted
+-- again, which is what keeps a retried create_story from pointing a new row
+-- at an object the purge is about to delete (Greptile P1 on bb32af4). The
+-- trigger that fills it, the purge that claims into it and the job that
+-- forgets from it are all 151's.
+create table if not exists public.story_media_released (
+  name        text        primary key,
+  -- When the name was last released or last handed to the purge. The purge
+  -- forgets a name only a day after this, and only once its object is gone.
+  released_at timestamptz not null default now()
+);
+
+comment on table public.story_media_released is
+  'Stories-bucket keys whose story row was deleted or which the media purge '
+  'has claimed (151). create_story refuses them (143). Forgotten by '
+  'purge_expired_stories a day after the last claim, once the object is gone. '
+  'Server-only.';
+
+alter table public.story_media_released enable row level security;
+revoke all on public.story_media_released from anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 2. The kill switch
 -- ---------------------------------------------------------------------------
@@ -343,11 +367,28 @@ $$;
 --     competitor watching would put their face in the provider's viewer list
 --     (149) and hand them the media, and nobody asked for that.
 --
--- DEFINER because is_blocked_pair is not callable by a client (005). It takes a
--- STORY id and not a provider id on purpose: with a provider id it would answer
--- "has provider X blocked me" for any X, including one who has never posted.
--- With a story id the caller learns nothing beyond what the tray already shows
--- them.
+-- DEFINER because is_blocked_pair must not be callable by a client (005). It
+-- takes a STORY id and not a provider id on purpose: with a provider id it
+-- would answer "has provider X blocked me" for any X, including one who has
+-- never posted. With a story id the caller learns nothing beyond what the tray
+-- already shows them.
+--
+-- "Must not be callable" was not true on the hosted project, and every story
+-- file leans on it. 005 revoked is_blocked_pair from PUBLIC only, and
+-- Supabase's default privileges grant EXECUTE on every new function in public
+-- to anon, authenticated and service_role by name, so those grants survive a
+-- revoke from PUBLIC. 105 recorded exactly that for service_role
+-- (has_function_privilege was true after 005's revoke). So any signed-in
+-- account could call rpc('is_blocked_pair', {viewer_id, competitor_id}) and
+-- learn who has blocked whom, which is the disclosure 005's missing SELECT
+-- policy on blocks exists to avoid, and the story, comment and insight
+-- predicates below all call it. The pgTAP harness did not model function
+-- defaults, so 040's "a client cannot probe the block graph" passed there
+-- while it failed live; supabase/tests/hosted_function_grants.sql now gives
+-- the harness the same grant this revoke removes.
+-- https://supabase.com/docs/guides/database/postgres/roles#public-schema-and-function-privileges
+revoke execute on function public.is_blocked_pair(uuid, uuid) from anon, authenticated;
+
 create or replace function public.story_is_visible(p_story_id uuid)
 returns boolean
 language sql
@@ -411,10 +452,76 @@ revoke all on public.stories from anon, authenticated;
 grant select, delete on public.stories to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5. Posting one
+-- 5. Who may post, stated once
 -- ---------------------------------------------------------------------------
--- Order is 005's: identity, feature gate, standing (listed, suspended, policy),
--- shape, the object, then the cap under a lock, then the write.
+-- The caller's standing to add a story, as the error create_story returns, or
+-- NULL when they may. Order is 005's: identity, feature gate, standing
+-- (suspended, listed, policy).
+--
+-- One function, because there are two places a story is posted from and they
+-- drifted apart. create_story checks it at the write; the stories bucket's
+-- upload policy (144) checks it at the upload, so an account that could never
+-- post does not get 50 MB of private storage. The upload predicate used to
+-- repeat the listing and kill-switch tests by hand and left out the policy
+-- gate, so a listed provider who had not accepted the current terms could
+-- still fill the bucket (Greptile P1 on bb32af4). Both now read this.
+--
+-- No argument: it answers for auth.uid() only. With a user id it would tell
+-- any caller whether any account is suspended, listed or up to date on the
+-- policies. Internal all the same, for stories_enabled's reason: both callers
+-- are DEFINER and run it as its owner.
+create or replace function public.story_post_refusal()
+returns text
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_uid       uuid := auth.uid();
+  v_suspended timestamptz;
+begin
+  if v_uid is null then
+    return 'UNAUTHORIZED';
+  end if;
+
+  if not public.stories_enabled() then
+    return 'STORIES_DISABLED';
+  end if;
+
+  select suspended_until into v_suspended from public.profiles where id = v_uid;
+  if v_suspended is not null and v_suspended > now() then
+    return 'SUSPENDED';
+  end if;
+
+  -- Members, applicants and delisted providers all land here. A story is
+  -- discovery, and discovery is the directory's to grant, not the role's.
+  if not public.provider_is_listed(v_uid) then
+    return 'NOT_LISTED';
+  end if;
+
+  -- Public UGC, so the same gate send_message and the session RPCs use (027).
+  if not public.user_has_accepted_current_policies(v_uid) then
+    return 'POLICY_REQUIRED';
+  end if;
+
+  return null;
+end;
+$$;
+
+comment on function public.story_post_refusal() is
+  'Why the caller may not post a story now (UNAUTHORIZED, STORIES_DISABLED, '
+  'SUSPENDED, NOT_LISTED, POLICY_REQUIRED), or NULL when they may. The one '
+  'definition, read by create_story (143) and the stories upload policy (144).';
+
+revoke all on function public.story_post_refusal() from public, anon, authenticated;
+grant execute on function public.story_post_refusal() to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 6. Posting one
+-- ---------------------------------------------------------------------------
+-- Order is 005's: identity and standing (story_post_refusal, above), shape,
+-- the object, then the cap under a lock, then the write.
 create or replace function public.create_story(
   p_story_id    uuid,
   p_media_type  text,
@@ -429,7 +536,7 @@ set search_path = public
 as $$
 declare
   v_uid       uuid := auth.uid();
-  v_suspended timestamptz;
+  v_refusal   text := public.story_post_refusal();
   v_existing  public.stories%rowtype;
   v_story     public.stories%rowtype;
   v_active    integer;
@@ -439,28 +546,10 @@ declare
   -- character in it is refused, by the CHECK.
   v_caption   text := public.story_text_trim(p_caption);
 begin
-  if v_uid is null then
-    return json_build_object('success', false, 'error', 'UNAUTHORIZED');
-  end if;
-
-  if not public.stories_enabled() then
-    return json_build_object('success', false, 'error', 'STORIES_DISABLED');
-  end if;
-
-  select suspended_until into v_suspended from public.profiles where id = v_uid;
-  if v_suspended is not null and v_suspended > now() then
-    return json_build_object('success', false, 'error', 'SUSPENDED');
-  end if;
-
-  -- Members, applicants and delisted providers all land here. A story is
-  -- discovery, and discovery is the directory's to grant, not the role's.
-  if not public.provider_is_listed(v_uid) then
-    return json_build_object('success', false, 'error', 'NOT_LISTED');
-  end if;
-
-  -- Public UGC, so the same gate send_message and the session RPCs use (027).
-  if not public.user_has_accepted_current_policies(v_uid) then
-    return json_build_object('success', false, 'error', 'POLICY_REQUIRED');
+  -- The same answer the upload policy got (section 5), so a provider the
+  -- bucket refused is refused here for the same reason, and the reverse.
+  if v_refusal is not null then
+    return json_build_object('success', false, 'error', v_refusal);
   end if;
 
   if p_story_id is null or p_media_path is null then
@@ -484,6 +573,44 @@ begin
       'created_at', v_existing.created_at,
       'expires_at', v_existing.expires_at
     );
+  end if;
+
+  /*
+   * A name the purge may be removing is never posted again.
+   *
+   * The purge lists objects no story names and then removes them through the
+   * Storage API, two steps with nothing between them. A retry of an earlier
+   * create_story, with the same client-minted id after the provider deleted
+   * that story, landed its new row in the gap: the object still existed, so
+   * the create succeeded, and the purge then deleted the live story's media
+   * (Greptile P1 on bb32af4). So a story id whose media was released, under
+   * any of the names it could have, is refused here; and so is an upload the
+   * purge has claimed for being a day old with no story.
+   *
+   * The second case is a race rather than a lookup, so it needs a lock: the
+   * purge's claim (claim_story_objects_to_purge, 151) takes this key
+   * exclusively while it decides and records; every create_story takes it
+   * shared, so creates never wait on each other, only on a claim. Whichever
+   * commits first, the other sees it: a claim after this create finds the
+   * story row and leaves the object alone, a create after the claim finds the
+   * name here and is refused. Taken after story_cap, and the claim takes no
+   * other lock, so the two orders cannot cross.
+   * https://www.postgresql.org/docs/16/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+   */
+  perform pg_advisory_xact_lock_shared(hashtextextended('story_media_purge', 0));
+
+  if exists (
+    select 1 from public.story_media_released m
+    where m.name = p_media_path
+       or m.name = any (array[
+         v_uid::text || '/' || p_story_id::text || '.jpg',
+         v_uid::text || '/' || p_story_id::text || '.jpeg',
+         v_uid::text || '/' || p_story_id::text || '.png',
+         v_uid::text || '/' || p_story_id::text || '.webp',
+         v_uid::text || '/' || p_story_id::text || '.mp4'
+       ])
+  ) then
+    return json_build_object('success', false, 'error', 'MEDIA_RELEASED');
   end if;
 
   -- The object must already be there, and must be what its name says it is.
@@ -563,7 +690,244 @@ comment on function public.create_story(uuid, text, text, text, integer) is
   'The only writer of public.stories. Listed, unsuspended, policy-accepted '
   'providers only, while kill_switches.stories_enabled is on; at most 30 '
   'unexpired stories each; the upload must exist and its content type match '
-  'the file name; idempotent on the client-minted story id.';
+  'the file name; idempotent on the client-minted story id, which is never '
+  'reused once its media was released (MEDIA_RELEASED, 151).';
 
 revoke all on function public.create_story(uuid, text, text, text, integer) from public, anon;
 grant execute on function public.create_story(uuid, text, text, text, integer) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 7. Every server-only function, closed as the hosted project grants them
+-- ---------------------------------------------------------------------------
+-- Section 3's is_blocked_pair was one of a class. Supabase's default
+-- privileges grant EXECUTE on every function created in public to anon and
+-- authenticated by name, so a migration that meant a function for the server
+-- and revoked it from PUBLIC only left it callable by any client. With that
+-- grant modelled from the first migration (supabase/tests/
+-- hosted_function_grants.sql), these were the functions a signed-in account
+-- could call that no migration meant it to, and what that let it do:
+--
+--   * approve_provider_application, reject_provider_application and
+--     request_application_info (006, last 083) have no caller check, so a
+--     member could submit an application and approve it themselves: role
+--     provider, identity_verified_at set, listed (provider_is_listed), and
+--     from there create_story. The stories' first rule, providers post, rests
+--     on this being closed.
+--   * credit_user_token, deduct_user_token (002), credit_promo_tokens,
+--     deduct_tokens (028), credit_purchased_recharge (033) and
+--     record_provider_accrual (029, last 132) take any account id and move
+--     its money: credit_user_token(self, 1000000) succeeded.
+--   * has_ever_recharged (102) answers about any account id, and
+--     first_recharge_discount_bps (102) is its pair; refresh_reply_latencies
+--     and refund_unanswered_messages (006) are the cron's.
+--
+-- Every caller of these holds the service role (the admin console, the
+-- review console, moderate.mjs, verify-order, cashfree-webhook) or is a
+-- DEFINER function running as the owner, so nothing a client does changes.
+-- 010, 020 and 563's sweep are what fail if any of these comes back.
+-- https://supabase.com/docs/guides/database/postgres/roles#public-schema-and-function-privileges
+revoke execute on function public.approve_provider_application(uuid, text) from anon, authenticated;
+revoke execute on function public.reject_provider_application(uuid, text) from anon, authenticated;
+revoke execute on function public.request_application_info(uuid, text[], text) from anon, authenticated;
+revoke execute on function public.credit_user_token(uuid, integer) from anon, authenticated;
+revoke execute on function public.deduct_user_token(uuid, integer) from anon, authenticated;
+revoke execute on function public.credit_promo_tokens(uuid, integer, text) from anon, authenticated;
+revoke execute on function public.deduct_tokens(uuid, integer, uuid, uuid) from anon, authenticated;
+revoke execute on function public.credit_purchased_recharge(uuid, integer, uuid) from anon, authenticated;
+revoke execute on function public.record_provider_accrual(uuid, uuid, integer, integer, integer, integer, uuid)
+  from anon, authenticated;
+revoke execute on function public.first_recharge_discount_bps() from anon, authenticated;
+revoke execute on function public.has_ever_recharged(uuid) from anon, authenticated;
+revoke execute on function public.refresh_reply_latencies() from anon, authenticated;
+revoke execute on function public.refund_unanswered_messages(interval) from anon, authenticated;
+
+-- And signed out. A function a migration revoked from PUBLIC was never meant
+-- for anon: no migration before this one grants one back to anon, and the
+-- ones a signed-in client may call were granted to `authenticated` by name.
+-- So each of them loses anon's default grant too. Twenty-two client RPCs
+-- (submit_report, open_conversation, delete_user_account and the rest) were
+-- callable with only the anon key; each checks auth.uid(), so none acted, but
+-- a signed-out caller has no business reaching them. A sweep rather than a
+-- list, because it is a rule: extension functions are left alone (pgTAP here,
+-- whatever the platform installs live), and a function that kept PUBLIC's
+-- grant, a trigger or get_public_config, keeps anon's with it.
+do $$
+declare
+  v_fn regprocedure;
+begin
+  for v_fn in
+    select p.oid::regprocedure
+    from pg_proc p
+    where p.pronamespace = 'public'::regnamespace
+      and p.prokind = 'f'
+      and not exists (
+        select 1 from pg_depend d
+        where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e')
+      and not exists (
+        select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+        where a.grantee = 0 and a.privilege_type = 'EXECUTE')
+      and has_function_privilege('anon', p.oid, 'EXECUTE')
+  loop
+    execute format('revoke execute on function %s from anon', v_fn);
+  end loop;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 8. Push: a sign-out's row delete that deletes, and whose push it is
+-- ---------------------------------------------------------------------------
+-- Two defects in the push path the stories' sign-out work leans on, closed
+-- here because this is the first file that has not been deployed.
+--
+-- The row delete removed nothing. A sign-out deletes this device's
+-- push_tokens row as the account leaving (src/lib/push.ts), and did it as
+-- `delete from push_tokens where token = $1` under RLS. 008 gives the table
+-- a DELETE policy and, on purpose, no SELECT policy; and a DELETE whose WHERE
+-- reads a column applies the table's SELECT policies as well, so the owner's
+-- delete matched zero rows, with no error. Measured on a fresh database: the
+-- statement answered DELETE 0 and the row stayed, while a bare `delete from
+-- push_tokens` by the same owner answered DELETE 1. When the FCM token's own
+-- deletion also failed, (token, old account) stayed live and went on
+-- delivering the old account's pushes to a phone signed into another.
+-- https://www.postgresql.org/docs/16/sql-createpolicy.html
+-- ("Policies Applied by Command Type": a DELETE that needs read access to
+-- the rows, as a WHERE does, applies the SELECT policies' USING as well.)
+--
+-- So the delete is a function, as the insert already is (register_push_token,
+-- 008): it names the caller, never a client-supplied user id, and removes the
+-- caller's own row for that token only. Scoped to the caller because the same
+-- token may belong to the next account on the phone by the time a sign-out's
+-- retry runs, and that row is not the leaving account's to remove. It answers
+-- whether a row went, and the client treats any error as a delete that has
+-- not happened yet (the sign-out keeps its pending entry and tries again).
+create or replace function public.unregister_push_token(p_token text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid  uuid := auth.uid();
+  v_gone integer;
+begin
+  if v_uid is null then
+    raise exception 'UNAUTHORIZED' using errcode = '42501';
+  end if;
+
+  delete from public.push_tokens
+  where token = btrim(p_token)
+    and user_id = v_uid;
+  get diagnostics v_gone = row_count;
+
+  return v_gone > 0;
+end;
+$$;
+
+comment on function public.unregister_push_token(text) is
+  'Remove the caller''s own push_tokens row for this token (143). The only '
+  'client delete: a DELETE on the table matches nothing under RLS, which has '
+  'no SELECT policy (008).';
+
+revoke all on function public.unregister_push_token(text) from public, anon;
+grant execute on function public.unregister_push_token(text) to authenticated;
+
+-- And whose push it is. A push names the peer and the conversation and never
+-- the account it is for, and the device used to check only that SOMEONE is
+-- signed in (signedInOnDevice). A sign-in no longer waits for the previous
+-- account's server half, so in the window between the two, the old account's
+-- row still delivered, and its pushes were posted inside the new account's
+-- session: the old peer's name, a long-lived shortcut, and a tap that opened
+-- that peer's chat in the wrong account. So both queues now carry the row's
+-- owner, the senders put it in the payload as `recipientId`, and the app
+-- posts a push only for the account signed in (src/lib/push.ts).
+--
+-- Appended as the last column of each view, which is what CREATE OR REPLACE
+-- VIEW allows; every other column keeps its name, position and expression
+-- from 110 (pending_pushes) and 052 (pending_call_pushes).
+-- https://www.postgresql.org/docs/16/sql-createview.html
+create or replace view public.pending_pushes
+with (security_invoker = true) as
+  -- A message nobody has been told about.
+  select
+    m.id                as message_id,
+    m.conversation_id,
+    m.sender_id         as peer_id,
+    t.token,
+    t.platform,
+    coalesce(s.display_name, public.member_handle(m.sender_id))
+                        as sender_display_name,
+    m.created_at,
+    d.avatar_url        as sender_avatar_url,
+    'message'::text     as kind,
+    t.user_id           as recipient_id
+  from public.messages m
+  join public.conversations c on c.id = m.conversation_id
+  join public.push_tokens t
+    on t.user_id = case when m.sender_id = c.member_id then c.provider_id else c.member_id end
+  join public.profiles s on s.id = m.sender_id
+  left join public.provider_directory d on d.id = m.sender_id
+  where m.read_at is null
+    and m.notified_at is null
+    and m.created_at > now() - interval '24 hours'
+    and not public.is_blocked_pair(c.member_id, c.provider_id)
+
+  union all
+
+  -- A provider-initiated chat request the member has not been told about.
+  select
+    r.id                as message_id,
+    r.conversation_id,
+    r.initiator_id      as peer_id,
+    t.token,
+    t.platform,
+    d.display_name      as sender_display_name,
+    r.created_at,
+    d.avatar_url        as sender_avatar_url,
+    'contact'::text     as kind,
+    t.user_id           as recipient_id
+  from public.session_requests r
+  join public.conversations c on c.id = r.conversation_id
+  join public.push_tokens t on t.user_id = c.member_id
+  join public.provider_directory d on d.id = r.initiator_id
+  where r.channel = 'chat'
+    and r.status = 'pending'
+    and r.notified_at is null
+    and r.expires_at > now()
+    and r.initiator_id = c.provider_id
+    and r.recipient_id = c.member_id
+    and c.chat_consent_declined_at is null
+    and not public.is_blocked_pair(c.member_id, c.provider_id)
+    and not exists (
+      select 1
+      from   public.messages m2
+      where  m2.conversation_id = r.conversation_id
+        and  m2.sender_id       = r.initiator_id
+        and  m2.created_at     >= r.created_at
+    );
+
+revoke all on public.pending_pushes from anon, authenticated;
+grant select on public.pending_pushes to service_role;
+
+create or replace view public.pending_call_pushes
+with (security_invoker = true) as
+  select
+    c.id as call_id,
+    c.conversation_id,
+    c.caller_id as peer_id,
+    c.medium,
+    coalesce(d.display_name, public.member_handle(c.caller_id)) as caller_display_name,
+    t.token,
+    t.platform,
+    c.created_at,
+    d.avatar_url as caller_avatar_url,
+    c.media_backend,
+    c.media_experiment_id,
+    t.user_id as recipient_id
+  from public.calls c
+  join public.push_tokens t on t.user_id = c.callee_id
+  left join public.provider_directory d on d.id = c.caller_id
+  where c.status = 'ringing'
+    and c.notified_at is null
+    and c.created_at > now() - interval '2 minutes';
+
+revoke all on public.pending_call_pushes from anon, authenticated;

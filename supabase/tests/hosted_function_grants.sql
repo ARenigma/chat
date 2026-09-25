@@ -1,0 +1,25 @@
+-- Supabase's default privileges for FUNCTIONS, applied before the first
+-- migration, as the hosted project has them.
+--
+-- On the hosted project every function created in `public` is granted EXECUTE
+-- to anon, authenticated and service_role by name, through the platform's
+-- default privileges. A `revoke ... from public` does not touch those grants,
+-- so a function a migration meant to keep server-only is callable by any
+-- signed-in client unless it is also revoked from anon and authenticated.
+-- 105 recorded the evidence for one function: after 005's revoke from PUBLIC,
+-- has_function_privilege('service_role', is_blocked_pair) was still true live.
+-- https://supabase.com/docs/guides/database/postgres/roles#public-schema-and-function-privileges
+--
+-- harness.sql models the TABLE and SEQUENCE defaults and never modelled this
+-- one, so a suite asserting "a client cannot call X" passed here while it was
+-- false live. It was first modelled only from 143 on, and that kept three
+-- suites for deployed migrations green while the exposure they assert against
+-- was real (010: deduct_user_token and credit_user_token; 020: approving
+-- provider applications, which let a member list themselves as a provider and
+-- post stories). So it is applied at harness load, before 001, and 143 closes
+-- every one of those grants (its "Server-only functions" section); 010, 020,
+-- 040 and 560's sweep are what fail if a revoke there goes missing.
+--
+-- Run by scripts/db-test.mjs immediately after harness.sql.
+alter default privileges in schema public
+  grant all on functions to anon, authenticated, service_role;

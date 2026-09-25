@@ -66,6 +66,9 @@ interface Pending {
   created_at: string;
   // Absent when this function runs against a database from before 105.
   kind?: PushKind;
+  // The account the row's token belongs to (migration 143). Absent against a
+  // database from before it, and then left out of the payload (see `data`).
+  recipient_id?: string;
 }
 
 const base64url = (bytes: Uint8Array): string => {
@@ -262,6 +265,13 @@ async function send(
             // it lets the client build Accept/Decline actions on the lock-screen
             // notification without needing a second fetch.
             ...(row.kind === 'contact' ? { requestId: row.message_id } : {}),
+            // Whose push this is (143). The device shows a push only to the
+            // account signed in on it (`pushIsForSignedInAccount` in
+            // src/lib/push.ts): a row a sign-out has not yet deleted delivers
+            // the old account's pushes to whoever signed in next, and nothing
+            // else in this payload says they are not theirs. JSON.stringify
+            // leaves an undefined key out, which is what FCM needs.
+            recipientId: row.recipient_id,
           },
         },
       }),

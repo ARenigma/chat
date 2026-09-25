@@ -913,6 +913,23 @@ export async function drainAllOutbox(queryClient: QueryClient): Promise<void> {
     if (entry.attempts >= REPLAY_LIMIT) {
       continue;
     }
+    /*
+     * Asked again before every entry, never taken from the start of the
+     * drain. One send can hang for as long as its RPC does, and a sign-out
+     * meanwhile clears the queue (`clearOutbox`) without stopping this loop:
+     * the entries it had already read went out one by one under whichever
+     * session was stored when each RPC left, the next account's included.
+     * An entry no longer queued was cleared (or sent by the open chat's own
+     * replay); a session that is no longer the drain's means a different
+     * person, or nobody, is signed in now.
+     */
+    if (!readOutbox().some(queued => queued.nonce === entry.nonce)) {
+      continue;
+    }
+    const current = await requireUserId().catch(() => null);
+    if (current !== selfId) {
+      return;
+    }
     await sendMessageWith(
       {
         queryClient,

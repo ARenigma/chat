@@ -269,6 +269,29 @@ const CHECKS = [
         and coalesce(cardinality(languages), 0) = 0`,
   },
   {
+    name: 'story media kept past its day with nothing to keep it',
+    /*
+     * The bytes of a story are removed by purge-story-media, which pg_cron
+     * reaches through dispatch_story_media_purge's net.http_post (151). That
+     * call's answer is never read: an undeployed or stale function, or one
+     * refusing the key, answers 404, 500 or 403, and the cron job still
+     * records the dispatch as succeeded, so 'a scheduled job whose last run
+     * failed' above never sees it. The story's promise is 24 hours.
+     *
+     * So this asks the purge's own question (story_objects_to_purge) and keeps
+     * only objects over 25 hours old: a day, plus the ten-minute tick with an
+     * hour of slack for a slow run. Anything it names is an object the purge
+     * would remove and has not. Objects a live story or a report names are
+     * never listed by it.
+     */
+    sql: `
+      select p.object_name, o.created_at
+      from public.story_objects_to_purge(1000) p
+      join storage.objects o on o.bucket_id = 'stories' and o.name = p.object_name
+      where o.created_at < now() - interval '25 hours'
+      order by o.created_at`,
+  },
+  {
     name: 'client_support floor is unreadable pre-auth',
     /*
      * Not a data invariant but a reachability one, and it belongs here because

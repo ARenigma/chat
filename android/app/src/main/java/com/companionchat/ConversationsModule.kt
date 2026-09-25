@@ -49,6 +49,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         avatarUrl: String,
         inApp: Boolean,
         silent: Boolean,
+        recipientId: String,
         promise: Promise,
     ) {
         try {
@@ -63,6 +64,8 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 avatarUrl = avatarUrl.ifEmpty { null },
                 inApp = inApp,
                 silent = silent,
+                // '' means the sender named no account (before migration 143).
+                recipientId = recipientId.ifEmpty { null },
             )
             promise.resolve(true)
         } catch (error: Exception) {
@@ -110,6 +113,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         callerName: String,
         avatarUrl: String,
         medium: String,
+        recipientId: String,
         promise: Promise,
     ) {
         try {
@@ -120,6 +124,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 callerName = callerName,
                 avatarUrl = avatarUrl.ifEmpty { null },
                 medium = medium,
+                recipientId = recipientId.ifEmpty { null },
             )
             promise.resolve(true)
         } catch (error: Exception) {
@@ -149,6 +154,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         avatarUrl: String,
         inApp: Boolean,
         silent: Boolean,
+        recipientId: String,
         promise: Promise,
     ) {
         try {
@@ -162,6 +168,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 avatarUrl = avatarUrl.ifEmpty { null },
                 inApp = inApp,
                 silent = silent,
+                recipientId = recipientId.ifEmpty { null },
             )
             promise.resolve(true)
         } catch (error: Exception) {
@@ -173,6 +180,27 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun clear(conversationId: String, promise: Promise) {
         Conversations.clear(reactContext, conversationId)
+        promise.resolve(null)
+    }
+
+    /**
+     * Clear a chat request's notification after its Decline landed, only while
+     * it is still that request's. See `Conversations.clearRequest`.
+     */
+    @ReactMethod
+    fun clearRequest(conversationId: String, requestId: String, promise: Promise) {
+        Conversations.clearRequest(reactContext, conversationId, requestId)
+        promise.resolve(null)
+    }
+
+    /**
+     * Every notification and conversation shortcut the signed-in account left
+     * on this device, on sign-out and after account deletion. See
+     * `Conversations.clearAll`.
+     */
+    @ReactMethod
+    fun clearAll(promise: Promise) {
+        Conversations.clearAll(reactContext)
         promise.resolve(null)
     }
 

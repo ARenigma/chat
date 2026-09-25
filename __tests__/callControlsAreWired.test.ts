@@ -79,8 +79,9 @@ describe('the call notification carries what the app needs to obey it', () => {
     expect(conversations).toMatch(/medium: String,/);
     expect(conversations).toMatch(/action=\$action&medium=\$medium/);
     // Both buttons and the body tap (which reuses `answer`) must carry it.
-    expect(conversations).toMatch(/callActionIntent\(context, peerId, callId, "answer", medium\)/);
-    expect(conversations).toMatch(/callActionIntent\(context, peerId, callId, "decline", medium\)/);
+    // (And the account the ring was for, 143, after it.)
+    expect(conversations).toMatch(/callActionIntent\(context, peerId, callId, "answer", medium, recipientId\)/);
+    expect(conversations).toMatch(/callActionIntent\(context, peerId, callId, "decline", medium, recipientId\)/);
   });
 
   it('honours action=decline instead of opening a call screen', () => {

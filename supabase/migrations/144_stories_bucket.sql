@@ -22,9 +22,18 @@
 -- for the story row with the caller's own JWT (stories RLS is story_is_visible,
 -- 143), and only if the row comes back does it sign that row's media_path with
 -- the service role, for 60 seconds at most and never past the story's expiry.
--- The client never chooses the lifetime. What is left is that window: a URL
--- minted a second before a delete or a block still works for the rest of its
--- 60 seconds, which is the same bound voice notes have (src/api/voice.ts).
+-- The client never chooses the lifetime.
+--
+-- The 60 seconds bound the MINTING of a link, not how long one already fetched
+-- keeps serving, and this file used to say it bounded both. The Smart CDN (Pro
+-- and above) keeps serving a cached response "for the same signed URL ...
+-- even if the token in that URL has already expired", for as long as the
+-- asset is cached, and drops it when the object is updated or deleted. So a
+-- link a viewer already opened lasts until the OBJECT goes: the provider's
+-- delete, or the first media purge tick after the 24 hours (151 no longer
+-- lets an expired row shield its object); a block deletes nothing and does
+-- not cut off a link already held. Every new link still needs the row.
+-- https://supabase.com/docs/guides/storage/cdn/smart-cdn
 --
 -- The upload policy is a plain SQL function rather than an inline expression,
 -- and the bucket and policy are installed by a function rather than a bare DO
@@ -43,9 +52,13 @@
 -- 1. The upload predicate
 -- ---------------------------------------------------------------------------
 -- The provider's own folder, a name create_story would accept, and only while
--- they could post. The listing and kill-switch checks repeat create_story's on
--- purpose: without them the bucket is 50 MB of free private storage for any
--- signed-in account, which is a hosting service nobody asked to run.
+-- they could post. "Could post" is create_story's own test, story_post_refusal
+-- (143), and not a copy of it: without it the bucket is 50 MB of free private
+-- storage for any signed-in account, which is a hosting service nobody asked
+-- to run. The copy this used to hold checked the listing and the kill switch
+-- and forgot the policy gate, so a listed provider who had not accepted the
+-- current terms could upload what they could never post (Greptile P1 on
+-- bb32af4). With one function the two cannot disagree again.
 create or replace function public.story_media_upload_allowed(p_name text)
 returns boolean
 language sql
@@ -56,13 +69,13 @@ as $$
   select auth.uid() is not null
     and split_part(p_name, '/', 1) = auth.uid()::text
     and p_name ~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\.(jpg|jpeg|png|webp|mp4)$'
-    and public.provider_is_listed(auth.uid())
-    and public.stories_enabled();
+    and public.story_post_refusal() is null;
 $$;
 
 comment on function public.story_media_upload_allowed(text) is
   'storage.objects INSERT predicate for the stories bucket: the caller''s own '
-  '{uid}/{uuid}.{ext} name, a listed provider, stories switched on.';
+  '{uid}/{uuid}.{ext} name, and a caller create_story would accept '
+  '(story_post_refusal: listed, unsuspended, policies accepted, stories on).';
 
 revoke all on function public.story_media_upload_allowed(text) from public, anon;
 grant execute on function public.story_media_upload_allowed(text) to authenticated, service_role;

@@ -43,6 +43,16 @@ export interface PlayingVoice {
 /** What a peer is doing in the composer, mirrored from their device. */
 export type PeerActivity = 'typing' | 'recording';
 
+/** A chat request as the ring shows it. */
+export interface IncomingRequest {
+  requestId: string;
+  conversationId: string;
+  peerId: string;
+  peerName: string;
+  /** The row's `expires_at`, when the caller had it; a queued one past it never rings. */
+  expiresAt?: string;
+}
+
 interface AppState {
   balance: number | null;
   /** A `send_message` RPC is in flight. Distinct from the peer typing. */
@@ -78,12 +88,17 @@ interface AppState {
    * whatever screen the provider is on, and it arrives from a realtime
    * subscription that belongs to the app, not to a screen.
    */
-  incomingRequest: {
-    requestId: string;
-    conversationId: string;
-    peerId: string;
-    peerName: string;
-  } | null;
+  incomingRequest: IncomingRequest | null;
+  /**
+   * Requests that arrived while another was ringing, oldest first. Each rings
+   * in turn once the one before it leaves (`clearIncomingRequest`).
+   */
+  queuedRequests: readonly IncomingRequest[];
+  /**
+   * Every request id that has rung in this session, for `setIncomingRequest`
+   * to refuse a second ring of. Cleared with the account (`resetStore`).
+   */
+  rungRequestIds: readonly string[];
   notice: string | null;
   noticeTone: NoticeTone;
   playing: PlayingVoice | null;
@@ -145,6 +160,8 @@ const INITIAL = {
   walletVisible: false,
   pendingReview: null,
   incomingRequest: null,
+  queuedRequests: [] as readonly IncomingRequest[],
+  rungRequestIds: [] as readonly string[],
   notice: null,
   noticeTone: 'error' as NoticeTone,
   playing: null,
@@ -192,11 +209,58 @@ export const useStore = create<AppState>()(set => ({
   clearReview: () => set({ pendingReview: null }),
   /*
    * First ring wins, like the review sheet: a second request arriving while
-   * the provider is deciding must not swap the face under their thumb.
+   * the provider is deciding must not swap the face under their thumb. It is
+   * queued, not dropped. Dropped, it was only ever a silent shade entry
+   * (`foregroundPushAction` posts everything silently while a ring is up),
+   * and nothing rang it when the first ring ran out or was accepted: a member
+   * waiting with no announcement at all. Once per request id, since the
+   * Realtime insert and `recoverPending` can both deliver the same one.
+   *
+   * Once per id for the SESSION, not only while it rings or waits: a request
+   * that has already rung and left (answered, declined, run out) is refused
+   * too. `recoverPending` runs on every resubscribe, and a request the
+   * provider answered stays `pending` until the member confirms (086 sets
+   * only `responded_at`), so it came back and rang again, where a Decline
+   * then turned an answered request into a declined one.
    */
   setIncomingRequest: request =>
-    set(state => (state.incomingRequest === null ? { incomingRequest: request } : state)),
-  clearIncomingRequest: () => set({ incomingRequest: null }),
+    set(state => {
+      if (request === null) {
+        return state;
+      }
+      const known =
+        state.rungRequestIds.includes(request.requestId) ||
+        state.queuedRequests.some(queued => queued.requestId === request.requestId);
+      if (known) {
+        return state;
+      }
+      if (state.incomingRequest === null) {
+        return {
+          incomingRequest: request,
+          rungRequestIds: [...state.rungRequestIds, request.requestId],
+        };
+      }
+      return { queuedRequests: [...state.queuedRequests, request] };
+    }),
+  /*
+   * The ring leaves, and the oldest queued request that has not expired rings
+   * next. Whether it is still pending is the server's to say: an Accept of one
+   * answered meanwhile is refused (086) and ends that ring, and a Decline of
+   * it is a no-op (082).
+   */
+  clearIncomingRequest: () =>
+    set(state => {
+      const now = Date.now();
+      const live = state.queuedRequests.filter(
+        queued => queued.expiresAt === undefined || Date.parse(queued.expiresAt) > now,
+      );
+      const next = live[0] ?? null;
+      return {
+        incomingRequest: next,
+        queuedRequests: live.slice(1),
+        rungRequestIds: next === null ? state.rungRequestIds : [...state.rungRequestIds, next.requestId],
+      };
+    }),
   openWallet: () => set({ walletVisible: true, refillVisible: false }),
   closeWallet: () => set({ walletVisible: false }),
   setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),

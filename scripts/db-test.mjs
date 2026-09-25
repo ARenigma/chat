@@ -41,6 +41,9 @@ const MANAGED = DATABASE_URL === '';
 
 const MIGRATIONS = [
   'supabase/tests/harness.sql',
+  // Supabase's default FUNCTION grants, from the first migration on, as the
+  // hosted project has them; the file says why it must be here and not later.
+  'supabase/tests/hosted_function_grants.sql',
   'supabase/migrations/001_initial_schema.sql',
   'supabase/migrations/002_bootstrap_and_grants.sql',
   'supabase/migrations/003_human_conversations.sql',
@@ -918,6 +921,22 @@ const suites = [
     file: join(ROOT, 'supabase/tests/565_blocked_people.sql'),
     label:
       'the Blocked screen lists every block the caller made, member or provider, by public name only, and unblocking lifts only their own',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/567_story_report_retries_and_reach.sql'),
+    label:
+      'a story report is filed once however often it is sent, reaches a viewer the provider blocked afterwards, and keeps the name it was published under',
+  },
+  /*
+   * Last, and on purpose: the only suite that COMMITS (two dblink sessions
+   * cannot see an open transaction's fixture). It removes what it wrote, at
+   * the end and again at the start, and nothing after it could be disturbed
+   * if a run died between the two.
+   */
+  {
+    file: join(ROOT, 'supabase/tests/566_story_report_lock_order.sql'),
+    label:
+      'a story or comment report and an account deletion racing each other both finish, and the report keeps its evidence',
   },
 ];
 

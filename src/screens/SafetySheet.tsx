@@ -3,7 +3,13 @@ import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ReportReason } from '../lib/database.types';
-import { useBlockUser, useIsBlocked, useSubmitReport, useUnblockUser } from '../api/safety';
+import {
+  useBlockHandle,
+  useBlockUser,
+  useIsBlocked,
+  useSubmitReport,
+  useUnblockUser,
+} from '../api/safety';
 import { useReportTaxonomy, getReasonLabel, FALLBACK_REPORT_TAXONOMY } from '../api/appConfig';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
@@ -45,6 +51,8 @@ export function SafetySheet({
   const [detail, setDetail] = useState('');
 
   const blocked = useIsBlocked(peerId);
+  // Unblocking is by the block's handle (152); a chat peer's block has one.
+  const blockHandle = useBlockHandle(peerId);
   const block = useBlockUser();
   const unblock = useUnblockUser();
   const report = useSubmitReport();
@@ -187,8 +195,8 @@ export function SafetySheet({
           busy={unblock.isPending}
           busyLabel="Unblocking"
           onPress={() => {
-            if (peerId !== undefined) {
-              unblock.mutate(peerId, { onSuccess: dismiss });
+            if (blockHandle !== undefined) {
+              unblock.mutate(blockHandle, { onSuccess: dismiss });
             }
           }}
           testID="unblock-user"

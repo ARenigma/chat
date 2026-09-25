@@ -168,6 +168,86 @@ describe('notice tone', () => {
     expect(useStore.getState().noticeTone).toBe('confirm');
   });
 
+  describe('a chat request that arrives while another rings', () => {
+    const request = (id: string, extra: { expiresAt?: string } = {}) => ({
+      requestId: id,
+      conversationId: `c-${id}`,
+      peerId: `p-${id}`,
+      peerName: `Member ${id}`,
+      ...extra,
+    });
+
+    it('keeps the ringing one on screen and rings the next when it leaves, oldest first', () => {
+      // First-writer-wins used to DROP the second request: a silent shade
+      // entry and no ring once the first ran out or was accepted.
+      const s = useStore.getState();
+      s.setIncomingRequest(request('r1'));
+      s.setIncomingRequest(request('r2'));
+      s.setIncomingRequest(request('r3'));
+      expect(useStore.getState().incomingRequest?.requestId).toBe('r1');
+      useStore.getState().clearIncomingRequest();
+      expect(useStore.getState().incomingRequest?.requestId).toBe('r2');
+      useStore.getState().clearIncomingRequest();
+      expect(useStore.getState().incomingRequest?.requestId).toBe('r3');
+      useStore.getState().clearIncomingRequest();
+      expect(useStore.getState().incomingRequest).toBeNull();
+    });
+
+    it('queues a request once, however many times it is delivered', () => {
+      // The Realtime insert and recoverPending can both deliver the same row.
+      const s = useStore.getState();
+      s.setIncomingRequest(request('r1'));
+      s.setIncomingRequest(request('r1'));
+      s.setIncomingRequest(request('r2'));
+      s.setIncomingRequest(request('r2'));
+      expect(useStore.getState().queuedRequests.map(q => q.requestId)).toEqual(['r2']);
+      useStore.getState().clearIncomingRequest();
+      useStore.getState().clearIncomingRequest();
+      expect(useStore.getState().incomingRequest).toBeNull();
+    });
+
+    it('skips a queued request that expired while it waited', () => {
+      const s = useStore.getState();
+      s.setIncomingRequest(request('r1'));
+      s.setIncomingRequest(request('r2', { expiresAt: new Date(Date.now() - 1_000).toISOString() }));
+      s.setIncomingRequest(request('r3', { expiresAt: new Date(Date.now() + 60_000).toISOString() }));
+      useStore.getState().clearIncomingRequest();
+      expect(useStore.getState().incomingRequest?.requestId).toBe('r3');
+    });
+
+    it('never rings a request a second time once it has rung and left, answered or run out', () => {
+      // recoverPending re-delivers a request that is still `pending` on every
+      // resubscribe, including one the provider already answered.
+      const s = useStore.getState();
+      s.setIncomingRequest(request('r1'));
+      useStore.getState().clearIncomingRequest(); // answered
+      useStore.getState().setIncomingRequest(request('r1'));
+      expect(useStore.getState().incomingRequest).toBeNull();
+      // One promoted from the queue has rung too.
+      useStore.getState().setIncomingRequest(request('r2'));
+      useStore.getState().setIncomingRequest(request('r3'));
+      useStore.getState().clearIncomingRequest(); // r2 timed out, r3 rings
+      useStore.getState().clearIncomingRequest(); // r3 answered
+      useStore.getState().setIncomingRequest(request('r3'));
+      useStore.getState().setIncomingRequest(request('r2'));
+      expect(useStore.getState().incomingRequest).toBeNull();
+      expect(useStore.getState().queuedRequests).toEqual([]);
+      // The next account starts with nothing rung.
+      resetStore();
+      useStore.getState().setIncomingRequest(request('r1'));
+      expect(useStore.getState().incomingRequest?.requestId).toBe('r1');
+    });
+
+    it('forgets the queue with the rest of the account on reset', () => {
+      const s = useStore.getState();
+      s.setIncomingRequest(request('r1'));
+      s.setIncomingRequest(request('r2'));
+      resetStore();
+      useStore.getState().clearIncomingRequest();
+      expect(useStore.getState().incomingRequest).toBeNull();
+    });
+  });
+
   it('does not leave a stale confirm tone on the next failure', () => {
     const s = useStore.getState();
     s.setNotice('Unblocked.', 'confirm');

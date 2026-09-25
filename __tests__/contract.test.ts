@@ -1495,6 +1495,17 @@ describe('phone sign-in stays off until it can deliver', () => {
  */
 describe('Truecaller OAuth authentication bridge', () => {
   const auth = withoutComments(read('src/api/auth.ts'));
+  /*
+   * Where handleAuthDeepLink ends: its own closing brace. These slices used
+   * to end at 'export async function signOut', which stopped existing when
+   * signOut stopped being async, so indexOf gave -1 and each slice silently
+   * ran to the end of the file.
+   */
+  const handlerEnd = (): number => {
+    const end = auth.indexOf('\n}\n', auth.indexOf('export async function handleAuthDeepLink'));
+    expect(end).toBeGreaterThan(-1);
+    return end + 2;
+  };
   const screen = withoutComments(read('src/screens/OnboardingScreen.tsx'));
   const config = read('supabase/config.toml');
   const exchange = read('supabase/functions/exchange-truecaller-code/index.ts');
@@ -1676,7 +1687,7 @@ describe('Truecaller OAuth authentication bridge', () => {
   it('clears a staged Truecaller link on every terminal Google failure', () => {
     const handler = auth.slice(
       auth.indexOf('export async function handleAuthDeepLink'),
-      auth.indexOf('export async function signOut'),
+      handlerEnd(),
     );
     const oauthError = handler.slice(
       handler.indexOf("const error = params.get('error')"),
@@ -1695,7 +1706,7 @@ describe('Truecaller OAuth authentication bridge', () => {
   it('an expired staged link cannot silently become Google-only success', () => {
     const handler = auth.slice(
       auth.indexOf('export async function handleAuthDeepLink'),
-      auth.indexOf('export async function signOut'),
+      handlerEnd(),
     );
     expect(handler).toContain(
       'pendingLink.hadRecord && pendingLink.challenge === null',
@@ -1706,15 +1717,20 @@ describe('Truecaller OAuth authentication bridge', () => {
       ),
       handler.indexOf('if (pendingLink.challenge !== null)'),
     );
-    expect(expiredBranch).toContain('await supabase.auth.signOut();');
+    // Through the app's own local-scope signOut, never auth-js's bare one,
+    // whose default scope is GLOBAL: that revoked every session of the
+    // Google account, on every device, over a failed link.
+    expect(expiredBranch).toContain('await signOut();');
     expect(expiredBranch).toContain("status: 'failed'");
+    expect(handler.split('await signOut();').length - 1).toBe(3);
+    expect(handler).not.toContain('supabase.auth.signOut(');
   });
 
   it('only a marked Google callback may consume a Truecaller challenge', () => {
     expect(screen).toContain('truecallerLink: true');
     const handler = auth.slice(
       auth.indexOf('export async function handleAuthDeepLink'),
-      auth.indexOf('export async function signOut'),
+      handlerEnd(),
     );
     expect(handler).toMatch(
       /url\.startsWith\(\s*TRUECALLER_LINK_REDIRECT_URL,\s*\)/,
@@ -1746,11 +1762,18 @@ describe('Truecaller OAuth authentication bridge', () => {
   });
 
   it('sign-out cannot leave a staged identity link for the next account', () => {
-    // signOut records itself and delegates to endSession (the sign-in wait,
-    // 2026-09-25); the clear lives in what every sign-out runs.
-    expect(auth).toMatch(/export function signOut\(\): Promise<void> \{\s*const run = endSession\(\);/);
-    const end = auth.slice(auth.indexOf('async function endSession'));
-    expect(end).toMatch(/^async function endSession\(\): Promise<void> \{\s*clearPendingTruecallerGoogleLink\(\);/);
+    // Every sign-out, account deletion included, leaves the device through
+    // leaveDevice (2026-09-25), and the clear is in its synchronous part, so
+    // it has happened before the sign-out returns.
+    for (const entry of ['export function beginSignOut(', 'export function signOut(', 'export async function deleteAccount(']) {
+      const body = auth.slice(auth.indexOf(entry), auth.indexOf('\n}\n', auth.indexOf(entry)));
+      expect({ entry, leaves: body.includes('leaveDevice(') }).toEqual({ entry, leaves: true });
+    }
+    const leave = auth.slice(auth.indexOf('function leaveDevice('));
+    const beforeFirstAwait = leave.slice(0, leave.indexOf('await '));
+    expect(beforeFirstAwait).toContain('clearPendingTruecallerGoogleLink();');
+    // And the queued sends, which have no owner to be told apart by.
+    expect(beforeFirstAwait).toContain('clearOutbox();');
   });
 
   it('WhatsApp copy replaces SMS copy for the phone fallback', () => {
@@ -2061,7 +2084,8 @@ describe('a block is visible where it matters and reversible everywhere', () => 
     expect(screen).toContain('useBlockedPeople()');
     expect(screen).not.toContain('useProviders');
     expect(screen).not.toContain('useBlockedPeerIds');
-    expect(screen).toContain('unblock.mutate(p.blocked_id)');
+    // By the block's handle (152): a commenter's row carries no account id.
+    expect(screen).toContain('unblock.mutate(p.handle)');
     // Loading and failure are branched before the empty copy, so neither can
     // tell somebody their list is empty.
     const empty = screen.indexOf('You haven’t blocked anyone.');
@@ -2075,12 +2099,17 @@ describe('a block is visible where it matters and reversible everywhere', () => 
     // Under the `blocks` prefix, so the invalidation every block and unblock
     // already does refreshes the list too.
     expect(safety).toContain("blockedPeople: ['blocks', 'people'] as const");
-    // The unblock names no blocker: 005's owner policy scopes it, which is why
-    // it lifts a member the caller never chatted with (565, assertion 8) and
-    // nobody else's block of the same person (565, assertion 7).
-    expect(safety).toContain(
-      ".from('blocks').delete().eq('blocked_id', peerId)",
-    );
+    // The unblock is unblock_by_handle, which lifts a member the caller never
+    // chatted with (565, assertion 8) and nobody else's block of the same
+    // person (565, assertion 7). Not a DELETE on the table: its SELECT policy
+    // hides a commenter block from its own blocker, so the delete lifted
+    // nothing (152, 564 17a).
+    expect(safety).toContain("supabase.rpc('unblock_by_handle', { p_handle: handle })");
+    expect(safety).not.toContain(".from('blocks').delete()");
+    expect(safety).not.toContain("eq('blocked_id'");
+    // And the block set is read from the view, never from the table, which
+    // shows none of a commenter block (564 13a).
+    expect(safety).not.toContain(".from('blocks').select(");
   });
 
   it('keeps blocked rows on screen when a refresh fails, and offers a retry', () => {
@@ -2114,7 +2143,7 @@ describe('a block is visible where it matters and reversible everywhere', () => 
       'setQueryData<BlockedPerson[]>(safetyKeys.blockedPeople',
     );
     expect(dropRow).toBeGreaterThan(-1);
-    expect(unblock).toContain('p.blocked_id !== peerId');
+    expect(unblock).toContain('p.handle !== handle');
     expect(dropRow).toBeLessThan(unblock.indexOf('invalidateQueries'));
   });
 });
@@ -5720,6 +5749,17 @@ describe('every incoming-signal realtime channel repairs on CHANNEL_ERROR/TIMED_
     );
   });
 
+  it('the chat-request recovery never re-delivers a request the provider already answered', () => {
+    // 086's Accept and 077's provider send set only responded_at; the row
+    // stays pending until the member confirms, and every resubscribe rang it.
+    const sessions = withoutComments(read('src/api/sessions.ts'));
+    const recover = sessions.slice(
+      sessions.indexOf('async function recoverPending()'),
+      sessions.indexOf('.maybeSingle()'),
+    );
+    expect(recover).toMatch(/\.eq\('status', 'pending'\)\s*\.is\('responded_at', null\)/);
+  });
+
   it('useLiveMessageEdits actually implements the repair its own comment already argued for', () => {
     const chat = withoutComments(read('src/api/chat.ts'));
     const editBranch = chat.slice(
@@ -6029,6 +6069,40 @@ describe('the photo pipeline downscales, sends in order, and retries what it can
     expect(chat).toContain('useRetryVoiceSend(');
     expect(chat).toContain('retryImage(message)');
     expect(chat).toContain('retryVoice(message)');
+  });
+});
+
+describe('the stories kill switch is a field the admin console can publish', () => {
+  /*
+   * 143 publishes `stories_enabled` into the live kill_switches payload, and
+   * the console validates every draft of that domain against the registry,
+   * which rejects any key it does not list ("Unknown field"). So the registry
+   * entry is load-bearing: without it every kill-switch publish fails,
+   * voice and video included, and nothing else in the repo read the key, so a
+   * cleanup that removed it passed every suite. Run, not read: the registry's
+   * own validatePayload over the payload a console draft carries.
+   */
+  const registry = require('../admin/lib/config-registry') as typeof import('../admin/lib/config-registry');
+
+  it('lists stories_enabled on kill_switches, a boolean that is ON by default', () => {
+    const domain = registry.getDomain('kill_switches');
+    expect(domain).toBeDefined();
+    expect(domain!.fields.find(f => f.key === 'stories_enabled')).toMatchObject({
+      type: 'boolean',
+      default: true,
+    });
+    expect(read('supabase/migrations/143_stories.sql')).toContain(
+      "jsonb_build_object('stories_enabled', true)",
+    );
+  });
+
+  it('validates the payload 143 publishes, which fails with Unknown field without the entry', () => {
+    const domain = registry.getDomain('kill_switches')!;
+    const published = Object.fromEntries(domain.fields.map(f => [f.key, f.default]));
+    expect(published.stories_enabled).toBe(true);
+    expect(registry.validatePayload(domain, published)).toEqual([]);
+    const without = { ...domain, fields: domain.fields.filter(f => f.key !== 'stories_enabled') };
+    expect(registry.validatePayload(without, published)).toEqual(['Unknown field "stories_enabled".']);
   });
 });
 
@@ -7522,8 +7596,10 @@ describe('the member always starts the session, whoever wrote first', () => {
   });
 
   it('keeps conversation push copy warm and text-free', () => {
-    expect(withoutComments(read('index.js'))).toContain(
-      'wants to have a chat with you',
+    // The background handler's copy lives with the foreground one in push.ts
+    // (`handleBackgroundPush`), which index.js registers.
+    expect(withoutComments(read('src/lib/push.ts'))).toContain(
+      "const MESSAGE_BODY = 'wants to have a chat with you';",
     );
     /*
      * The call kind moved out of Kotlin and into res/values/strings.xml on

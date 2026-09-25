@@ -270,15 +270,18 @@ export function SettingsSheet({
    * out is very slow -- why?").
    *
    * None of that work needs to block the exit. Dropping the local session, the
-   * cache and the store is synchronous and is what "signed out" actually means
-   * on this device, so it happens now and the screen leaves immediately. The
-   * remote teardown runs after, unawaited, and in an order that still has a
-   * valid session when it needs one: the push token is revoked BEFORE the
-   * session it authenticates with goes away.
+   * cache and the store is what "signed out" actually means on this device, and
+   * all three are synchronous: the cache and the store here, the stored
+   * session inside `beginSignOut`, before its first await. This comment used
+   * to say so while the session was in fact removed last, by auth-js after
+   * `/logout` returned, so a sign-out followed by a swipe-away launched back
+   * into the account. The remote teardown runs after, unawaited, as the
+   * leaving account on a client of its own (the push row delete, then
+   * `/logout`), so the next sign-in neither waits for it nor is ended by it.
    *
-   * The failure mode if the process dies mid-teardown is a stale `push_tokens`
-   * row, which `startPush` overwrites on the next sign-in on this device — the
-   * same self-healing path a crash during sign-out always relied on.
+   * If the process dies mid-teardown, the session is already gone from the
+   * device, and the next launch finishes the remote half
+   * (`resumePendingSignOuts`), so the push row stops ringing this phone.
    */
   const onSignOutPress = useCallback(() => {
     queryClient.clear();

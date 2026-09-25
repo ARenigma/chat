@@ -50,6 +50,19 @@ export function recordAttempt(nonce: string): void {
   writeOutbox(withAttempt(readOutbox(), nonce));
 }
 
+/**
+ * Forget every queued send. Run by sign-out and account deletion, in the
+ * synchronous device half (`leaveDevice` in src/api/auth.ts). An entry names
+ * a conversation and carries the message text, and nothing about who queued
+ * it: `drainAllOutbox` replays every entry as whoever is signed in when it
+ * runs. Kept past a sign-out, one account's unsent messages were replayed
+ * under the next account's session, and sent as it when that account was the
+ * other party, besides sitting on the device in plaintext for the 7-day TTL.
+ */
+export function clearOutbox(): void {
+  storage.remove(KEY);
+}
+
 export function pendingFor(conversationId: string): OutboxEntry[] {
   return forConversation(readOutbox(), conversationId);
 }

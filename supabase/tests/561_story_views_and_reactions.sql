@@ -25,7 +25,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(39);
+select plan(40);
 
 -- ── Fixture ────────────────────────────────────────────────────────────────
 insert into auth.users (id) values
@@ -295,7 +295,7 @@ select is(
 set local request.jwt.claims = '{"sub":"c5610000-0000-4561-8000-000000000010","role":"authenticated"}';
 select is(
   (select string_agg(display_name || ':' || coalesce(reaction, '-') || ':' || coalesce(avatar_url, '-'),
-                     ',' order by viewer_id)
+                     ',' order by display_name <> 'quiet_lark', display_name)
    from public.story_viewers('c5610000-0000-4561-8000-0000000000a1')),
   'quiet_lark:❤️:clay:bloom,'
   || public.member_handle('c5610000-0000-4561-8000-000000000002') || ':😂:-',
@@ -309,8 +309,20 @@ select is(
 );
 select is(
   pg_get_function_result('public.story_viewers(uuid)'::regprocedure),
-  'TABLE(viewer_id uuid, display_name text, avatar_url text, viewed_at timestamp with time zone, reaction text)',
+  'TABLE(display_name text, avatar_url text, viewed_at timestamp with time zone, reaction text)',
   '27. the viewer list has a clay avatar at most: no URL, and no photo key a provider viewer needed'
+);
+-- Every commenter is a viewer (147), so an id here was the commenter's
+-- account id that 148 and 152 withhold, handed to the provider.
+select is(
+  (select count(*)::int
+   from pg_proc p
+   join lateral unnest(coalesce(p.proallargtypes, p.proargtypes::oid[]), p.proargmodes)
+     as a(t, m) on a.m = 't'
+   where p.oid = 'public.story_viewers(uuid)'::regprocedure
+     and a.t = 'uuid'::regtype),
+  0,
+  '27b. ...and no uuid column: no viewer''s account id reaches the provider'
 );
 
 -- A block made after the fact: 001 blocks the provider.

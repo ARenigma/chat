@@ -17,7 +17,13 @@
 --
 -- Identity fields follow story_comment_feed's rules (148): a chosen name or
 -- the handle, and an avatar_url only when it is a clay pick, never a URL a
--- viewer could have pointed at their own server. Viewers are members, as
+-- viewer could have pointed at their own server. And no account id: the list
+-- used to return each viewer's profiles.id, and every commenter is a viewer
+-- (post_story_comment records the view, 147), so it handed the provider the
+-- member ids 148 and 152 withhold on purpose ("a stranger does not need a
+-- member's account id"), ready for any RPC that takes one. The provider
+-- reads a viewer by name, as the audience reads a commenter; the client has
+-- no use for the id, and a list of names needs no row key beyond its order. Viewers are members, as
 -- commenters are: only a member can see somebody else's story (143), and
 -- mark_story_viewed records nobody else. So a member's rules are the only
 -- ones needed, and there is no branch for a provider's photo. (The draft had
@@ -26,7 +32,6 @@
 
 create or replace function public.story_viewers(p_story_id uuid)
 returns table (
-  viewer_id    uuid,
   display_name text,
   avatar_url   text,
   viewed_at    timestamptz,
@@ -53,12 +58,9 @@ begin
 
   return query
   select
-    v.viewer_id,
-    coalesce(
-      case when p.role = 'provider' or p.profile_completed_at is not null
-           then nullif(btrim(p.display_name), '') end,
-      public.member_handle(p.id)
-    ),
+    -- The feed's name rule (148), so the provider reads no name the audience
+    -- could not.
+    public.public_display_name(p),
     case when p.avatar_url like 'clay:%' then p.avatar_url end,
     v.viewed_at,
     r.emoji
@@ -109,9 +111,13 @@ as $$
     (select count(*)::int from public.story_reactions r
       where r.story_id = s.id
         and not public.is_blocked_pair(s.provider_id, r.member_id)),
+    -- story_comment_is_visible's filters (147), a suspended or banned
+    -- author's comments included, since the feed hides those too.
     (select count(*)::int from public.story_comments c
+      join public.profiles a on a.id = c.author_id
       where c.story_id = s.id
         and c.deleted_at is null
+        and (a.suspended_until is null or a.suspended_until <= now())
         and not public.is_blocked_pair(s.provider_id, c.author_id))
   from public.stories s
   where s.provider_id = auth.uid()

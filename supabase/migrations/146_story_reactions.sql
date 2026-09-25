@@ -73,6 +73,16 @@ begin
     return json_build_object('success', false, 'error', 'UNAUTHORIZED');
   end if;
 
+  -- The caller's own profile first, FOR KEY SHARE, the lock the insert's
+  -- foreign key check would take anyway, but before anything takes the story.
+  -- The insert used to lock the story (its foreign key) and then this
+  -- profile, the reverse of an account deletion (150), whose prologue holds
+  -- the peer's profile FOR UPDATE and whose cascade then reaches the story:
+  -- each held what the other waited on. Taken first, this waits for that
+  -- deletion to commit and then finds the story gone (566's 24).
+  -- https://www.postgresql.org/docs/16/explicit-locking.html#LOCKING-ROWS
+  perform 1 from public.profiles where id = v_uid for key share;
+
   if not public.story_is_visible(p_story_id) then
     return json_build_object('success', false, 'error', 'NOT_FOUND');
   end if;

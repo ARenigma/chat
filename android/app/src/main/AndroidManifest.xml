@@ -330,6 +330,12 @@
           </intent-filter>
       </receiver>
 
+      <!-- The lock-screen Decline, run as a headless JS task so it works with the
+           app not running (reactnative.dev/docs/headless-js-android). -->
+      <service
+          android:name=".ChatRequestDeclineService"
+          android:exported="false" />
+
       <receiver
           android:name=".ChatRequestReceiver"
           android:exported="false">

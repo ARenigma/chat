@@ -117,6 +117,9 @@ async function send(bearer: string, projectId: string, row: Candidate): Promise<
             title: 'Someone’s around to talk',
             body: `${who} is here right now`,
             ...(row.provider_avatar_url ? { senderAvatar: row.provider_avatar_url } : {}),
+            // Whose nudge this is (send-push's reason, migration 143): the
+            // device shows a push only to the account signed in on it.
+            recipientId: row.member_id,
           },
         },
       }),

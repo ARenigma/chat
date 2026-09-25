@@ -14,11 +14,14 @@ import {
   onTokenRefresh,
   requestPermission,
 } from '@react-native-firebase/messaging';
-import { supabase } from './supabase';
+import { SESSION_STORAGE_KEY, supabase } from './supabase';
+import { storage } from './storage';
 import {
   ensureConversationChannel,
+  notifyCall,
   notifyChatRequest,
   notifyConversation,
+  notifyEngagement,
   pushLog,
   readCallPush,
   readConversationPush,
@@ -28,9 +31,13 @@ import {
   type NotifyOptions,
 } from './conversations';
 import {
+  declinedAt,
   foregroundPushAction,
   getRingingConversation,
   getViewingConversation,
+  isViewingCovered,
+  recordPosted,
+  sentBeforeDecline,
 } from './viewingConversation';
 
 /**
@@ -441,6 +448,23 @@ export async function startPush(): Promise<() => void> {
   const started = generation;
 
   /*
+   * And the account it starts for. The generation cannot catch a start that
+   * began AFTER the sign-out: its own `halt` takes a fresh value that no later
+   * teardown moves. That start is real. App.tsx's ready-phase effect awaited
+   * the permissions config and then called this with no check, so a sign-out
+   * while the config RPC was pending was followed by a start that registered
+   * the token again and left listeners nobody owned. The account is read
+   * again before each step that writes or listens, and a start whose session
+   * is gone, or is now somebody else's, stands down. Sign-out drops the local
+   * session first (`beginSignOut`), so its start sees no account at all.
+   */
+  const owner = await sessionUserId();
+  if (owner === null) {
+    pushLog('info', 'register start: skipped, no session');
+    return () => undefined;
+  }
+
+  /*
    * Wait out a sign-out teardown still in flight before registering anything.
    *
    * Sign-out puts the sign-in screen up at once and tears push down behind it
@@ -462,13 +486,17 @@ export async function startPush(): Promise<() => void> {
    * one has something to silence.
    */
   await ensureConversationChannel();
-  if (started !== generation) {
+  if (started !== generation || (await sessionUserId()) !== owner) {
     // Signed out while the channel was created: no permission dialog for a
     // session that has already ended.
     return () => undefined;
   }
 
   const granted = await ensurePermission();
+  if ((await sessionUserId()) !== owner) {
+    pushLog('info', 'register start: dropped, the session changed meanwhile');
+    return () => undefined;
+  }
   if (granted) {
     await register('start', started);
   } else {
@@ -478,13 +506,67 @@ export async function startPush(): Promise<() => void> {
     // picked up on the way back rather than at the next cold start.
     pushLog('info', 'register start: skipped, notifications not granted');
   }
-  if (started !== generation) {
+  if (started !== generation || (await sessionUserId()) !== owner) {
     // Signed out, or started again, while this one waited on the dialog or
     // the RPC. Whoever moved the generation owns what happens next; App.tsx
     // may already have run its cleanup, so this must not leave listeners.
     return () => undefined;
   }
   return listen();
+}
+
+/** The signed-in account on the app's client, or null; a local read. */
+async function sessionUserId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The ready phase's push start: read the notification policy, then
+ * `startPush`, and give back the cleanup for the effect to return.
+ *
+ * Lifted out of App.tsx's effect so it can be driven. The effect used to await
+ * the permissions config and call `startPush` with nothing to say its cleanup
+ * had already run, so a sign-out during a slow `get_public_config` (up to the
+ * 30 s request ceiling) was followed by a start for the session that had just
+ * ended. Now a cleanup before the config arrives means no start at all, and a
+ * cleanup while the start is still running stops what it returns the moment
+ * it does. `startPush` checks the account itself as well, for any caller.
+ *
+ * Best-effort, as before: permission is opt-in, and a failure anywhere leaves
+ * the app usable without push.
+ */
+export function startPushWhenConfigured(
+  notificationLevel: () => Promise<'optional' | 'required'>,
+): () => void {
+  let cancelled = false;
+  let stop: (() => void) | undefined;
+  void (async () => {
+    try {
+      const level = await notificationLevel();
+      if (cancelled) {
+        return;
+      }
+      // So ensurePermission() knows whether to show the blocked-settings alert.
+      setNotificationPolicy(level);
+      const unsubscribe = await startPush();
+      if (cancelled) {
+        unsubscribe();
+        return;
+      }
+      stop = unsubscribe;
+    } catch {
+      // Push registration is best-effort; failures here do not affect boot.
+    }
+  })();
+  return () => {
+    cancelled = true;
+    stop?.();
+  };
 }
 
 /**
@@ -501,44 +583,265 @@ export async function startPush(): Promise<() => void> {
  * (`drainRegistrations`, bounded by `STOP_DRAIN_MS`), so a late
  * `register_push_token` cannot land after the delete and recreate the row.
  *
- * A sign-in that lands while this is still running is safe from both sides:
- * `startPush` waits for the teardown (`teardown`) before it registers, and
- * every sign-in entry point in auth.ts waits for the whole sign-out
- * (`beginSignOut`, this then `signOut`) before it starts a session, so the old
- * `signOut()` can no longer end the new one and this delete cannot remove the
- * new user's row or token.
+ * A sign-in that lands while this is still running is safe: `startPush` waits
+ * for the teardown (`teardown`) before it registers, so this delete cannot
+ * remove the new user's row and `deleteToken` cannot revoke the token they
+ * register. The sign-in itself does not wait for this: `beginSignOut` drops
+ * the old session on the device first, and this delete runs as the old
+ * account on a client of its own.
  */
-export function stopPush(): Promise<void> {
+export function stopPush(
+  account: RowDeleter | null | Promise<RowDeleter | null> = supabase,
+): Promise<boolean> {
   // First, so nothing re-registers the row this is about to delete.
   halt();
-  const run = revoke();
-  // `startPush` awaits this; it must never reject into a sign-in.
-  teardown = run.catch(() => undefined);
+  const run = revoke(account);
+  /*
+   * `startPush` awaits this; it must never reject into a sign-in. Chained onto
+   * the teardown before it, never put in its place: two pending sign-outs
+   * resumed at launch run two teardowns, and replacing the first with the
+   * second let a start wait for the fast one only. The slow one's
+   * `deleteToken` then landed after the next account had registered, and
+   * revoked that account's token.
+   */
+  teardown = Promise.all([teardown, run.catch(() => undefined)]).then(() => undefined);
   return run;
 }
 
-async function revoke(): Promise<void> {
+/**
+ * `stopPush`'s account half alone: this device's row deleted as `account`,
+ * and nothing done to the device. No `halt`, which would stop the listeners
+ * of whoever is signed in now, and no `deleteToken`, which would revoke the
+ * token they registered. What a sign-out's retry runs when somebody signed
+ * in after the sign-out it is finishing (`finishPendingSignOuts` in
+ * src/api/auth.ts). Safe against that account's own registration in either
+ * order, because the delete is the leaving account's rows only
+ * (unregister_push_token, migration 143): if the next account registered the
+ * same token first, the row is theirs and stays. Resolves whether the row is
+ * known gone.
+ */
+export async function unregisterPush(
+  account: RowDeleter | null | Promise<RowDeleter | null>,
+): Promise<boolean> {
+  try {
+    const db = await account;
+    if (db === null) {
+      return false;
+    }
+    const token = await getToken(getMessaging());
+    return token === '' || (await unregisterRow(db, token));
+  } catch (err) {
+    pushLog('warn', `unregister: ${detail(String(err), '')}`);
+    return false;
+  }
+}
+
+/**
+ * What deletes the row: a client authenticated as the account signing out.
+ *
+ * Passed in because sign-out drops the device's session before this runs
+ * (`beginSignOut`), and the app's client may already hold the next account's
+ * session, under which the delete would find nothing of the old account's.
+ * Sign-out passes the client that holds the old session (`signOutClient`),
+ * possibly still authenticating, so the teardown starts, and holds
+ * `startPush` off, at once. `null` is no account to delete as, and skips the
+ * delete; the FCM token is still deleted, so a row left behind points at a
+ * token FCM calls UNREGISTERED, which send-push forgets. Account deletion
+ * passes nothing: the row went with the user (migration 008's cascade).
+ */
+type RowDeleter = Pick<typeof supabase, 'rpc'>;
+
+/**
+ * Delete this device's row as `db`'s account; whether that is known done.
+ *
+ * Through unregister_push_token (migration 143), never a DELETE on the table.
+ * 008 gives push_tokens a DELETE policy and no SELECT policy, and a DELETE
+ * whose WHERE reads a column applies the SELECT policies too, so
+ * `delete().eq('token', token)` matched nothing and returned no error: every
+ * sign-out left its row, and when `deleteToken` failed as well, the old
+ * account's pushes went on reaching this phone.
+ * https://www.postgresql.org/docs/16/sql-createpolicy.html
+ *
+ * Promise.resolve for `register`'s reason: one request per call.
+ */
+async function unregisterRow(db: RowDeleter, token: string): Promise<boolean> {
+  const { error } = await Promise.resolve(db.rpc('unregister_push_token', { p_token: token }));
+  if (error !== null) {
+    const why = `${error.code || 'no code'} ${detail(error.message, token)}`;
+    pushLog('warn', `unregister: failed, ${why}`);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The teardown's work, and whether it stopped this device receiving the
+ * account's pushes: true once the row is gone or the token itself is
+ * revoked (a row naming a dead token delivers nothing, and send-push forgets
+ * it). False only when both failed, and then the sign-out keeps its pending
+ * entry to try again (`tellServer` in src/api/auth.ts); it used to swallow
+ * every failure here and forget the entry.
+ */
+async function revoke(account: RowDeleter | null | Promise<RowDeleter | null>): Promise<boolean> {
+  let rowGone = false;
   try {
     await drainRegistrations(STOP_DRAIN_MS);
     const token = await getToken(getMessaging());
-    if (token !== '') {
-      await supabase.from('push_tokens').delete().eq('token', token);
+    const db = await account;
+    if (token !== '' && db !== null) {
+      rowGone = await unregisterRow(db, token);
     }
-    await deleteToken(getMessaging());
   } catch (err) {
-    if (__DEV__) {
-      console.warn(`push: could not revoke token, ${String(err)}`);
-    }
+    pushLog('warn', `stop: could not delete the row, ${detail(String(err), '')}`);
+  }
+  // Separately, so a failed row delete still revokes the token.
+  try {
+    await deleteToken(getMessaging());
+    return true;
+  } catch (err) {
+    pushLog('warn', `stop: could not revoke the registration, ${detail(String(err), '')}`);
+    return rowGone;
   }
 }
 
 /**
  * The line a conversation notification shows for a message. The SAME string
- * index.js's background handler passes, because a foreground post and a
- * background post land on the same notification and extend one transcript;
- * `__tests__/pushForeground.test.ts` holds the two together.
+ * for the foreground and the background handler, because a foreground post
+ * and a background post land on the same notification and extend one
+ * transcript; both handlers are below, so they share the constant.
  */
 const MESSAGE_BODY = 'wants to have a chat with you';
+
+/**
+ * Whether any account is signed in on this device: the stored session, read
+ * straight from MMKV, which is synchronous and so answers the same in a
+ * headless context as in the app (src/lib/storage.ts).
+ *
+ * Both push handlers ask this first, and App.tsx asks it of a deep link. A
+ * sign-out drops the stored session at once and leaves the server half (the
+ * push_tokens row, the FCM token) to the network (`beginSignOut` in
+ * src/api/auth.ts), so on a weak connection the row and the token outlive the
+ * session, and FCM keeps delivering the old account's pushes. Nothing on the
+ * device used to check, and each one was posted to a signed-out phone with
+ * the peer's name and a pushed shortcut: the disclosure the pending sign-out
+ * exists to prevent.
+ */
+export function signedInOnDevice(): boolean {
+  return storage.get(SESSION_STORAGE_KEY) !== null;
+}
+
+/**
+ * The account signed in on this device, from the stored session (auth-js
+ * stores the whole session, `user` included); null when nobody is, or the
+ * stored value names no user. Synchronous, for `signedInOnDevice`'s reason.
+ */
+export function storedAccountId(): string | null {
+  const raw = storage.get(SESSION_STORAGE_KEY);
+  if (raw === null) {
+    return null;
+  }
+  try {
+    const id = (JSON.parse(raw) as { user?: { id?: unknown } } | null)?.user?.id;
+    return typeof id === 'string' ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a push is for the account signed in here, by the `recipientId` the
+ * senders now put in every payload (the row's owner, migration 143).
+ *
+ * `signedInOnDevice` answers whether ANYONE is signed in, and that was the
+ * whole gate. A sign-in no longer waits for the previous account's server
+ * half (`afterPendingSignOut` in src/api/auth.ts), so while that half was
+ * still on the wire the old account's row kept delivering, and each of its
+ * pushes was posted inside the new account's session: the old peer's name, a
+ * long-lived shortcut, a tap that opened the old peer's chat. A push with no
+ * `recipientId` comes from a sender deployed before it and is taken as
+ * before; one naming anybody else is not this device's to show.
+ */
+export function pushIsForSignedInAccount(
+  data: Readonly<Record<string, string | object>> | undefined,
+): boolean {
+  const recipient = data?.recipientId;
+  if (typeof recipient !== 'string' || recipient === '') {
+    return true;
+  }
+  return recipient === storedAccountId();
+}
+
+/** What either handler reads off an FCM message. */
+interface IncomingPush {
+  readonly data?: Readonly<Record<string, string | object>>;
+}
+
+/**
+ * The FCM background handler's body. index.js registers it at module scope
+ * (see there for why it has to be), and it lives here, next to
+ * `onForegroundPush`, so the two route every kind in the same order with the
+ * same copy and the same two checks.
+ *
+ * With nobody signed in it posts nothing, and it is the moment to finish what
+ * the sign-out left undone: `finishSignOuts` (`finishPendingSignOuts` in
+ * src/api/auth.ts) retries the pending server halves, un-latched. A headless
+ * process never mounts the boot effect that retries them once per launch, so
+ * without this a phone that signed out offline and was then left alone went
+ * on receiving the old account's pushes until the app was next opened.
+ * Awaited, since the headless task lives only as long as this promise
+ * (https://rnfirebase.io/messaging/usage#background--quit-state-messages).
+ *
+ * A request's push sent no later than this device's Decline of it is dropped
+ * too (`sentBeforeDecline`), as in the foreground. RNFirebase runs this on the
+ * live ReactContext when the process is only backgrounded, so a provider who
+ * declined in the app and pressed Home at once has the Decline in memory here,
+ * and its late push used to alert for a request already answered.
+ */
+export async function handleBackgroundPush(
+  remote: IncomingPush,
+  finishSignOuts: () => Promise<void>,
+): Promise<void> {
+  if (!signedInOnDevice()) {
+    pushLog('info', 'background push: dropped, nobody is signed in on this device');
+    await finishSignOuts().catch(() => undefined);
+    return;
+  }
+  // Another account's push is the same unfinished sign-out, delivered to
+  // whoever signed in next: dropped, and the sign-out finished (as far as it
+  // can go with somebody signed in; see finishPendingSignOuts).
+  if (!pushIsForSignedInAccount(remote.data)) {
+    pushLog('info', 'background push: dropped, it is for another account');
+    await finishSignOuts().catch(() => undefined);
+    return;
+  }
+  const call = readCallPush(remote.data);
+  if (call !== null) {
+    await notifyCall(call);
+    return;
+  }
+  const nudge = readEngagementPush(remote.data);
+  if (nudge !== null) {
+    await notifyEngagement(nudge);
+    return;
+  }
+  const push = readConversationPush(remote.data);
+  if (push === null) {
+    return;
+  }
+  if (sentBeforeDecline(push, declinedAt(push.conversationId))) {
+    pushLog('info', `background ${push.requestId ? 'contact' : 'message'}: dropped, sent before this device declined`);
+    return;
+  }
+  // What a Decline landing meanwhile asks before it clears (`postedSince`).
+  recordPosted(push.conversationId, push.sentAt);
+  // A provider-initiated chat request carries a requestId (migration 105);
+  // route it to the notification with Accept/Decline action buttons.
+  if (push.requestId) {
+    await notifyChatRequest(push);
+    return;
+  }
+  await notifyConversation(push, MESSAGE_BODY);
+}
 
 /**
  * Every foreground delivery.
@@ -552,16 +855,30 @@ const MESSAGE_BODY = 'wants to have a chat with you';
  * Calls and nudges go to the app's own UI through `handlers`. A conversation
  * or contact push goes to the same native notification the background handler
  * posts, decided by `foregroundPushAction`: nothing for the conversation on
- * screen, a silent shade entry (no banner, no sound) for the one whose chat
- * request is ringing in the app, the in-app banner with no sound for any other
- * while the app is in use, alerting if AppState says it is not. The kinds are
- * read in index.js's order, so a push is never two things at once.
+ * screen or for a push sent before this device declined its request, a silent
+ * shade entry (no banner, no sound) for anything while a chat request is
+ * ringing in the app and not hidden under a sheet, the in-app banner with no
+ * sound for any other while the app is in use, alerting if AppState says it
+ * is not. The kinds are
+ * read in `handleBackgroundPush`'s order, so a push is never two things at once.
  */
 export function onForegroundPush(handlers: {
   onCall: (push: CallPush) => void;
   onEngagement: (push: EngagementPush) => void;
 }): () => void {
   return onMessage(getMessaging(), remote => {
+    // The same gate as the background handler: the signed-in tree that
+    // installed this can outlive the stored session by a render or two after
+    // a sign-out, and nothing that arrives then belongs to anybody here.
+    if (!signedInOnDevice()) {
+      pushLog('info', 'foreground push: dropped, nobody is signed in on this device');
+      return;
+    }
+    // And the same account (`pushIsForSignedInAccount`).
+    if (!pushIsForSignedInAccount(remote.data)) {
+      pushLog('info', 'foreground push: dropped, it is for another account');
+      return;
+    }
     const call = readCallPush(remote.data);
     if (call !== null) {
       handlers.onCall(call);
@@ -581,11 +898,14 @@ export function onForegroundPush(handlers: {
       getViewingConversation(),
       AppState.currentState === 'active',
       getRingingConversation(),
+      declinedAt(push.conversationId),
+      isViewingCovered(),
     );
     pushLog('info', `foreground ${push.requestId ? 'contact' : 'message'}: ${action}`);
     if (action === 'ignore') {
       return;
     }
+    recordPosted(push.conversationId, push.sentAt);
     // A ringing request's push is an in-app post too, on the same channel,
     // only silenced: in the shade, no banner over the ring.
     const options: NotifyOptions = {

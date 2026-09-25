@@ -104,6 +104,7 @@ async function send(
   opener: string,
   openerAvatar: string | null,
   openerId: string,
+  recipientId: string,
 ): Promise<boolean> {
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
@@ -125,6 +126,9 @@ async function send(
             title: `Hey, ${opener ?? 'Someone'} is here`,
             body: `${opener} just opened your chat`,
             ...(openerAvatar ? { senderAvatar: openerAvatar } : {}),
+            // Whose alert this is (send-push's reason, migration 143). The
+            // tokens were chosen by it: `push_tokens.user_id = peer_id`.
+            recipientId,
           },
         },
       }),
@@ -214,7 +218,7 @@ Deno.serve(async request => {
   const bearer = await accessToken(sa);
   let sent = 0;
   for (const t of targets) {
-    if (await send(bearer, sa.project_id, t.token, opener, directory?.avatar_url ?? null, openerId)) {
+    if (await send(bearer, sa.project_id, t.token, opener, directory?.avatar_url ?? null, openerId, peerId)) {
       sent += 1;
     }
   }

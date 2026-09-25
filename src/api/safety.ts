@@ -13,7 +13,7 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import type { Block, BlockedPerson, ReportReason } from '../lib/database.types';
+import type { BlockedPerson, ReportReason } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
 import { useStore } from '../store/useStore';
@@ -29,19 +29,30 @@ const safetyKeys = {
   myReports: ['my-reports'] as const,
 };
 
+/** One of the session's blocks, as the block set needs it. */
+type BlockEntry = Pick<BlockedPerson, 'handle' | 'blocked_id'>;
+
 /**
  * The session's own block list, the only part of the block graph it may read.
  *
  * Private on purpose. Callers want the answer to "have I blocked this person",
- * never the rows, and `Block[]` in the interface would invite somebody to read
- * `blocker_id` and conclude the list is symmetric. RLS returns only rows where
- * the caller is the blocker, so it never has been.
+ * never the rows, and rows in the interface would invite somebody to conclude
+ * the list is symmetric. The view returns only the caller's own blocks, so it
+ * never has been.
+ *
+ * From `blocked_people`, not the `blocks` table: the table shows a client
+ * only the blocks whose account it already knows (152), because block, read,
+ * unblock handed any provider the account id of anybody who commented on
+ * their story. The view lists every block, keyed by its handle, and names the
+ * blocked account for a provider or somebody the caller shares a
+ * conversation with, which is every block the set is for (a peer's thread, a
+ * provider's card).
  */
 function useBlocks() {
-  return useQuery<Block[]>({
+  return useQuery<BlockEntry[]>({
     queryKey: safetyKeys.blocks,
     queryFn: async () => {
-      const { data, error } = await supabase.from('blocks').select('*');
+      const { data, error } = await supabase.from('blocked_people').select('handle, blocked_id');
       if (error) {
         throw new Error(error.message);
       }
@@ -69,7 +80,20 @@ function useBlocks() {
  */
 export function useBlockedPeerIds(): ReadonlySet<string> {
   const { data } = useBlocks();
-  return useMemo(() => new Set((data ?? []).map(b => b.blocked_id)), [data]);
+  return useMemo(
+    () =>
+      new Set((data ?? []).flatMap(b => (b.blocked_id === null ? [] : [b.blocked_id]))),
+    [data],
+  );
+}
+
+/**
+ * The handle of this session's block of `peerId`, or undefined: what the
+ * chat's SafetySheet unblocks by, since an unblock is by handle (152).
+ */
+export function useBlockHandle(peerId: string | undefined): string | undefined {
+  const { data } = useBlocks();
+  return peerId === undefined ? undefined : data?.find(b => b.blocked_id === peerId)?.handle;
 }
 
 /**
@@ -89,7 +113,7 @@ export function useBlockedPeople() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('blocked_people')
-        .select('blocked_id, display_name, avatar_url, blocked_at')
+        .select('handle, blocked_id, display_name, avatar_url, blocked_at')
         .order('blocked_at', { ascending: false });
       if (error) {
         throw new Error(error.message);
@@ -135,18 +159,28 @@ export function useBlockUser() {
   });
 }
 
+/**
+ * Lift one of this session's blocks, by the block's handle (152), through
+ * `unblock_by_handle`. Not a DELETE on the table: a DELETE whose WHERE reads a
+ * column applies the table's SELECT policy, which hides a block of a
+ * commenter from its own blocker, so it lifted nothing. The function deletes
+ * the caller's own row with that handle and no one else's.
+ */
 export function useUnblockUser() {
   const queryClient = useQueryClient();
   const setNotice = useStore(s => s.setNotice);
 
   return useMutation<void, Error, string>({
-    mutationFn: async (peerId: string) => {
-      const { error } = await supabase.from('blocks').delete().eq('blocked_id', peerId);
+    mutationFn: async (handle: string) => {
+      const { data, error } = await supabase.rpc('unblock_by_handle', { p_handle: handle });
       if (error) {
         throw new Error(error.message);
       }
+      if (!data.success) {
+        throw new Error(data.error ?? 'unblock refused');
+      }
     },
-    onSuccess: (_void, peerId) => {
+    onSuccess: (_void, handle) => {
       tick();
       track('user_unblocked');
       setNotice('Unblocked.', 'confirm');
@@ -155,7 +189,7 @@ export function useUnblockUser() {
       // without this the Blocked screen would go on offering to unblock
       // somebody it just said was unblocked.
       queryClient.setQueryData<BlockedPerson[]>(safetyKeys.blockedPeople, prev =>
-        prev?.filter(p => p.blocked_id !== peerId),
+        prev?.filter(p => p.handle !== handle),
       );
       void queryClient.invalidateQueries({ queryKey: safetyKeys.blocks });
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });

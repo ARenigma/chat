@@ -9,6 +9,16 @@
  * (story_objects_to_purge, migration 151) and this function makes them go.
  * https://supabase.com/docs/guides/storage/management/delete-objects
  *
+ * The names come from claim_story_objects_to_purge, never from the plain
+ * list. Listing and removing are two calls with nothing holding them
+ * together, and a story created in between on a listed name lost its media to
+ * this function (Greptile P1 on bb32af4): create_story retried with the id of
+ * a story the provider had deleted. The claim records every name it returns
+ * in story_media_released, under the lock create_story takes, and
+ * create_story refuses every name recorded there, so no name this function
+ * holds can become a live story's before remove() reaches it. A re-check here
+ * would only narrow the gap; the claim closes it.
+ *
  * Called by dispatch_story_media_purge (151) from pg_cron with the service
  * role key. It deletes in a bucket no client may delete in, so it takes a
  * service_role caller only, as send-push does: `verify_jwt` alone would let
@@ -54,9 +64,9 @@ Deno.serve(async (request: Request) => {
   let removed = 0;
   let pages = 0;
   while (pages < MAX_PAGES) {
-    const { data, error } = await db.rpc('story_objects_to_purge', { p_limit: PAGE });
+    const { data, error } = await db.rpc('claim_story_objects_to_purge', { p_limit: PAGE });
     if (error) {
-      console.error('story_objects_to_purge', error.message);
+      console.error('claim_story_objects_to_purge', error.message);
       return Response.json({ removed, pages, error: 'list failed' }, { status: 500 });
     }
     const names = ((data ?? []) as Array<{ object_name: unknown }>)

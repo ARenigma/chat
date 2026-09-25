@@ -1,6 +1,11 @@
 import { Linking } from 'react-native';
 import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { SESSION_STORAGE_KEY, signOutClient, supabase } from '../lib/supabase';
+import type { Database } from '../lib/database.types';
+import { clearAllConversations } from '../lib/conversations';
+import { clearOutbox } from '../lib/outboxStore';
+import { resetViewingSignals } from '../lib/viewingConversation';
 import { reportSwallowed } from '../lib/sentry';
 import {
   GoogleCredentialError,
@@ -90,7 +95,7 @@ export const PROVIDER_LABEL: Record<SocialProvider, string> = {
 // and re-exported so callers that import from auth.ts keep working.
 // A contract test asserts this flag: see contract.test.ts 'phone sign-in stays off'.
 import { PHONE_AUTH_ENABLED } from '../config';
-import { stopPush } from '../lib/push';
+import { signedInOnDevice, storedAccountId, stopPush, unregisterPush } from '../lib/push';
 export { PHONE_AUTH_ENABLED };
 
 /**
@@ -819,7 +824,11 @@ export async function handleAuthDeepLink(
     // the opaque challenge expired while the browser was open. Do not silently
     // enter Google-only state: that would make later Truecaller sign-ins look
     // unowned again. Remove the fresh session and require a new Truecaller proof.
-    await supabase.auth.signOut();
+    // Through `signOut`, like every take-back below: local scope, on a client
+    // of its own, and tracked (see the sign-out notes). The bare
+    // `supabase.auth.signOut()` is auth-js's GLOBAL scope, which revoked every
+    // session of that Google account, on every device, over a failed link.
+    await signOut();
     return {
       status: 'failed',
       message:
@@ -833,7 +842,7 @@ export async function handleAuthDeepLink(
       return { status: 'signedIn' };
     } catch {
       clearPendingTruecallerGoogleLink();
-      await supabase.auth.signOut();
+      await signOut();
       return {
         status: 'failed',
         message: 'Google sign-in worked, but we could not link your verified number. Please retry.',
@@ -842,7 +851,7 @@ export async function handleAuthDeepLink(
   }
   // A marked link callback without a staged challenge cannot be trusted to
   // identify what Truecaller proof it belongs to.
-  await supabase.auth.signOut();
+  await signOut();
   return {
     status: 'failed',
     message: 'The verified-number link was not found. Start with Truecaller again.',
@@ -850,19 +859,54 @@ export async function handleAuthDeepLink(
 }
 
 /*
- * The sign-out still finishing, which every sign-in waits for first.
+ * Sign-out, in two halves: the device first, then the server.
  *
- * Settings leaves the signed-in UI the moment Sign out is tapped and ends the
- * session behind it (`beginSignOut`): push teardown, which can wait up to
- * STOP_DRAIN_MS for a registration on the wire, then `signOut`. Somebody who
- * signs straight back in, or into another account, during that window got a
- * new Supabase session that the old `signOut()` then ended. Supabase keeps one
- * session per client, so the stale call cannot tell the two apart; the only
- * safe order is for the new sign-in to start after the old sign-out is done.
- * Never rejects, so a failed sign-out cannot turn into a failed sign-in.
+ * The DEVICE half is the stored session going, and it is the first thing a
+ * sign-out does, synchronously, before any await. It used to be the last:
+ * auth-js removes the stored session only after `/logout` returns
+ * (`_signOut` calls `admin.signOut`, then `_removeSession`), and this app ran
+ * the push teardown before even that, so the session sat in MMKV for as long
+ * as the network took, up to STOP_DRAIN_MS plus two 30 s request ceilings. A
+ * person who tapped Sign out and swiped the app away in that window launched
+ * straight back into the account they had just left. MMKV is synchronous
+ * (src/lib/storage.ts), so removing the key is done the moment it is called;
+ * `supabase.auth.signOut({ scope: 'local' })` then finds nothing stored, makes
+ * no request, and does the rest of auth-js's local clean-up (the PKCE
+ * verifiers, SIGNED_OUT to every listener). A refresh already on the wire
+ * sees the key gone and discards what it got back (auth-js's commit guard in
+ * `_callRefreshToken`). This half also takes the account's notifications and
+ * shortcuts off the device and forgets the chat and ring signals.
+ *
+ * The SERVER half needs the old account's identity: the push_tokens row is
+ * deleted as that account (unregister_push_token, migration 143), and
+ * `/logout` revokes its session. Both
+ * run on a client of their own that holds the dropped session in memory
+ * (`signOutClient`), never on the app's client, which may by then hold the
+ * next account's session: ending the old session through the app's client is
+ * what ended new ones, because the stale call removed whatever session was
+ * stored when it returned. `/logout` is scoped to that one session
+ * (`scope: 'local'`), not every session of the user as the bare `signOut()`
+ * default does: a person who signs straight back into the same account would
+ * otherwise have the new session revoked by the old sign-out's request
+ * arriving after it. Signing out on this device no longer signs the same
+ * account out on another; that is the deviation, stated.
+ *
+ * Until the server half is done, the dropped session is kept under
+ * PENDING_SIGN_OUT_KEY, so a process that dies first finishes it on the next
+ * launch (`resumePendingSignOuts`), or at the next push that reaches the
+ * phone (`finishPendingSignOuts`, from `handleBackgroundPush`); otherwise the
+ * push row would keep delivering the old account's messages to a signed-out
+ * phone. Delivering, not showing: both push handlers post nothing while no
+ * session is stored. It is the same credential MMKV held a moment before,
+ * under another name, for as long as the requests take.
+ *
+ * So a sign-in waits only for the device half (`afterPendingSignOut`), which
+ * makes no request and is over in a few native calls. It used to wait for the
+ * whole chain with no cap; now there is nothing slow left to wait for.
  */
 let signOutInFlight: Promise<void> = Promise.resolve();
 
+/** Recorded before it runs any step, so a sign-in during it waits for it. */
 function trackSignOut(run: Promise<void>): void {
   const previous = signOutInFlight;
   signOutInFlight = Promise.all([previous, run.catch(() => undefined)]).then(
@@ -875,34 +919,336 @@ async function afterPendingSignOut(): Promise<void> {
   await signOutInFlight;
 }
 
+/** Dropped sessions whose server half has not finished, oldest first. */
+const PENDING_SIGN_OUT_KEY = 'auth.pendingSignOut';
+
+interface PendingSignOut {
+  /** The stored session exactly as auth-js wrote it. */
+  readonly session: string;
+  /** Whether this device's push registration still has to be revoked. */
+  readonly push: boolean;
+}
+
+function readPending(): PendingSignOut[] {
+  const raw = storage.get(PENDING_SIGN_OUT_KEY);
+  if (raw === null) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (entry): entry is PendingSignOut =>
+            typeof entry === 'object' &&
+            entry !== null &&
+            typeof (entry as PendingSignOut).session === 'string' &&
+            typeof (entry as PendingSignOut).push === 'boolean',
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePending(entries: readonly PendingSignOut[]): void {
+  if (entries.length === 0) {
+    storage.remove(PENDING_SIGN_OUT_KEY);
+  } else {
+    storage.set(PENDING_SIGN_OUT_KEY, JSON.stringify(entries));
+  }
+}
+
+function forgetPending(entry: PendingSignOut): void {
+  writePending(readPending().filter(other => other.session !== entry.session));
+}
+
+/** The entry's push half is done; a retry has only the session to end. */
+function markPushDone(entry: PendingSignOut): void {
+  writePending(
+    readPending().map(other =>
+      other.session === entry.session ? { session: other.session, push: false } : other,
+    ),
+  );
+}
+
 /**
- * Sign out without the caller waiting: revoke this device's push token while
- * the session that authorises the delete still exists, then end the session.
- * Recorded at once, so a sign-in during either step waits for both.
+ * The device half. Everything before the first `await` runs the moment this
+ * is called, which is the point: from then on no launch finds the session.
+ * `remember` keeps the dropped session for the server half; account deletion
+ * passes false, since there is no session left on the server to end.
+ */
+function leaveDevice(remember: { push: boolean } | null): {
+  local: Promise<void>;
+  pending: PendingSignOut | null;
+} {
+  const stored = storage.get(SESSION_STORAGE_KEY);
+  const pending = stored !== null && remember !== null ? { session: stored, push: remember.push } : null;
+  if (pending !== null) {
+    writePending([...readPending(), pending]);
+  }
+  storage.remove(SESSION_STORAGE_KEY);
+  // The queued sends are this account's too, and have no owner to be told
+  // apart by (outboxStore.ts `clearOutbox`).
+  clearOutbox();
+  resetViewingSignals();
+  clearPendingTruecallerGoogleLink();
+  const local = (async () => {
+    await clearAllConversations();
+    // Two independent sessions can exist after a Firebase phone sign-in — the
+    // Supabase one the app runs on, and a Firebase one that is normally already
+    // dropped at verify time. Sign both out so a stale Firebase session can never
+    // silently re-mint a Supabase session on a later exchange.
+    await firebaseSignOut();
+    // Nothing is stored any more, so this makes no request (see above).
+    await supabase.auth.signOut({ scope: 'local' });
+  })();
+  return { local, pending };
+}
+
+/** The stored session's two tokens, or null for anything that is not one. */
+function tokensOf(entry: PendingSignOut): { access_token: string; refresh_token: string } | null {
+  try {
+    const parsed = JSON.parse(entry.session) as { access_token?: unknown; refresh_token?: unknown };
+    return typeof parsed.access_token === 'string' && typeof parsed.refresh_token === 'string'
+      ? { access_token: parsed.access_token, refresh_token: parsed.refresh_token }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The server half's client, authenticated as the dropped session, or null
+ * when it cannot be (no session, or the server refused it). `setSession`
+ * refreshes an access token that has already expired, in that client's memory
+ * only, so an old token still gets the delete and the `/logout` through.
+ */
+async function authenticateAs(entry: PendingSignOut): Promise<SupabaseClient<Database> | null> {
+  const tokens = tokensOf(entry);
+  if (tokens === null) {
+    return null;
+  }
+  const client = signOutClient();
+  const { error } = await client.auth.setSession(tokens);
+  if (error) {
+    throw error;
+  }
+  return client;
+}
+
+/**
+ * How much of the push registration a server half takes down.
+ *
+ *   - `device`: all of it (`stopPush`): registration halted, the row deleted
+ *     as the old account, the FCM token deleted. Only while nobody is signed
+ *     in on this device, because `halt` stops whatever listeners are running
+ *     and `deleteToken` revokes whatever token the device holds, both of
+ *     which are the next account's once somebody has signed in.
+ *   - `account`: only the old account's row, as that account
+ *     (`unregisterPush`), for a retry that runs with somebody signed in.
+ *   - `none`: nothing; the entry's push half is done, or never started.
+ */
+type PushHalf = 'device' | 'account' | 'none';
+
+/**
+ * The server half: the push registration (`push`), then the session.
+ *
+ * Kept for the next attempt when it failed on the network, and when the push
+ * half did not finish: then `/logout` is not sent at all, because the old
+ * session is the only identity that can still delete the old account's row,
+ * and a revoked session cannot. That used to be swallowed: a failed token
+ * delete and a row delete that matched nothing (migration 143) went on to
+ * `/logout`, forgot the entry, and the row kept delivering. A push half that
+ * finished is written down (`markPushDone`), so a retry after a failed
+ * `/logout` never tears push down twice. A refusal (a session already
+ * revoked) is final and is dropped, push half or not: nothing is left that
+ * could delete as that account.
+ */
+async function tellServer(entry: PendingSignOut | null, push: PushHalf): Promise<void> {
+  const account = entry === null ? Promise.resolve(null) : authenticateAs(entry);
+  // Started now, not after the account resolves: `stopPush` halts
+  // registration and sets the teardown `startPush` waits on in its first
+  // step, and only its row delete waits for the account.
+  const pushDone =
+    push === 'device'
+      ? stopPush(account.catch(() => null))
+      : push === 'account'
+        ? unregisterPush(account.catch(() => null))
+        : Promise.resolve(true);
+  let retry = false;
+  try {
+    const client = await account;
+    const pushed = await pushDone;
+    if (entry !== null && push !== 'none' && pushed) {
+      markPushDone(entry);
+    }
+    if (client !== null) {
+      if (pushed) {
+        const { error } = await client.auth.signOut({ scope: 'local' });
+        retry = error !== null && isAuthRetryableFetchError(error);
+      } else {
+        retry = true;
+      }
+    }
+  } catch (err) {
+    await pushDone;
+    retry = isAuthRetryableFetchError(err);
+    if (!retry) {
+      reportSwallowed('signOut.server', err);
+    }
+  }
+  if (entry !== null && !retry) {
+    forgetPending(entry);
+  }
+}
+
+/**
+ * Sign out without the caller waiting. The device half is done when this
+ * returns (see above), recorded at once so a sign-in waits for its native
+ * steps; the server half, push registration included, runs behind it and is
+ * what the returned promise settles on.
  */
 export function beginSignOut(): Promise<void> {
-  const run = (async () => {
-    await stopPush();
-    await signOut();
-  })();
-  trackSignOut(run);
-  return run;
+  const { local, pending } = leaveDevice({ push: true });
+  trackSignOut(local);
+  // The whole teardown: the device half has just removed the only session
+  // stored, so nobody is signed in to take it from.
+  const server = trackServerHalf(tellServer(pending, 'device'));
+  return Promise.all([local, server]).then(() => undefined);
 }
 
+/**
+ * The same sign-out without the push teardown, for a session that never got
+ * that far: a Google session a failed Truecaller link has to take back
+ * (OnboardingScreen).
+ */
 export function signOut(): Promise<void> {
-  const run = endSession();
-  trackSignOut(run);
+  const { local, pending } = leaveDevice({ push: false });
+  trackSignOut(local);
+  const server = trackServerHalf(tellServer(pending, 'none'));
+  return Promise.all([local, server]).then(() => undefined);
+}
+
+/**
+ * Every server half this process has started, settled or not. A retry waits
+ * for them before it reads the pending list, so it never runs the same
+ * entry's `/logout` and row delete a second time while the first is still on
+ * the wire. Never rejects.
+ */
+let serverHalves: Promise<void> = Promise.resolve();
+
+function trackServerHalf(run: Promise<void>): Promise<void> {
+  serverHalves = Promise.all([serverHalves, run.catch(() => undefined)]).then(() => undefined);
   return run;
 }
 
-async function endSession(): Promise<void> {
-  clearPendingTruecallerGoogleLink();
-  // Two independent sessions can exist after a Firebase phone sign-in — the
-  // Supabase one the app runs on, and a Firebase one that is normally already
-  // dropped at verify time. Sign both out so a stale Firebase session can never
-  // silently re-mint a Supabase session on a later exchange.
-  await firebaseSignOut();
-  await supabase.auth.signOut();
+/** The retry running now, if one is; a second caller shares it. */
+let finishing: Promise<void> | null = null;
+
+/**
+ * Finish the server half of every sign-out still pending, oldest first, one
+ * at a time. Not latched: the FCM background handler calls it on every push
+ * that reaches a phone with nobody signed in (`handleBackgroundPush` in
+ * src/lib/push.ts), which is exactly the phone whose push row a failed server
+ * half left behind, and a headless process never mounts the boot effect that
+ * calls `resumePendingSignOuts`.
+ *
+ * One at a time because each entry with `push` runs a `stopPush` teardown,
+ * and two in parallel raced each other's `deleteToken` against the next
+ * sign-in's registration; `stopPush` chains its teardowns for the same
+ * reason. A push teardown runs through `stopPush`, so a `startPush` for
+ * whoever signs in next waits for it.
+ *
+ * Whether somebody is signed in is asked again for EVERY entry, after the
+ * wait for the halves on the wire, and never taken from the caller. It used
+ * to be checked only by whoever triggered the retry: the online listener
+ * called this with nobody signed in, it parked on a first attempt still on
+ * the wire, somebody signed in and their `startPush` got past its teardown
+ * wait, and the retry then ran the full `stopPush`, whose `halt` removed the
+ * new account's listeners and whose `deleteToken` revoked its token. With
+ * somebody signed in, only the old account's own row is deleted (`account`),
+ * which cannot touch theirs. The check is synchronous and `stopPush` sets the
+ * teardown in the same step, so a sign-in after it waits for that teardown.
+ */
+export function finishPendingSignOuts(): Promise<void> {
+  if (finishing === null) {
+    finishing = (async () => {
+      await serverHalves;
+      for (const entry of readPending()) {
+        await tellServer(entry, pushHalfFor(entry));
+      }
+    })().finally(() => {
+      finishing = null;
+    });
+  }
+  return finishing;
+}
+
+/**
+ * Which push half an entry still owes, asked at the moment it runs.
+ *
+ * `account` deletes the old session's row as that session, which is only
+ * someone else's row to spare when someone ELSE signed in. The same person
+ * signing back in re-registered the same token under the same id, so the
+ * row the old session would delete (`where token = ... and user_id =
+ * auth.uid()`, migration 143) is the live registration: a flaky sign-out,
+ * then a sign-in, then a cold start, and the phone stopped getting that
+ * account's pushes. Their push half is done by their own sign-in; only the
+ * old session is left to end.
+ */
+function pushHalfFor(entry: PendingSignOut): PushHalf {
+  if (!entry.push) {
+    return 'none';
+  }
+  if (!signedInOnDevice()) {
+    return 'device';
+  }
+  const signedIn = storedAccountId();
+  if (signedIn !== null && sessionOwner(entry) === signedIn) {
+    markPushDone(entry);
+    return 'none';
+  }
+  return 'account';
+}
+
+/** The user a pending entry's session belongs to, or null when it names none. */
+function sessionOwner(entry: PendingSignOut): string | null {
+  try {
+    const id = (JSON.parse(entry.session) as { user?: { id?: unknown } } | null)?.user?.id;
+    return typeof id === 'string' ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+let resumed = false;
+
+/**
+ * Finish the server half of any sign-out a dead process left undone. Once per
+ * process, from boot, in the background (`finishPendingSignOuts`).
+ */
+export function resumePendingSignOuts(): Promise<void> {
+  if (resumed) {
+    return Promise.resolve();
+  }
+  resumed = true;
+  return finishPendingSignOuts();
+}
+
+/**
+ * The device half for a session that died on its own: the boot found one
+ * stored, and auth-js dropped it when its refresh was refused (revoked on the
+ * server, or the account gone). Nothing reached `beginSignOut`, so nothing
+ * cleared what the account had left here: its queued sends replayed as
+ * whoever signed in next (`useGlobalOutboxDrain`), and its notifications,
+ * shortcuts and viewing signals stayed. No server half: the server already
+ * refused the session, so there is no `/logout` to send and no identity left
+ * to delete its row as. Recorded like any sign-out, so a sign-in waits for it.
+ */
+export function forgetDeadSession(): Promise<void> {
+  const { local } = leaveDevice(null);
+  trackSignOut(local);
+  return local;
 }
 
 /**
@@ -918,6 +1264,10 @@ export async function deleteAccount(): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
-  await firebaseSignOut();
-  await supabase.auth.signOut();
+  // Only the device half: the user row is gone, and its sessions and push
+  // rows went with it (auth.users cascades), so there is nothing left for a
+  // `/logout` to end. Recorded like any sign-out, so a sign-in waits for it.
+  const { local } = leaveDevice(null);
+  trackSignOut(local);
+  await local;
 }

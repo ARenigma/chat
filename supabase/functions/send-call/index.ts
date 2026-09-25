@@ -33,6 +33,8 @@ interface Pending {
   platform: string;
   media_backend: 'current' | 'livekit' | 'agora';
   media_experiment_id: string | null;
+  // The callee's account (migration 143); absent against an older database.
+  recipient_id?: string;
 }
 
 const base64url = (bytes: Uint8Array): string => {
@@ -141,6 +143,9 @@ async function send(
               ? { mediaExperimentId: row.media_experiment_id }
               : {}),
             ...(row.caller_avatar_url ? { senderAvatar: row.caller_avatar_url } : {}),
+            // Whose ring this is (143), for send-push's reason: the device
+            // rings only for the account signed in on it.
+            recipientId: row.recipient_id,
           },
         },
       }),

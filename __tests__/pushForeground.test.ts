@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import type {
   MutateOptions,
   MutationFunctionContext,
@@ -197,6 +198,35 @@ describe('foregroundPushAction', () => {
   it('still alerts for the ringing conversation when the phone is not in use', () => {
     expect(foregroundPushAction({ conversationId: A }, null, false, A)).toBe('show');
   });
+
+  it('ignores a push sent before this device declined its request, and nothing after', () => {
+    // The request's push crosses FCM while the ring crosses one socket, so it
+    // can land after an in-app Decline with no ring up and no chat on screen:
+    // a banner for a request already answered.
+    const declined = 1_790_000_005_000;
+    for (const [viewingId, inUse, ringingId] of [
+      [null, true, null],
+      [B, true, null],
+      [null, false, null],
+      [null, true, B],
+    ] as const) {
+      expect(
+        foregroundPushAction({ conversationId: A, sentAt: declined - 4_000 }, viewingId, inUse, ringingId, declined),
+      ).toBe('ignore');
+      expect(
+        foregroundPushAction({ conversationId: A, sentAt: declined }, viewingId, inUse, ringingId, declined),
+      ).toBe('ignore');
+    }
+    // Sent after the Decline: an ordinary message, decided as ever.
+    expect(
+      foregroundPushAction({ conversationId: A, sentAt: declined + 1 }, null, true, null, declined),
+    ).toBe('show-in-app');
+    expect(
+      foregroundPushAction({ conversationId: A, sentAt: declined + 1 }, null, false, null, declined),
+    ).toBe('show');
+    // No Decline recorded: the time plays no part.
+    expect(foregroundPushAction({ conversationId: A, sentAt: declined - 4_000 }, null)).toBe('show-in-app');
+  });
 });
 
 describe('the viewing-conversation signal', () => {
@@ -238,9 +268,13 @@ interface Harness {
   native: {
     notify: jest.Mock;
     notifyChatRequest: jest.Mock;
+    notifyCall: jest.Mock;
+    notifyEngagement: jest.Mock;
     pushLog: jest.Mock;
     ensureChannel: jest.Mock;
   };
+  /** Take the stored session off the device, as a sign-out's device half does. */
+  signOutDevice: () => void;
   rpc: jest.Mock;
   getToken: jest.Mock;
   onMessage: jest.Mock;
@@ -256,6 +290,8 @@ interface Harness {
   setGranted: (granted: boolean) => void;
   /** Every line written to the PappalPush tag. */
   logs: () => string[];
+  /** Who the app's client is signed in as, or null for signed out. */
+  setSessionUser: (user: string | null) => void;
   /**
    * Server-side writes to push_tokens, in the order they happen:
    * `register` for every register_push_token the default RPC answers, and
@@ -280,8 +316,31 @@ jest.mock('../src/lib/supabase', () => ({
     from: jest.fn(() => ({
       delete: () => ({ eq: async () => ({ error: null }) }),
     })),
+    auth: { getSession: jest.fn() },
   },
+  SESSION_STORAGE_KEY: 'sb-test-auth-token',
 }));
+
+/*
+ * MMKV, as a Map: react-native-mmkv ships ESM jest cannot load, and push.ts
+ * reads the stored session from it (`signedInOnDevice`). `load()` starts every
+ * test signed in; `signOutDevice` takes the stored session away.
+ */
+const mockDeviceStorage = new Map<string, string>();
+const mockStorageModule = {
+  storage: {
+    get: (key: string) => mockDeviceStorage.get(key) ?? null,
+    set: (key: string, value: string) => {
+      mockDeviceStorage.set(key, value);
+    },
+    remove: (key: string) => {
+      mockDeviceStorage.delete(key);
+    },
+  },
+  supabaseStorage: {},
+};
+jest.mock('../src/lib/storage', () => mockStorageModule);
+const STORED_SESSION_KEY = 'sb-test-auth-token';
 
 /**
  * A fresh module graph per test: push.ts holds registration state at module
@@ -296,11 +355,21 @@ function load(): Harness {
     onMessage: jest.Mock;
     onTokenRefresh: jest.Mock;
   };
-  const { supabase } = require('../src/lib/supabase') as { supabase: { rpc: jest.Mock } };
+  const { supabase } = require('../src/lib/supabase') as {
+    supabase: { rpc: jest.Mock; auth: { getSession: jest.Mock } };
+  };
+  // The signed-in account `startPush` starts for (see `sessionUserId`).
+  let sessionUser: string | null = 'user-a';
+  supabase.auth.getSession.mockImplementation(async () => ({
+    data: { session: sessionUser === null ? null : { user: { id: sessionUser } } },
+    error: null,
+  }));
 
   const native = {
     notify: jest.fn(async () => true),
     notifyChatRequest: jest.fn(async () => true),
+    notifyCall: jest.fn(async () => true),
+    notifyEngagement: jest.fn(async () => true),
     pushLog: jest.fn(),
     ensureChannel: jest.fn(async () => undefined),
   };
@@ -331,7 +400,13 @@ function load(): Harness {
   messaging.onTokenRefresh.mockImplementation(() => unsubscribeRefresh);
   messaging.getToken.mockImplementation(async () => TOKEN);
   const events: string[] = [];
-  supabase.rpc.mockImplementation(async () => {
+  // A sign-out's row delete is unregister_push_token (migration 143); it is
+  // recorded under the same name the table delete used to be.
+  supabase.rpc.mockImplementation(async (name: string, args?: { p_token?: string }) => {
+    if (name === 'unregister_push_token') {
+      events.push(`delete push_tokens token=${args?.p_token === TOKEN ? 'TOKEN' : String(args?.p_token)}`);
+      return { data: true, error: null };
+    }
     events.push('register');
     return { error: null };
   });
@@ -344,6 +419,9 @@ function load(): Harness {
     }),
   }));
 
+  mockDeviceStorage.clear();
+  mockDeviceStorage.set(STORED_SESSION_KEY, '{"access_token":"a","refresh_token":"r"}');
+
   const push = require('../src/lib/push') as PushModule;
   const viewing = require('../src/lib/viewingConversation') as ViewingModule;
 
@@ -351,6 +429,9 @@ function load(): Harness {
     push,
     viewing,
     native,
+    signOutDevice: () => {
+      mockDeviceStorage.delete(STORED_SESSION_KEY);
+    },
     rpc: supabase.rpc,
     getToken: messaging.getToken,
     onMessage: messaging.onMessage,
@@ -369,6 +450,9 @@ function load(): Harness {
       granted = next;
     },
     logs: () => native.pushLog.mock.calls.map(call => String(call[1])),
+    setSessionUser: user => {
+      sessionUser = user;
+    },
     events,
   };
 }
@@ -497,6 +581,24 @@ describe('onForegroundPush', () => {
     expect(call[7]).toBe(false);
   });
 
+  it('posts nothing for a push that lands after this device declined its request', () => {
+    const h = load();
+    const { deliver } = subscribe(h);
+    // sentAt in `message` is 1790000000000; the Decline landed two seconds on.
+    h.viewing.recordDeclined(A, 1_790_000_002_000);
+    deliver(message(A));
+    expect(h.native.notify).not.toHaveBeenCalled();
+    expect(h.logs()).toContain('foreground message: ignore');
+    // Another conversation, and a later message for this one, still show.
+    deliver(message(B));
+    deliver(message(A, { sentAt: '1790000003000' }));
+    expect(h.native.notify.mock.calls.map(call => call[0])).toEqual([B, A]);
+    // Sign-out forgets it.
+    h.viewing.resetViewingSignals();
+    deliver(message(A));
+    expect(h.native.notify).toHaveBeenCalledTimes(3);
+  });
+
   it('alerts when the delivery lands while AppState is not active', () => {
     const h = load();
     const { deliver } = subscribe(h);
@@ -535,6 +637,360 @@ describe('onForegroundPush', () => {
     expect(h.native.notifyChatRequest.mock.calls[0][6]).toBe(false);
     expect(h.native.notify.mock.calls[0][7]).toBe(false);
     expect(h.native.notifyChatRequest.mock.calls[0][7]).toBe(false);
+  });
+});
+
+describe('a push for another account is not shown in this one (143)', () => {
+  /*
+   * The gate used to be "is anyone signed in". A sign-in no longer waits for
+   * the previous account's server half, so while its row still delivered,
+   * the old account's pushes passed the gate inside the new account's
+   * session. The senders now name the row's owner (`recipientId`).
+   */
+  const USER_A = 'aaaaaaaa-1111-4000-8000-00000000000a';
+  const USER_B = 'bbbbbbbb-1111-4000-8000-00000000000b';
+  const signedInAs = (user: string) =>
+    mockDeviceStorage.set(
+      STORED_SESSION_KEY,
+      JSON.stringify({ access_token: 'a', refresh_token: 'r', user: { id: user } }),
+    );
+  const base = { conversationId: A, peerId: PEER, senderName: 'Asha', sentAt: '1790000000000', kind: 'message' };
+  const payloads: Array<[string, Record<string, string>, 'notify' | 'notifyChatRequest' | 'notifyCall' | 'notifyEngagement']> = [
+    ['a message', base, 'notify'],
+    ['a chat request', { ...base, kind: 'contact', requestId: REQUEST }, 'notifyChatRequest'],
+    ['a call', { kind: 'call', callId: REQUEST, peerId: PEER, senderName: 'Asha', medium: 'voice' }, 'notifyCall'],
+  ];
+
+  it.each(payloads)('drops %s for the previous account in the background, and finishes its sign-out', async (_name, data, poster) => {
+    const h = load();
+    signedInAs(USER_B);
+    const finish = jest.fn(async () => undefined);
+    await h.push.handleBackgroundPush({ data: { ...data, recipientId: USER_A } }, finish);
+    expect(h.native[poster]).not.toHaveBeenCalled();
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(h.logs()).toContain('background push: dropped, it is for another account');
+  });
+
+  it.each(payloads)('posts %s for the account signed in, in the background', async (_name, data, poster) => {
+    const h = load();
+    signedInAs(USER_B);
+    const finish = jest.fn(async () => undefined);
+    await h.push.handleBackgroundPush({ data: { ...data, recipientId: USER_B } }, finish);
+    expect(h.native[poster]).toHaveBeenCalledTimes(1);
+    expect(finish).not.toHaveBeenCalled();
+  });
+
+  it('drops the previous account\'s message and call in the foreground, and posts this account\'s', () => {
+    const h = load();
+    signedInAs(USER_B);
+    const handlers = { onCall: jest.fn(), onEngagement: jest.fn() };
+    h.push.onForegroundPush(handlers);
+    const deliver = h.onMessage.mock.calls[0][1] as RemoteListener;
+    deliver({ data: { ...base, recipientId: USER_A } });
+    deliver({ data: { kind: 'call', callId: REQUEST, peerId: PEER, senderName: 'Asha', medium: 'voice', recipientId: USER_A } });
+    expect(h.native.notify).not.toHaveBeenCalled();
+    expect(handlers.onCall).not.toHaveBeenCalled();
+    expect(h.logs()).toContain('foreground push: dropped, it is for another account');
+    deliver({ data: { ...base, recipientId: USER_B } });
+    expect(h.native.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a push with no recipient, from a sender deployed before 143, as before', async () => {
+    const h = load();
+    signedInAs(USER_B);
+    await h.push.handleBackgroundPush({ data: base }, jest.fn(async () => undefined));
+    expect(h.native.notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the account on the notification\'s links, and App.tsx opens a link only for it', () => {
+    const h = load();
+    signedInAs(USER_B);
+    const handlers = { onCall: jest.fn(), onEngagement: jest.fn() };
+    h.push.onForegroundPush(handlers);
+    const deliver = h.onMessage.mock.calls[0][1] as RemoteListener;
+    deliver({ data: { ...base, recipientId: USER_B } });
+    expect(h.native.notify.mock.calls[0][8]).toBe(USER_B);
+    // A value that is not a uuid never reaches the native link builder.
+    const { readConversationPush, readCallPush } = require('../src/lib/conversations') as typeof import('../src/lib/conversations');
+    expect(readConversationPush({ ...base, recipientId: 'x&action=decline' })?.recipientId).toBeUndefined();
+    expect(readCallPush({ kind: 'call', callId: REQUEST, peerId: PEER, recipientId: USER_A })?.recipientId).toBe(USER_A);
+
+    const kotlin = withoutComments(read('android/app/src/main/java/com/companionchat/Conversations.kt'));
+    expect(kotlin).toContain('.setData(withRecipient(Uri.parse("companionchat://peer/$peerId"), recipientId))');
+    expect(kotlin).toContain('uri.buildUpon().appendQueryParameter("for", recipientId).build()');
+    expect(count(kotlin, 'callActionIntent(context, peerId, callId, "answer", medium, recipientId)')).toBe(1);
+    expect(count(kotlin, 'openConversation(context, peerId, recipientId)')).toBe(2);
+    expect(count(kotlin, '.setIntent(peerIntent(context, peerId, recipientId))')).toBe(2);
+
+    const app = withoutComments(read('App.tsx'));
+    const consume = app.slice(
+      app.indexOf('const consume = (url: string | null): void => {'),
+      app.indexOf('void Linking.getInitialURL().then(consume);'),
+    );
+    const gate = consume.indexOf('if (isAccountLink(url) && !linkIsForAccount(url, storedAccountId())) {');
+    expect(gate).toBeGreaterThan(-1);
+    const gateEnd = consume.indexOf('return;', gate);
+    for (const hold of ['setPendingV2Peer(', 'setPendingIncoming(', 'setPendingPeer(', 'endCall(']) {
+      expect({ hold, after: consume.indexOf(hold) > gateEnd }).toEqual({ hold, after: true });
+    }
+  });
+
+  it('send-push and send-call name the row\'s owner in every payload', () => {
+    const sendPush = withoutComments(read('supabase/functions/send-push/index.ts'));
+    expect(sendPush).toContain('recipientId: row.recipient_id,');
+    const sendCall = withoutComments(read('supabase/functions/send-call/index.ts'));
+    expect(sendCall).toContain('recipientId: row.recipient_id,');
+    // The nudges too, from the account their tokens were chosen by.
+    expect(withoutComments(read('supabase/functions/send-engagement/index.ts'))).toContain('recipientId: row.member_id,');
+    const openAlert = withoutComments(read('supabase/functions/send-open-alert/index.ts'));
+    expect(openAlert).toContain('recipientId,\n');
+    expect(openAlert).toContain("directory?.avatar_url ?? null, openerId, peerId)");
+  });
+});
+
+describe('a ring under a sheet or the media viewer is not on screen', () => {
+  /*
+   * Both are RN Modals, which Android draws as Dialog windows above the
+   * activity's; the ring is a View in the activity's window. A ring that
+   * started under an open photo was out of sight, and its own push was
+   * silenced on the grounds that the ring showed it.
+   */
+  it('lets the push peek, with no sound, while a cover is up over a ring', () => {
+    expect(foregroundPushAction({ conversationId: A }, null, true, A, null, true)).toBe('show-in-app');
+    expect(foregroundPushAction({ conversationId: B }, null, true, A, null, true)).toBe('show-in-app');
+    // Uncovered, the ring is what is on screen: silent, as before.
+    expect(foregroundPushAction({ conversationId: A }, null, true, A, null, false)).toBe('show-silent');
+  });
+
+  it('reads the cover in the foreground handler', () => {
+    const h = load();
+    const handlers = { onCall: jest.fn(), onEngagement: jest.fn() };
+    h.push.onForegroundPush(handlers);
+    const deliver = h.onMessage.mock.calls[0][1] as RemoteListener;
+    h.viewing.setRingingConversation(A);
+    const uncover = h.viewing.coverViewing();
+    deliver({ data: { conversationId: A, peerId: PEER, senderName: 'Asha', sentAt: '1790000000000', kind: 'message' } });
+    uncover();
+    expect(h.native.notify).toHaveBeenCalledTimes(1);
+    // In-app, and not silenced: a heads-up over the Dialog.
+    expect(h.native.notify.mock.calls[0][6]).toBe(true);
+    expect(h.native.notify.mock.calls[0][7]).toBe(false);
+    expect(h.logs()).toContain('foreground message: show-in-app');
+  });
+});
+
+describe('what was posted is remembered for a Decline landing later', () => {
+  it('records the sentAt of every post, in either handler, and nothing it ignored', async () => {
+    const h = load();
+    const handlers = { onCall: jest.fn(), onEngagement: jest.fn() };
+    h.push.onForegroundPush(handlers);
+    const deliver = h.onMessage.mock.calls[0][1] as RemoteListener;
+    h.viewing.setViewingConversation(B);
+    deliver({ data: { conversationId: B, peerId: PEER, senderName: 'Asha', sentAt: '1790000009000', kind: 'message' } });
+    expect(h.viewing.postedSince(B, 1_790_000_000_000)).toBe(false);
+    h.viewing.setRingingConversation(A);
+    deliver({ data: { conversationId: A, peerId: PEER, senderName: 'Asha', sentAt: '1790000002000', kind: 'message' } });
+    expect(h.viewing.postedSince(A, 1_790_000_000_000)).toBe(true);
+    expect(h.viewing.postedSince(A, 1_790_000_002_000)).toBe(false);
+    await h.push.handleBackgroundPush(
+      { data: { conversationId: B, peerId: PEER, senderName: 'Asha', sentAt: '1790000005000', kind: 'message' } },
+      jest.fn(async () => undefined),
+    );
+    expect(h.viewing.postedSince(B, 1_790_000_000_000)).toBe(true);
+  });
+});
+
+describe('a sign-out\'s row delete deletes, and says when it did not (143)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('deletes the row through unregister_push_token, never a DELETE on the table', async () => {
+    const h = load();
+    const { supabase } = require('../src/lib/supabase') as { supabase: { from: jest.Mock } };
+    await expect(h.push.stopPush()).resolves.toBe(true);
+    expect(h.rpc.mock.calls.filter(call => call[0] === 'unregister_push_token')).toEqual([
+      ['unregister_push_token', { p_token: TOKEN }],
+    ]);
+    expect(supabase.from).not.toHaveBeenCalled();
+  });
+
+  it('reports a teardown that stopped nothing: the row delete and the token delete both failed', async () => {
+    const h = load();
+    const messaging = require('@react-native-firebase/messaging') as { deleteToken: jest.Mock };
+    messaging.deleteToken.mockImplementationOnce(async () => {
+      throw new Error('SERVICE_NOT_AVAILABLE');
+    });
+    h.rpc.mockImplementation(async () => ({ data: null, error: { code: '', message: 'TypeError: Network request failed' } }));
+    await expect(h.push.stopPush()).resolves.toBe(false);
+  });
+
+  it.each([
+    ['the row went, though the token delete failed', true, false],
+    ['the token went, though the row delete failed', false, true],
+  ] as const)('counts it done when %s', async (_name, rowOk, tokenOk) => {
+    const h = load();
+    const messaging = require('@react-native-firebase/messaging') as { deleteToken: jest.Mock };
+    if (!tokenOk) {
+      messaging.deleteToken.mockImplementationOnce(async () => {
+        throw new Error('SERVICE_NOT_AVAILABLE');
+      });
+    }
+    if (!rowOk) {
+      h.rpc.mockImplementation(async () => ({ data: null, error: { code: '', message: 'offline' } }));
+    }
+    await expect(h.push.stopPush()).resolves.toBe(true);
+  });
+
+  it('runs only the account half for a retry with somebody signed in: the row, never the listeners or the token', async () => {
+    const h = load();
+    await h.push.startPush();
+    expect(h.listenerCount()).toBe(1);
+    const messaging = require('@react-native-firebase/messaging') as { deleteToken: jest.Mock };
+    messaging.deleteToken.mockClear();
+    const ghost = {
+      rpc: jest.fn(async () => ({ data: false, error: null })),
+    };
+    await expect(h.push.unregisterPush(Promise.resolve(ghost as never))).resolves.toBe(true);
+    expect(ghost.rpc).toHaveBeenCalledWith('unregister_push_token', { p_token: TOKEN });
+    expect(messaging.deleteToken).not.toHaveBeenCalled();
+    expect(h.listenerCount()).toBe(1);
+    // And a failed delete is reported, so the entry is kept.
+    ghost.rpc.mockImplementation(async () => ({ data: null, error: { code: '', message: 'offline' } }) as never);
+    await expect(h.push.unregisterPush(ghost as never)).resolves.toBe(false);
+  });
+});
+
+describe('a device nobody is signed in on posts nothing, and finishes the sign-out instead', () => {
+  /*
+   * A sign-out drops the stored session at once and leaves the push row and
+   * the FCM token to a server half that can fail on the network, and a
+   * headless process never ran the boot retry. So pushes for the account that
+   * left kept arriving, and both handlers posted them: the peer's name, a
+   * MessagingStyle entry and a pushed shortcut on a signed-out phone.
+   */
+  const messageData = { conversationId: A, peerId: PEER, senderName: 'Asha', sentAt: '1790000000000', kind: 'message' };
+  const contactData = { ...messageData, kind: 'contact', requestId: REQUEST };
+  const payloads: Array<[string, Record<string, string>, keyof Harness['native']]> = [
+    ['a message', messageData, 'notify'],
+    ['a chat request', contactData, 'notifyChatRequest'],
+    ['a call', { kind: 'call', callId: REQUEST, peerId: PEER, senderName: 'Asha', medium: 'voice' }, 'notifyCall'],
+    ['a nudge', { kind: 'engagement', peerId: PEER, title: 'Asha is here' }, 'notifyEngagement'],
+  ];
+  const posters = ['notify', 'notifyChatRequest', 'notifyCall', 'notifyEngagement'] as const;
+
+  beforeEach(() => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(payloads)('posts %s in the background while a session is stored', async (_name, data, poster) => {
+    const h = load();
+    const finish = jest.fn(async () => undefined);
+    await h.push.handleBackgroundPush({ data }, finish);
+    expect(h.native[poster]).toHaveBeenCalledTimes(1);
+    expect(finish).not.toHaveBeenCalled();
+  });
+
+  it.each(payloads)(
+    'posts nothing for %s in the background once the stored session is gone, and retries the sign-out',
+    async (_name, data) => {
+      const h = load();
+      h.signOutDevice();
+      const finish = jest.fn(async () => undefined);
+      await h.push.handleBackgroundPush({ data }, finish);
+      for (const poster of posters) {
+        expect({ poster, calls: h.native[poster].mock.calls.length }).toEqual({ poster, calls: 0 });
+      }
+      expect(finish).toHaveBeenCalledTimes(1);
+      expect(h.logs()).toContain('background push: dropped, nobody is signed in on this device');
+    },
+  );
+
+  it('waits for the retry, which the headless task lives for, and never rejects into FCM', async () => {
+    const h = load();
+    h.signOutDevice();
+    let done = false;
+    let release: () => void = () => undefined;
+    const finish = jest.fn(
+      () =>
+        new Promise<void>(resolve => {
+          release = () => {
+            done = true;
+            resolve();
+          };
+        }),
+    );
+    const handled = h.push.handleBackgroundPush({ data: messageData }, finish);
+    let settled = false;
+    void handled.then(() => {
+      settled = true;
+    });
+    for (let i = 0; i < 20; i += 1) {
+      await Promise.resolve();
+    }
+    expect(settled).toBe(false);
+    release();
+    await handled;
+    expect(done).toBe(true);
+    await expect(
+      h.push.handleBackgroundPush({ data: messageData }, async () => {
+        throw new Error('offline');
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('draws nothing in the foreground either once the stored session is gone', () => {
+    const h = load();
+    const handlers = { onCall: jest.fn(), onEngagement: jest.fn() };
+    h.push.onForegroundPush(handlers);
+    const listener = h.onMessage.mock.calls[0][1] as RemoteListener;
+    h.signOutDevice();
+    for (const [, data] of payloads) {
+      listener({ data });
+    }
+    for (const poster of posters) {
+      expect({ poster, calls: h.native[poster].mock.calls.length }).toEqual({ poster, calls: 0 });
+    }
+    expect(handlers.onCall).not.toHaveBeenCalled();
+    expect(handlers.onEngagement).not.toHaveBeenCalled();
+    expect(h.logs()).toContain('foreground push: dropped, nobody is signed in on this device');
+  });
+
+  it('drops a request push sent no later than a Decline this process holds, and posts what came after', async () => {
+    // The provider declined in the app and pressed Home at once: the live
+    // process is backgrounded, so the request's late push reaches this
+    // handler, with the Decline still in memory.
+    const h = load();
+    const finish = jest.fn(async () => undefined);
+    h.viewing.recordDeclined(A, 1_790_000_000_000);
+    await h.push.handleBackgroundPush({ data: contactData }, finish);
+    await h.push.handleBackgroundPush({ data: messageData }, finish);
+    expect(h.native.notifyChatRequest).not.toHaveBeenCalled();
+    expect(h.native.notify).not.toHaveBeenCalled();
+    expect(h.logs()).toContain('background contact: dropped, sent before this device declined');
+    await h.push.handleBackgroundPush({ data: { ...messageData, sentAt: '1790000000001' } }, finish);
+    expect(h.native.notify).toHaveBeenCalledTimes(1);
+    // Another conversation is not touched by A's Decline.
+    await h.push.handleBackgroundPush({ data: { ...contactData, conversationId: B } }, finish);
+    expect(h.native.notifyChatRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks the one predicate both handlers share', () => {
+    const push = withoutComments(read('src/lib/push.ts'));
+    const background = push.slice(
+      push.indexOf('export async function handleBackgroundPush'),
+      push.indexOf('export function onForegroundPush'),
+    );
+    expect(background).toContain('sentBeforeDecline(push, declinedAt(push.conversationId))');
+    const viewing = withoutComments(read('src/lib/viewingConversation.ts'));
+    const action = viewing.slice(viewing.indexOf('export function foregroundPushAction'));
+    expect(action).toContain('if (sentBeforeDecline(push, declinedAtMs)) {');
   });
 });
 
@@ -843,6 +1299,40 @@ describe('token registration stays alive', () => {
     expect(h.events.lastIndexOf('register')).toBeGreaterThan(deleteAt);
   });
 
+  it('holds a sign-in behind every teardown still running, not only the latest one', async () => {
+    // Two pending sign-outs resumed at launch run two teardowns. `teardown`
+    // used to be REPLACED by the second, so a start waited for the fast one
+    // only, registered, and the slow one's deleteToken then revoked the new
+    // account's token.
+    const h = load();
+    const messaging = require('@react-native-firebase/messaging') as { deleteToken: jest.Mock };
+    messaging.deleteToken.mockImplementation(async () => {
+      h.events.push('deleteToken');
+    });
+    const as = (name: string) =>
+      ({
+        rpc: async () => {
+          h.events.push(`delete ${name}`);
+          return { data: true, error: null };
+        },
+      }) as never;
+    let authenticated: () => void = () => undefined;
+    const slow = new Promise<void>(resolve => {
+      authenticated = resolve;
+    }).then(() => as('first'));
+    const first = h.push.stopPush(slow);
+    await h.push.stopPush(as('second'));
+    h.setSessionUser('user-c');
+    const starting = h.push.startPush();
+    await flush();
+    expect(registerCalls(h)).toBe(0);
+    authenticated();
+    await first;
+    await starting;
+    await flush();
+    expect(h.events).toEqual(['delete second', 'deleteToken', 'delete first', 'deleteToken', 'register']);
+  });
+
   /** Wait, microtask by microtask, until `condition` holds. */
   async function until(condition: () => boolean): Promise<void> {
     for (let i = 0; i < 200 && !condition(); i += 1) {
@@ -1117,12 +1607,28 @@ describe('useViewingConversation', () => {
     expect(clear.mock.calls).toEqual([[A]]);
   });
 
-  it('still clears its own conversation while a ring for another one is up', () => {
-    const { viewing, screen, clear } = mount();
+  it('leaves the shade alone while a ring for ANOTHER conversation covers the chat', () => {
+    // The ring is opaque whatever it is for. Chat A under ring B is in use and
+    // unseen, A's pushes go to the shade silently, and clearing A on mount, on
+    // a return, or when a sheet over the ring lifted cancelled a message still
+    // hidden behind it. ChatRingScreen clears A when the ring leaves.
+    const { viewing, screen, appState, clear } = mount();
     viewing.setRingingConversation(B);
     screen(A);
-    expect(clear.mock.calls).toEqual([[A]]);
+    expect(viewing.getViewingConversation()).toBe(A);
+    expect(
+      viewing.foregroundPushAction({ conversationId: A }, A, true, viewing.getRingingConversation()),
+    ).toBe('show-silent');
+    appState('background');
+    appState('active');
+    expect(clear).not.toHaveBeenCalled();
+    viewing.coverViewing()();
+    expect(clear).not.toHaveBeenCalled();
+    // Once the ring is gone, the next return clears it as usual.
     viewing.setRingingConversation(null);
+    appState('background');
+    appState('active');
+    expect(clear.mock.calls).toEqual([[A]]);
   });
 
   it('leaves the shade alone while the chat is mounted but not in use', () => {
@@ -1222,9 +1728,11 @@ describe('the in-app flag reaches its own Android channel', () => {
     // a post quieted.
     expect(count(code, 'Route(CHANNEL_ID, quiet = true)')).toBe(1);
     expect(count(code, 'quiet = true')).toBe(2);
-    // Declaration, channel builder, route's post and route's lookup: nothing
-    // else names it, so no builder can post on it except through `route`.
-    expect(count(code, 'CHANNEL_IN_APP')).toBe(4);
+    // Declaration, channel builder, route's post and route's three lookups
+    // (the in-app path's parent-off and conversation-off checks, the
+    // background path's choice): nothing else names it, so no builder can
+    // post on it except through `route`.
+    expect(count(code, 'CHANNEL_IN_APP')).toBe(6);
     expect(count(code, 'Route(CHANNEL_IN_APP')).toBe(1);
   });
 
@@ -1237,19 +1745,157 @@ describe('the in-app flag reaches its own Android channel', () => {
     expect(background).toContain(
       'manager.getNotificationChannelCompat(CHANNEL_IN_APP, conversationId)\n            ?.takeIf { it.conversationId != null }',
     );
-    // None made there, or one made on Messages itself: Messages decides, with
-    // its sound, as it always did.
-    expect(background).toContain(
-      'if (inAppChoice == null || messages?.conversationId != null) {\n            return Route(CHANNEL_ID, quiet = false)',
-    );
-    // Turned off: no post. Below HIGH: Messages, quieted.
-    expect(background).toContain(
+    // None made there: Messages decides, with its sound, as it always did.
+    expect(background).toContain('?: return Route(CHANNEL_ID, quiet = false)');
+    // Turned off: no post, and before Messages is asked anything (the next
+    // test runs it). Below HIGH: Messages, quieted.
+    const off = background.indexOf(
       'if (inAppChoice.importance == NotificationManagerCompat.IMPORTANCE_NONE) {\n            return null',
     );
+    const messagesChoice = background.indexOf(
+      'if (messages?.conversationId != null) {\n            return Route(CHANNEL_ID, quiet = false)',
+    );
+    expect(off).toBeGreaterThan(-1);
+    expect(messagesChoice).toBeGreaterThan(off);
     expect(background).toContain(
       'quiet = inAppChoice.importance < NotificationManagerCompat.IMPORTANCE_HIGH,',
     );
     expect(route).toContain('): Route? {');
+  });
+
+  /**
+   * The shipped body of `route`, run. Its Kotlin is close enough to JS that
+   * four rewrites make it one: `val`, `takeIf`'s lambda, the named `quiet =`
+   * argument, and the elvis `?: return X`, which becomes a throw the wrapper
+   * turns back into the return. Anything else the body grows is a
+   * SyntaxError here, which is the point: this runs the code that ships, not
+   * a copy of it.
+   *
+   * The manager stands in for NotificationManagerCompat with the one rule the
+   * whole function is about: `getNotificationChannelCompat(parent, id)`
+   * returns the conversation channel under THAT parent, and "If a
+   * conversation channel with the given conversation id is not found, this
+   * method will instead return the parent channel".
+   * https://developer.android.com/reference/android/app/NotificationManager#getNotificationChannel(java.lang.String,%20java.lang.String)
+   */
+  type Channel = { importance: number; conversationId: string | null };
+  type Routed = { channelId: string; quiet: boolean } | null;
+  const IMPORTANCE = { NONE: 0, MIN: 1, LOW: 2, DEFAULT: 3, HIGH: 4 };
+  /** The elvis `?: return X`, carried out of the expression it sits in. */
+  class Returned {
+    constructor(readonly value: Routed) {}
+  }
+
+  function runRoute(
+    conversations: { messages?: number; inApp?: number },
+    inApp: boolean,
+    parents: { messages?: number; inApp?: number } = {},
+  ): Routed {
+    const route = slice('private fun route(', '\n    }\n');
+    const body = route
+      .slice(route.indexOf('): Route? {') + '): Route? {'.length)
+      .replace(/\bval /g, 'const ')
+      .replace(/\?\.takeIf \{ ([^}]*) \}/g, '?.takeIf((it) => $1)')
+      .replace(/\?: return ([^\n]+)/g, '?? __return($1)')
+      .replace(/\bquiet = /g, '');
+    const standIn = (importance: number, conversationId: string | null) => ({
+      importance,
+      conversationId,
+      takeIf(predicate: (it: Channel) => boolean) {
+        return predicate(this) ? this : null;
+      },
+    });
+    const own = { CHANNEL_ID: conversations.messages, CHANNEL_IN_APP: conversations.inApp };
+    const parent = {
+      CHANNEL_ID: parents.messages ?? IMPORTANCE.HIGH,
+      CHANNEL_IN_APP: parents.inApp ?? IMPORTANCE.HIGH,
+    };
+    const manager = {
+      getNotificationChannelCompat(id: 'CHANNEL_ID' | 'CHANNEL_IN_APP', conversationId?: string) {
+        // The one-argument overload reads the parent itself, whatever
+        // conversation channels sit under it.
+        if (conversationId === undefined) {
+          return standIn(parent[id], null);
+        }
+        const mine = own[id];
+        return mine === undefined ? standIn(parent[id], null) : standIn(mine, conversationId);
+      },
+    };
+    const fn = runInNewContext(
+      '(function (manager, conversationId, inApp, Route, CHANNEL_ID, CHANNEL_IN_APP, ' +
+        `NotificationManagerCompat, __return) {${body}\n})`,
+    ) as (...args: unknown[]) => Routed;
+    try {
+      return fn(
+        manager, 'c-1', inApp,
+        (channelId: string, quiet: boolean) => ({ channelId, quiet }),
+        'CHANNEL_ID', 'CHANNEL_IN_APP',
+        {
+          IMPORTANCE_NONE: IMPORTANCE.NONE,
+          IMPORTANCE_LOW: IMPORTANCE.LOW,
+          IMPORTANCE_DEFAULT: IMPORTANCE.DEFAULT,
+          IMPORTANCE_HIGH: IMPORTANCE.HIGH,
+        },
+        (value: Routed) => {
+          throw new Returned(value);
+        },
+      );
+    } catch (thrown) {
+      if (thrown instanceof Returned) {
+        return thrown.value;
+      }
+      throw thrown;
+    }
+  }
+
+  const messagesLoud = { channelId: 'CHANNEL_ID', quiet: false };
+  const messagesQuiet = { channelId: 'CHANNEL_ID', quiet: true };
+
+  it.each<[string, { messages?: number; inApp?: number }, Routed]>([
+    // Greptile P1 on bb32af4: made Priority or Silent from a background post,
+    // then turned off from an in-app banner. Off wins, whatever Messages holds.
+    ['off in-app, Priority on Messages', { inApp: IMPORTANCE.NONE, messages: IMPORTANCE.HIGH }, null],
+    ['off in-app, Silent on Messages', { inApp: IMPORTANCE.NONE, messages: IMPORTANCE.LOW }, null],
+    ['off in-app, nothing on Messages', { inApp: IMPORTANCE.NONE }, null],
+    // Quieter from a banner quiets the background post, unless Messages has
+    // its own choice for the conversation, which the system applies.
+    ['Silent in-app, nothing on Messages', { inApp: IMPORTANCE.LOW }, messagesQuiet],
+    ['Silent in-app, Priority on Messages', { inApp: IMPORTANCE.LOW, messages: IMPORTANCE.HIGH }, messagesLoud],
+    ['Priority in-app', { inApp: IMPORTANCE.HIGH }, messagesLoud],
+    ['no choice anywhere', {}, messagesLoud],
+    // Messages' own conversation channel off: posted on it, and the system
+    // drops it, as it does for every choice made on the channel posted on.
+    ['nothing in-app, off on Messages', { messages: IMPORTANCE.NONE }, messagesLoud],
+  ])('routes a background post with %s', (_name, conversations, expected) => {
+    expect(runRoute(conversations, false)).toEqual(expected);
+  });
+
+  it('reads the in-app PARENT turned down as a choice about banners, not about this conversation', () => {
+    // No conversation channel under it, so the lookup returns the parent
+    // (conversationId null), and a background post keeps Messages' sound.
+    expect(runRoute({}, false, { inApp: IMPORTANCE.NONE })).toEqual(messagesLoud);
+  });
+
+  it.each<[string, { messages?: number; inApp?: number }, { messages?: number; inApp?: number }, Routed]>([
+    ['no choice anywhere', {}, {}, { channelId: 'CHANNEL_IN_APP', quiet: false }],
+    ['the conversation turned off on Messages', { messages: IMPORTANCE.NONE }, {}, messagesQuiet],
+    ['the conversation made Silent on Messages', { messages: IMPORTANCE.LOW }, {}, messagesQuiet],
+    ['Messages itself turned down', {}, { messages: IMPORTANCE.DEFAULT }, messagesQuiet],
+    // Turned off from an in-app banner is off on this path too. The yield
+    // below HIGH moved the post to Messages, whose lookup never sees the
+    // in-app conversation channel, and it came back quietly in the shade.
+    ['the conversation turned off in-app, Messages turned down', { inApp: IMPORTANCE.NONE }, { messages: IMPORTANCE.DEFAULT }, null],
+    ['the conversation turned off in-app and made Silent on Messages', { inApp: IMPORTANCE.NONE, messages: IMPORTANCE.LOW }, {}, null],
+    ['the conversation turned off in-app, Messages at HIGH', { inApp: IMPORTANCE.NONE }, {}, null],
+    // "Messages while using the app" switched off: the yield to a turned-down
+    // Messages must not carry the post past the channel the person turned off.
+    ['the in-app parent off, Messages turned down', {}, { messages: IMPORTANCE.DEFAULT, inApp: IMPORTANCE.NONE }, null],
+    ['the in-app parent off, Messages at HIGH', {}, { inApp: IMPORTANCE.NONE }, null],
+    ['the in-app parent off, the conversation Priority in-app', { inApp: IMPORTANCE.HIGH }, { messages: IMPORTANCE.DEFAULT, inApp: IMPORTANCE.NONE }, null],
+    // Silent from a banner stays the system's to apply on the in-app parent.
+    ['the conversation made Silent in-app', { inApp: IMPORTANCE.LOW }, {}, { channelId: 'CHANNEL_IN_APP', quiet: false }],
+  ])('routes an in-app post with %s', (_name, conversations, parents, expected) => {
+    expect(runRoute(conversations, true, parents)).toEqual(expected);
   });
 
   /** One builder's body, comments removed: from its `fun` to the next declaration. */
@@ -1372,7 +2018,7 @@ describe('the in-app flag reaches its own Android channel', () => {
         /synchronized\(postLock\) \{\s*val style = activeMessagingStyle\(manager, id\)/,
       );
       expect(body).toMatch(
-        /synchronized\(postLock\) \{\s*val live = activeNotification\(manager, id\) \?: return@execute/,
+        /synchronized\(postLock\) \{\s*if \(!stillCurrentLocked\(id, version\)\) return@execute\s*val live = activeNotification\(manager, id\) \?: return@execute/,
       );
       expect(count(body, 'synchronized(postLock)')).toBe(2);
       // The download is outside it: the lock never waits on the network.
@@ -1382,9 +2028,145 @@ describe('the in-app flag reaches its own Android channel', () => {
     },
   );
 
-  it('cancels under the same lock, so a fill cannot put a cleared notification back', () => {
+  it('cancels under the same lock and drops the post stamp with it, since the lock alone cannot stop a fill', () => {
+    /*
+     * NotificationManager's cancel is applied later, on the system's handler,
+     * and getActiveNotifications keeps listing the record until it is: a fill
+     * that took the lock straight after the cancel found the notification
+     * "live" and posted it back. The lock was said to prevent that and did
+     * not. So the id's stamp goes in the same hold, and the fill checks it.
+     */
     const clear = slice('fun clear(context: Context, conversationId: String) {', '\n    }\n');
-    expect(clear).toMatch(/synchronized\(postLock\) \{\s*NotificationManagerCompat\.from\(context\)\.cancel\(notificationId\(conversationId\)\)/);
+    expect(clear).toMatch(
+      /synchronized\(postLock\) \{\s*cancelLocked\(NotificationManagerCompat\.from\(context\), notificationId\(conversationId\)\)\s*\}/,
+    );
+    expect(slice('private fun cancelLocked(', '\n    }\n')).toMatch(
+      /\{\s*manager\.cancel\(id\)\s*posted\.remove\(id\)\s*requestPosts\.remove\(id\)\s*cleared\.add\(id\)\s*$/,
+    );
+    // The stamp a post leaves, and the two readings of it.
+    expect(slice('private fun stampPostLocked(id: Int): Long {', '\n    }\n').replace(/\s+/g, ' ')).toBe(
+      'private fun stampPostLocked(id: Int): Long { postVersion += 1 posted[id] = postVersion cleared.remove(id) return postVersion',
+    );
+    expect(code).toContain('private fun stillCurrentLocked(id: Int, version: Long): Boolean = posted[id] == version');
+    expect(code).toContain(
+      'private fun liveTrustedLocked(id: Int): Boolean =\n        id !in cleared && (!clearedAll || posted.containsKey(id))',
+    );
+    // A text post after a clear does not extend what the system still lists.
+    expect(slice('private fun activeMessagingStyle(', '\n\n')).toContain('?.takeIf { liveTrustedLocked(id) }');
+  });
+
+  it.each(builders)('stamps every text post in the same hold as its post, and hands the stamp to its fill, in %j', (start, end) => {
+    const body = builder(start, end);
+    // A chat request's post records which request it was as well (`clearRequest`).
+    expect(body).toMatch(
+      /val version = synchronized\(postLock\) \{[^]*?post\(style, null, route\)\s*stampPostLocked\(id\)(\.also \{ requestPosts\[id\] = RequestPost\(requestId, it\) \})?\s*\}/,
+    );
+    expect(count(body, 'stampPostLocked(id)')).toBe(1);
+    expect(count(body, 'stillCurrentLocked(id, version)')).toBe(1);
+  });
+
+  it('clears a declined request only while the request is what is posted there', () => {
+    /*
+     * A request and a message for one conversation share its notification
+     * id, and the lock-screen Decline's clear lands a cold start and a round
+     * trip after the press. A message posted in that window replaced the
+     * request's entry and alerted, and the old unconditional clear cancelled
+     * it. The whole body, whitespace aside, as for liveRoute: a line check
+     * still passes with the version comparison dropped.
+     */
+    const clearRequest = slice(
+      'fun clearRequest(context: Context, conversationId: String, requestId: String) {',
+      '\n    }\n',
+    ).replace(/\s+/g, ' ').trim();
+    expect(clearRequest).toBe(
+      [
+        'fun clearRequest(context: Context, conversationId: String, requestId: String) {',
+        'synchronized(postLock) {',
+        'val manager = NotificationManagerCompat.from(context)',
+        'val id = notificationId(conversationId)',
+        'val stillTheRequest = if (posted.containsKey(id)) {',
+        'requestPosts[id] == RequestPost(requestId, posted.getValue(id))',
+        '} else {',
+        'liveTrustedLocked(id) &&',
+        'activeNotification(manager, id)?.extras?.getString(EXTRA_REQUEST_ID) == requestId',
+        '}',
+        'if (stillTheRequest) {',
+        'cancelLocked(manager, id)',
+        '}',
+        '}',
+      ].join(' '),
+    );
+    // Recorded by the request's own post, and only there, at the version that
+    // post stamped; a message post over it stamps a newer one.
+    expect(count(code, 'requestPosts[id] = RequestPost(requestId, it)')).toBe(1);
+    const request = builder('    fun notifyChatRequest(\n', '    private fun callActionIntent(');
+    expect(request).toContain('stampPostLocked(id).also { requestPosts[id] = RequestPost(requestId, it) }');
+    // The extra a process that did not post it reads, set on every post of it.
+    expect(count(request, '.addExtras(android.os.Bundle().apply { putString(EXTRA_REQUEST_ID, requestId) })')).toBe(1);
+    // Declared, set and read: nothing else in this file names its own extra
+    // (the Decline intent's is ChatRequestReceiver's).
+    expect(code.match(/(?<![.\w])EXTRA_REQUEST_ID\b/g)).toHaveLength(3);
+    // Bridged, and the lock-screen Decline is its only caller.
+    expect(module).toMatch(
+      /fun clearRequest\(conversationId: String, requestId: String, promise: Promise\) \{\s*Conversations\.clearRequest\(reactContext, conversationId, requestId\)\s*promise\.resolve\(null\)/,
+    );
+    expect(bridge).toMatch(/await native\.clearRequest\(conversationId, requestId\);/);
+    expect(withoutComments(read('src/lib/chatRequestDecline.ts'))).toContain(
+      'await clearChatRequest(conversationId, requestId);',
+    );
+  });
+
+  it('stamps an engagement nudge too, so its photo cannot bring it back after a clear-all', () => {
+    const nudge = slice('    fun notifyEngagement(\n', '    fun notifyCall(\n');
+    expect(nudge).toMatch(/val version = synchronized\(postLock\) \{\s*post\(null\)\s*stampPostLocked\(id\)\s*\}/);
+    expect(nudge).toMatch(/synchronized\(postLock\) \{\s*if \(stillCurrentLocked\(id, version\)\) post\(avatar\)\s*\}/);
+  });
+
+  it('stamps a call ring, so an older call\'s photo fill cannot post over a newer ring or bring a cancelled one back', () => {
+    /*
+     * Every ring shares CALL_PRENOTIFICATION_ID, and each fill re-posts its
+     * own call's name and Answer/Decline intents. A fill that only checked
+     * the live list put call 1 over call 2's ring, and one that read the list
+     * just after a cancel brought a dead ring back for up to 60 s.
+     */
+    const ring = slice('    fun notifyCall(\n', '    fun clearCall(');
+    expect(ring).toMatch(
+      /val version = synchronized\(postLock\) \{\s*post\(null\)\s*stampPostLocked\(CALL_PRENOTIFICATION_ID\)\s*\}/,
+    );
+    expect(ring).toMatch(
+      /synchronized\(postLock\) \{\s*if \(stillCurrentLocked\(CALL_PRENOTIFICATION_ID, version\) &&\s*manager\.activeNotifications\.any \{ shown -> shown\.id == CALL_PRENOTIFICATION_ID \}\s*\) \{\s*post\(IconCompat\.createWithBitmap\(avatar\)\)\s*\}\s*\}/,
+    );
+    expect(count(ring, 'post(')).toBe(3);
+    // The download stays outside the lock.
+    expect(ring.indexOf('loadAvatarBitmap(')).toBeLessThan(ring.lastIndexOf('synchronized(postLock)'));
+    // Every cancel of the ring goes through the locked cancel that drops its stamp.
+    expect(slice('fun cancelCallPrenotification(context: Context) {', '\n    }\n')).toMatch(
+      /synchronized\(postLock\) \{\s*cancelLocked\(NotificationManagerCompat\.from\(context\), CALL_PRENOTIFICATION_ID\)\s*\}/,
+    );
+    expect(slice('fun clearCall(context: Context, callId: String) {', '\n    }\n')).toMatch(
+      /\{\s*cancelCallPrenotification\(context\)\s*$/,
+    );
+    expect(code).not.toMatch(/\.cancel\(CALL_PRENOTIFICATION_ID\)/);
+  });
+
+  it('clears everything the account left, notifications and shortcuts, under the post lock', () => {
+    const all = slice('fun clearAll(context: Context) {', '\n    }\n');
+    expect(all).toMatch(
+      /synchronized\(postLock\) \{\s*NotificationManagerCompat\.from\(context\)\.cancelAll\(\)\s*posted\.clear\(\)\s*requestPosts\.clear\(\)\s*cleared\.clear\(\)\s*clearedAll = true\s*\}/,
+    );
+    // Cached long-lived copies, not only the dynamic list, which keeps them.
+    expect(all).toContain('ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED');
+    expect(all).toContain('ShortcutManagerCompat.removeLongLivedShortcuts(context, ids)');
+    expect(all).toContain('ShortcutManagerCompat.removeAllDynamicShortcuts(context)');
+    expect(module).toMatch(/fun clearAll\(promise: Promise\) \{\s*Conversations\.clearAll\(reactContext\)\s*promise\.resolve\(null\)/);
+    expect(bridge).toMatch(/export async function clearAllConversations\(\): Promise<void> \{\s*if \(native === undefined\) \{\s*return;\s*\}\s*await native\.clearAll\(\);/);
+    for (const page of [
+      'https://developer.android.com/reference/android/app/NotificationManager#cancelAll()',
+      'https://developer.android.com/reference/androidx/core/content/pm/ShortcutManagerCompat#removeLongLivedShortcuts(android.content.Context,java.util.List%3Cjava.lang.String%3E)',
+      'https://developer.android.com/reference/androidx/core/app/NotificationManagerCompat#getActiveNotifications()',
+    ]) {
+      expect({ page, cited: kt.includes(page) }).toEqual({ page, cited: true });
+    }
   });
 
   it('silences a post by the caller only through setSilent, on the channel it would have used', () => {
@@ -1429,7 +2211,7 @@ describe('the in-app flag reaches its own Android channel', () => {
     expect(bridge).toContain("options: NotifyOptions = {}");
     // `silent` crosses as its own flag, right after inApp, and is never folded
     // into it: the in-app banner is a channel, not a silenced post.
-    expect(count(module, 'inApp: Boolean,\n        silent: Boolean,\n        promise: Promise,')).toBe(2);
+    expect(count(module, 'inApp: Boolean,\n        silent: Boolean,\n        recipientId: String,\n        promise: Promise,')).toBe(2);
     expect(count(module, 'inApp = inApp,\n                silent = silent,')).toBe(2);
     expect(count(bridge, 'options.inApp === true,\n    options.silent === true,')).toBe(2);
   });
@@ -1462,10 +2244,18 @@ describe('push.ts wiring', () => {
 
   it('uses the same copy as the background handler, since both extend one transcript', () => {
     const body = /const MESSAGE_BODY = '([^']+)';/.exec(push)?.[1];
-    expect(body).toBeDefined();
-    expect(withoutComments(read('index.js'))).toContain(
-      `await notifyConversation(push, '${body}');`,
+    expect(body).toBe('wants to have a chat with you');
+    const background = push.slice(
+      push.indexOf('export async function handleBackgroundPush'),
+      push.indexOf('export function onForegroundPush'),
     );
+    expect(background).toContain('await notifyConversation(push, MESSAGE_BODY);');
+    // index.js registers that handler, and routes nothing itself.
+    const entry = withoutComments(read('index.js'));
+    expect(entry).toContain(
+      'setBackgroundMessageHandler(getMessaging(), remote =>\n  handleBackgroundPush(remote, finishPendingSignOuts),\n);',
+    );
+    expect(entry).not.toMatch(/notify(Conversation|ChatRequest|Call|Engagement)\(/);
   });
 
   it('re-registers from AppState, debounced, and checks rather than requests permission', () => {
@@ -1478,7 +2268,9 @@ describe('push.ts wiring', () => {
     const check = push.slice(push.indexOf('async function registerIfGranted'), push.indexOf('function listen'));
     expect(check).toContain('notificationsGranted()');
     expect(check).not.toContain('ensurePermission');
-    expect(push).toMatch(/export function stopPush\(\): Promise<void> \{\s*halt\(\);\s*const run = revoke\(\);\s*teardown = run\.catch\(\(\) => undefined\);/);
+    expect(push).toMatch(
+      /export function stopPush\([^]*?\): Promise<boolean> \{\s*halt\(\);\s*const run = revoke\(account\);\s*teardown = Promise\.all\(\[teardown, run\.catch\(\(\) => undefined\)\]\)\.then\(\(\) => undefined\);/,
+    );
   });
 
   it('carries the start generation into registration instead of re-reading it later', () => {
@@ -1516,10 +2308,13 @@ describe('who sets the signal, and who starts push', () => {
 
   it('starts push once, at the ready phase, above the member/provider split', () => {
     const app = withoutComments(read('App.tsx'));
-    // Exactly one caller in the app, and it is Root's ready effect.
-    expect(count(app, 'await startPush()')).toBe(2);
+    // Exactly one caller in the app, and it is Root's ready effect, which
+    // returns the start's own cleanup (see `startPushWhenConfigured`).
+    expect(count(app, 'startPushWhenConfigured(')).toBe(1);
+    expect(app).not.toContain('startPush()');
     const effect = app.slice(app.indexOf("if (boot.phase !== 'ready') {"));
-    expect(effect.indexOf('startPush()')).toBeLessThan(effect.indexOf('}, [boot.phase]);'));
+    expect(effect).toMatch(/^[^]*?return startPushWhenConfigured\(/);
+    expect(effect.indexOf('startPushWhenConfigured(')).toBeLessThan(effect.indexOf('}, [boot.phase]);'));
     // The role split lives inside SignedIn, which renders only after every
     // non-ready phase has returned — so neither tree can miss it.
     const signedIn = app.slice(app.indexOf('function SignedIn('));
@@ -1582,6 +2377,7 @@ describe('the chat-request ring takes its notification with it', () => {
   /** The store as the ring sees it: its request, and the two actions it calls. */
   interface RingStore {
     incomingRequest: typeof REQUEST_ROW | null;
+    readonly queuedRequests: ReadonlyArray<typeof REQUEST_ROW>;
     clearIncomingRequest: jest.Mock;
     setNotice: jest.Mock;
   }
@@ -1590,6 +2386,14 @@ describe('the chat-request ring takes its notification with it', () => {
     /** AppState when the ring starts. */
     startState?: 'active' | 'background';
     /**
+     * Requests queued behind the ringing one, oldest first. The store's
+     * clearIncomingRequest promotes the next of them in the same update that
+     * ends the ring, as useStore.ts does, instead of emptying it.
+     */
+    queued?: Array<typeof REQUEST_ROW>;
+    /** The provider is on a call (App.tsx passes `providerRoute.name === 'call'`). */
+    held?: boolean;
+    /**
      * A V2 chat already on screen under the ring, mounted (and so subscribed
      * to AppState) before it, as it is when the provider is in a thread when
      * the request arrives.
@@ -1597,7 +2401,59 @@ describe('the chat-request ring takes its notification with it', () => {
     chatUnder?: string;
   }
 
-  function mountRing({ startState = 'active', chatUnder }: RingOptions = {}) {
+  /**
+   * One of the ring's mutation hooks, as TanStack Query's MutationObserver
+   * behaves (query-core mutationObserver.js): each call starts its own
+   * mutation, `mutateAsync` returns that mutation's promise, and a `mutate`
+   * call's own callbacks fire only while it is the observer's latest call,
+   * because the next call replaces them. What the ring reads off the result:
+   * whether an answer is on the wire, and the variables of the last call.
+   */
+  function fakeMutation() {
+    interface Call {
+      variables: RequestVariables;
+      resolve: (data: unknown) => void;
+      reject: (error: unknown) => void;
+    }
+    const calls: Call[] = [];
+    let latest: Call | undefined;
+    const start = (variables: RequestVariables): { call: Call; promise: Promise<unknown> } => {
+      let call!: Call;
+      const promise = new Promise<unknown>((resolve, reject) => {
+        call = { variables, resolve, reject };
+      });
+      calls.push(call);
+      latest = call;
+      return { call, promise };
+    };
+    const hook = {
+      calls,
+      isPending: false,
+      variables: undefined as RequestVariables | undefined,
+      mutateAsync: jest.fn((variables: RequestVariables) => start(variables).promise),
+      mutate: jest.fn((variables: RequestVariables, options?: MutateCallbacks) => {
+        const { call, promise } = start(variables);
+        promise.then(
+          data => {
+            if (latest === call) {
+              options?.onSuccess?.(data, variables, undefined, MUTATION_CONTEXT);
+              options?.onSettled?.(data, null, variables, undefined, MUTATION_CONTEXT);
+            }
+          },
+          (error: Error) => {
+            if (latest === call) {
+              options?.onError?.(error, variables, undefined, MUTATION_CONTEXT);
+              options?.onSettled?.(undefined, error, variables, undefined, MUTATION_CONTEXT);
+            }
+          },
+        );
+      }),
+    };
+    return hook;
+  }
+  type FakeMutation = ReturnType<typeof fakeMutation>;
+
+  function mountRing({ startState = 'active', chatUnder, queued = [], held = false }: RingOptions = {}) {
     jest.resetModules();
     const effects: Array<() => void | (() => void)> = [];
     jest.doMock('react', () => ({
@@ -1620,21 +2476,25 @@ describe('the chat-request ring takes its notification with it', () => {
     }));
     // A live store, not a snapshot: the ring reads it again when an answer
     // lands (`stillRinging`), and its clear really empties it.
+    const waiting = [...queued];
     const store: RingStore = {
       incomingRequest: REQUEST_ROW,
+      get queuedRequests() {
+        return waiting;
+      },
       clearIncomingRequest: jest.fn(),
       setNotice: jest.fn(),
     };
     store.clearIncomingRequest.mockImplementation(() => {
-      store.incomingRequest = null;
+      store.incomingRequest = waiting.shift() ?? null;
     });
     const useStore = Object.assign(
       (select: (state: RingStore) => unknown) => select(store),
       { getState: () => store },
     );
     jest.doMock('../src/store/useStore', () => ({ useStore }));
-    const accept = { mutate: jest.fn(), isPending: false };
-    const decline = { mutate: jest.fn(), isPending: false };
+    const accept = fakeMutation();
+    const decline = fakeMutation();
     jest.doMock('../src/api/sessions', () => ({
       useAcceptSessionRequest: () => accept,
       useDeclineSessionRequest: () => decline,
@@ -1657,7 +2517,8 @@ describe('the chat-request ring takes its notification with it', () => {
     setState(startState);
     // conversations.ts reads the module once, at load, so it goes in first.
     const clear = jest.fn(async (_conversationId: string) => undefined);
-    (rn.NativeModules as Record<string, unknown>).Conversations = { clear };
+    const notify = jest.fn(async (..._args: unknown[]) => true);
+    (rn.NativeModules as Record<string, unknown>).Conversations = { clear, notify };
 
     // The same module instance the component imports, so its signal is ours.
     const viewing = require('../src/lib/viewingConversation') as ViewingModule;
@@ -1674,14 +2535,38 @@ describe('the chat-request ring takes its notification with it', () => {
     }
     const { ChatRingScreen } = require('../src/components/ChatRingScreen') as typeof import('../src/components/ChatRingScreen');
     const onOpenConversation = jest.fn();
-    const tree = ChatRingScreen({ onOpenConversation });
+    const props = { onOpenConversation, held };
     // One effect, the ring's clock; run it the way React would on mount.
+    let tree = ChatRingScreen(props);
     expect(effects).toHaveLength(1);
-    const cleanup = effects.map(effect => effect())[0];
+    let cleanup = effects.splice(0)[0]!();
     return {
-      tree,
+      get tree() {
+        return tree;
+      },
+      /** Call the component again, as React does on a store change. */
+      render: () => ChatRingScreen(props),
+      /** The call route changes: held or not, and React re-runs the clock. */
+      setHeld: (next: boolean) => {
+        props.held = next;
+      },
+      /**
+       * What React does when the ringing request changes (the next queued
+       * one promoted): the old clock's cleanup, a render, and the new
+       * request's clock.
+       */
+      rerun: () => {
+        if (typeof cleanup === 'function') {
+          cleanup();
+        }
+        effects.length = 0;
+        tree = ChatRingScreen(props);
+        expect(effects).toHaveLength(1);
+        cleanup = effects.splice(0)[0]!();
+      },
       store,
       clear,
+      notify,
       clearIncomingRequest: store.clearIncomingRequest,
       setNotice: store.setNotice,
       accept,
@@ -1740,60 +2625,123 @@ describe('the chat-request ring takes its notification with it', () => {
     button!.props.onPress!();
   }
 
-  /**
-   * Answer the latest `mutate` on `hook` the way TanStack Query calls a
-   * mutate's own callbacks, arguments and all: onSuccess(data, variables,
-   * onMutateResult, context) or onError(error, variables, onMutateResult,
-   * context), then onSettled(data, error, variables, onMutateResult, context)
-   * either way, with `error` null on success.
-   */
-  function answer(
-    hook: { mutate: jest.Mock },
-    outcome: 'success' | 'error',
-    data: unknown = undefined,
-  ): void {
-    const calls = hook.mutate.mock.calls;
-    const [variables, callbacks] = calls[calls.length - 1] as [RequestVariables, MutateCallbacks];
-    if (outcome === 'success') {
-      callbacks.onSuccess?.(data, variables, undefined, MUTATION_CONTEXT);
-      callbacks.onSettled?.(data, null, variables, undefined, MUTATION_CONTEXT);
-    } else {
-      const error = new Error('TypeError: Network request failed');
-      callbacks.onError?.(error, variables, undefined, MUTATION_CONTEXT);
-      callbacks.onSettled?.(undefined, error, variables, undefined, MUTATION_CONTEXT);
+  /** Run every microtask a settled answer sets off, without moving the clock. */
+  async function settleAnswers(): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+      await Promise.resolve();
     }
   }
 
+  /**
+   * Answer one call on `hook`, the latest unless `which` says otherwise, the
+   * way the server would: `data` on success, and on failure `error` or a
+   * network error. Every call settles on its own, as TanStack Query's
+   * mutations do; a `mutate` call's callbacks still fire only while it is the
+   * latest (`fakeMutation`).
+   */
+  async function answer(
+    hook: FakeMutation,
+    outcome: 'success' | 'error',
+    data: unknown = undefined,
+    which: number = hook.calls.length - 1,
+  ): Promise<void> {
+    const call = hook.calls[which]!;
+    expect(call).toBeDefined();
+    if (outcome === 'success') {
+      call.resolve(data);
+    } else {
+      call.reject(data instanceof Error ? data : new Error('TypeError: Network request failed'));
+    }
+    await settleAnswers();
+  }
+
   /** Press Decline, check nothing ends on the press itself, then answer it. */
-  function declineAnd(ring: Ring, outcome: 'success' | 'error'): void {
+  async function declineAnd(ring: Ring, outcome: 'success' | 'error'): Promise<void> {
     press(ring, 'chat-ring-decline');
-    expect(ring.decline.mutate).toHaveBeenCalledTimes(1);
-    expect(ring.decline.mutate.mock.calls[0][0]).toEqual({ requestId: REQUEST, conversationId: A });
+    expect(ring.decline.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(ring.decline.calls[0]?.variables).toEqual({ requestId: REQUEST, conversationId: A });
     // Nothing ends on the press itself, only when the RPC answers.
     expect(ring.clear).not.toHaveBeenCalled();
     expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
-    answer(ring.decline, outcome);
+    await answer(ring.decline, outcome);
   }
 
-  it('clears the notification when the provider declines in the app', () => {
+  it('clears the notification when the provider declines in the app', async () => {
     const ring = mountRing();
-    declineAnd(ring, 'success');
+    await declineAnd(ring, 'success');
     // The ring and its shade entry end together, once the server took it.
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     expect(ring.clear.mock.calls).toEqual([[A]]);
     expect(ring.setNotice).not.toHaveBeenCalled();
   });
 
-  it('keeps the ring and the notification when the decline does not reach the server, and says so', () => {
+  it('keeps the ring and the notification when the decline does not reach the server, and says so', async () => {
     // The request is still pending. Clearing on settle took away both ways to
     // answer it: the ring and the shade entry.
     const ring = mountRing();
-    declineAnd(ring, 'error');
+    await declineAnd(ring, 'error');
     expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
     expect(ring.clear).not.toHaveBeenCalled();
     expect(ring.setNotice.mock.calls).toEqual([['Could not decline. Try again.']]);
     // Still ringing, so its pushes still go to the shade without a banner.
     expect(ring.viewing.getRingingConversation()).toBe(A);
+  });
+
+  it('waits out a call: nothing on screen, no clock, no claim, and rings in full once the call ends', () => {
+    // Over a live call, Accept pushed the chat route, which unmounts
+    // CallScreen, whose unmount cleanup ends the call.
+    const ring = mountRing({ held: true });
+    expect(ring.tree).toBeNull();
+    expect(ring.viewing.getRingingConversation()).toBeNull();
+    jest.advanceTimersByTime(60_000);
+    expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
+    ring.setHeld(false);
+    ring.rerun();
+    expect(byTestId(ring.tree, 'chat-ring-accept')).toBeDefined();
+    expect(ring.viewing.getRingingConversation()).toBe(A);
+    jest.advanceTimersByTime(29_000);
+    expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1_000);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('never opens the chat over a call, even for an Accept that lands after the call was routed', () => {
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toMatch(
+      /<ChatRingScreen\s*held=\{providerRoute\.name === 'call'\}\s*onOpenConversation=\{openAcceptedChat\}\s*\/>/,
+    );
+    expect(app).toMatch(
+      /const openAcceptedChat = useCallback\(\s*\(peerId: string\) => \{\s*if \(currentProviderRouteRef\.current\.name === 'call'\) \{\s*setNotice\('Accepted\. The chat is waiting in your list\.', 'confirm'\);\s*return;\s*\}\s*pushProvider\(\{ name: 'chat', peerId \}\);/,
+    );
+  });
+
+  it('announces each request queued behind the ring, alerting, once, when the provider leaves the app', () => {
+    // Its push went to the shade silently while the ring was up, and the
+    // queue is promoted only in an app nobody is looking at.
+    const second = { ...REQUEST_ROW, requestId: 'r-queued', conversationId: B, peerId: 'member-b', peerName: 'Bea' };
+    const ring = mountRing({ queued: [second] });
+    expect(ring.notify).not.toHaveBeenCalled();
+    ring.appState('background');
+    expect(ring.notify).toHaveBeenCalledTimes(1);
+    const [conversationId, peerId, senderName, body, , avatar, inApp, silent] = ring.notify.mock.calls[0]!;
+    expect({ conversationId, peerId, senderName, body, avatar, inApp, silent }).toEqual({
+      conversationId: B,
+      peerId: 'member-b',
+      senderName: 'Bea',
+      body: 'wants to have a chat with you',
+      avatar: '',
+      inApp: false,
+      silent: false,
+    });
+    // A second departure is not news.
+    ring.appState('active');
+    ring.appState('background');
+    expect(ring.notify).toHaveBeenCalledTimes(1);
+    // Nothing once the ring is gone.
+    ring.unmount();
+    ring.appState('active');
+    ring.appState('background');
+    expect(ring.notify).toHaveBeenCalledTimes(1);
   });
 
   it('leaves the notification when the ring is watched to the end', () => {
@@ -1873,7 +2821,7 @@ describe('the chat-request ring takes its notification with it', () => {
 
   it('uses the same clear the chat screen does, by conversation id', () => {
     const ring = withoutComments(read('src/components/ChatRingScreen.tsx'));
-    expect(ring).toContain("import { clearConversation } from '../lib/conversations';");
+    expect(ring).toContain("import { clearConversation, notifyConversation } from '../lib/conversations';");
     // A decline that landed, and a ring leaving its own chat on screen
     // (`clearIfUncovered`). Never a ring-out on its own.
     expect(count(ring, 'void clearConversation(conversationId);')).toBe(2);
@@ -1881,7 +2829,7 @@ describe('the chat-request ring takes its notification with it', () => {
 
   /* A Decline still on the wire when the ring runs out ------------------- */
 
-  it('leaves the notification when the ring runs out on a Decline in flight, and points to the thread if it fails', () => {
+  it('leaves the notification when the ring runs out on a Decline in flight, and points to the thread if it fails', async () => {
     const ring = mountRing();
     jest.advanceTimersByTime(20_000);
     press(ring, 'chat-ring-decline');
@@ -1890,29 +2838,29 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     // ...but the answer has not landed, so its notification stays.
     expect(ring.clear).not.toHaveBeenCalled();
-    answer(ring.decline, 'error');
+    await answer(ring.decline, 'error');
     expect(ring.clear).not.toHaveBeenCalled();
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     // No ring left to try again on; the thread has its own Decline.
     expect(ring.setNotice.mock.calls).toEqual([['Could not decline. It is still waiting in the chat.']]);
   });
 
-  it('clears the notification when that Decline lands after the ring-out', () => {
+  it('clears the notification when that Decline lands after the ring-out', async () => {
     const ring = mountRing();
     jest.advanceTimersByTime(20_000);
     press(ring, 'chat-ring-decline');
     jest.advanceTimersByTime(10_000);
     expect(ring.clear).not.toHaveBeenCalled();
-    answer(ring.decline, 'success');
+    await answer(ring.decline, 'success');
     expect(ring.clear.mock.calls).toEqual([[A]]);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     expect(ring.setNotice).not.toHaveBeenCalled();
   });
 
-  it('keeps the notification through a ring-out after a failed Decline has settled', () => {
+  it('keeps the notification through a ring-out after a failed Decline has settled', async () => {
     const ring = mountRing();
     jest.advanceTimersByTime(5_000);
-    declineAnd(ring, 'error');
+    await declineAnd(ring, 'error');
     expect(ring.setNotice.mock.calls).toEqual([['Could not decline. Try again.']]);
     jest.advanceTimersByTime(25_000);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
@@ -1922,7 +2870,7 @@ describe('the chat-request ring takes its notification with it', () => {
   it.each([
     ['accept', 'chat-ring-accept'],
     ['decline', 'chat-ring-decline'],
-  ] as const)('does not end a newer ring when a late %s lands', (kind, testID) => {
+  ] as const)('does not end a newer ring when a late %s lands', async (kind, testID) => {
     // The store's clear is unconditional, so an answer for a ring that ran
     // out would end whichever request rings now.
     const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
@@ -1932,12 +2880,12 @@ describe('the chat-request ring takes its notification with it', () => {
     jest.advanceTimersByTime(10_000);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: B };
-    answer(kind === 'accept' ? ring.accept : ring.decline, 'success', kind === 'accept' ? 'session-1' : undefined);
+    await answer(kind === 'accept' ? ring.accept : ring.decline, 'success', kind === 'accept' ? 'session-1' : undefined);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
   });
 
-  it('keeps the newer request\'s notification when an older Decline for the same chat lands late', () => {
+  it('keeps the newer request\'s notification when an older Decline for the same chat lands late', async () => {
     // Greptile P1 on 03c9aae: the clear is by conversation, so an answer to
     // the old request took the new, unanswered one out of the shade.
     const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
@@ -1946,7 +2894,7 @@ describe('the chat-request ring takes its notification with it', () => {
     press(ring, 'chat-ring-decline');
     jest.advanceTimersByTime(10_000);
     ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: A };
-    answer(ring.decline, 'success');
+    await answer(ring.decline, 'success');
     expect(ring.clear).not.toHaveBeenCalled();
     expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
   });
@@ -1965,55 +2913,91 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.clear).not.toHaveBeenCalled();
   });
 
-  it('clears it on Accept when that chat is already the screen underneath', () => {
+  it('clears it on Accept when that chat is already the screen underneath', async () => {
     // Accept opens the chat that is already mounted, so nothing mounts again
     // to take the notification out of the shade.
     const ring = mountRing({ chatUnder: A });
     press(ring, 'chat-ring-accept');
     expect(ring.clear).not.toHaveBeenCalled();
-    answer(ring.accept, 'success', 'session-1');
+    await answer(ring.accept, 'success', 'session-1');
     expect(ring.clear.mock.calls).toEqual([[A]]);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
     expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
   });
 
-  it('leaves it to the chat that opens when Accept is pressed over a different one', () => {
+  it('leaves it to the chat that opens when Accept is pressed over a different one', async () => {
     const ring = mountRing({ chatUnder: B });
     press(ring, 'chat-ring-accept');
-    answer(ring.accept, 'success', 'session-1');
+    await answer(ring.accept, 'success', 'session-1');
     expect(ring.clear).not.toHaveBeenCalled();
     expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
   });
 
-  it('keeps the ring and the notification when Accept never reached the server', () => {
+  it('keeps the ring and the notification when Accept never reached the server', async () => {
     // Greptile P1 on 5cb4480: a network failure cleared the notification of a
     // request still pending, leaving nothing to answer it from.
     const ring = mountRing({ chatUnder: A });
     press(ring, 'chat-ring-accept');
-    answer(ring.accept, 'error');
+    await answer(ring.accept, 'error');
     expect(ring.clear).not.toHaveBeenCalled();
     expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
     expect(ring.onOpenConversation).not.toHaveBeenCalled();
     expect(ring.setNotice.mock.calls).toEqual([['Could not accept. Try again.']]);
   });
 
+  it('does not invite a tap on a newer ring when an Accept fails after its own ring ran out', async () => {
+    // "Try again" over a different request ringing now invited the press that
+    // accepted THAT one instead.
+    const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
+    const ring = mountRing();
+    press(ring, 'chat-ring-accept');
+    jest.advanceTimersByTime(30_000);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: B };
+    await answer(ring.accept, 'error');
+    expect(ring.setNotice.mock.calls).toEqual([['Could not accept. It is still waiting in the chat.']]);
+    expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
+  });
+
+  it.each(['accept', 'decline'] as const)(
+    'keeps a newer ring\'s buttons live while an older request\'s %s is still on the wire',
+    hook => {
+      // The ring is always mounted, so its mutation observers carry over from
+      // one request to the next: an older answer in flight disabled both
+      // buttons for the whole of the newer ring.
+      const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
+      const ring = mountRing();
+      const disabled = (tree: unknown) =>
+        (['chat-ring-accept', 'chat-ring-decline'] as const).map(
+          id => (byTestId(tree, id)?.props as { disabled?: boolean } | undefined)?.disabled,
+        );
+      press(ring, hook === 'accept' ? 'chat-ring-accept' : 'chat-ring-decline');
+      ring[hook].isPending = true;
+      ring[hook].variables = { requestId: REQUEST, conversationId: A };
+      // Its own request on screen: both disabled while the answer is out.
+      expect(disabled(ring.render())).toEqual([true, true]);
+      jest.advanceTimersByTime(30_000);
+      ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: B };
+      expect(disabled(ring.render())).toEqual([false, false]);
+      // And an answer for the newer one disables them again.
+      ring[hook].variables = { requestId: NEWER, conversationId: B };
+      expect(disabled(ring.render())).toEqual([true, true]);
+    },
+  );
+
   it.each(['P0001', 'P0007', '42501'])(
     'ends the ring and opens the chat when the server refused the Accept (%s)',
-    code => {
+    async code => {
       const ring = mountRing({ chatUnder: A });
       press(ring, 'chat-ring-accept');
-      const calls = ring.accept.mutate.mock.calls;
-      const [variables, callbacks] = calls[calls.length - 1] as [RequestVariables, MutateCallbacks];
-      const refused = Object.assign(new Error('refused'), { code });
-      callbacks.onError?.(refused, variables, undefined, MUTATION_CONTEXT);
-      callbacks.onSettled?.(undefined, refused, variables, undefined, MUTATION_CONTEXT);
+      await answer(ring.accept, 'error', Object.assign(new Error('refused'), { code }));
       expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
       expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
       expect(ring.setNotice).not.toHaveBeenCalled();
     },
   );
 
-  it('does not clear a newer request\'s notification when an older Accept lands late', () => {
+  it('does not clear a newer request\'s notification when an older Accept lands late', async () => {
     const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
     const ring = mountRing({ chatUnder: A });
     jest.advanceTimersByTime(20_000);
@@ -2023,7 +3007,7 @@ describe('the chat-request ring takes its notification with it', () => {
     // answer is under test here.
     const before = ring.clear.mock.calls.length;
     ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: A };
-    answer(ring.accept, 'success', 'session-1');
+    await answer(ring.accept, 'success', 'session-1');
     expect(ring.clear.mock.calls.length).toBe(before);
     expect(ring.store.incomingRequest?.requestId).toBe(NEWER);
   });
@@ -2037,6 +3021,252 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.clear).not.toHaveBeenCalled();
     jest.advanceTimersByTime(1_000);
     expect(ring.clear.mock.calls).toEqual([[A]]);
+  });
+
+  /* The ring over a DIFFERENT conversation's chat ------------------------ */
+
+  it('keeps the covered chat\'s silent entries for the whole ring, and clears them when it runs out', () => {
+    // Chat B under ring A: B's pushes go to the shade silently while the ring
+    // hides B, and nothing may clear them until B can be seen again.
+    const ring = mountRing({ chatUnder: B });
+    expect(
+      foregroundPushAction({ conversationId: B }, ring.viewing.getViewingConversation(), true, ring.viewing.getRingingConversation()),
+    ).toBe('show-silent');
+    ring.appState('background');
+    ring.appState('active');
+    jest.advanceTimersByTime(29_000);
+    expect(ring.clear).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1_000);
+    // B is on screen again with every line posted under the ring; A's own
+    // entry is the pending request's and stays.
+    expect(ring.clear.mock.calls).toEqual([[B]]);
+  });
+
+  it('clears the revealed chat on a ring-out even while the Decline is on the wire', async () => {
+    const ring = mountRing({ chatUnder: B });
+    jest.advanceTimersByTime(20_000);
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(10_000);
+    // The in-flight guard is for A's entry only.
+    expect(ring.clear.mock.calls).toEqual([[B]]);
+    await answer(ring.decline, 'success');
+    expect(ring.clear.mock.calls).toEqual([[B], [A]]);
+  });
+
+  it('clears both the ring\'s entry and the revealed chat\'s when a Decline ends the ring', async () => {
+    const ring = mountRing({ chatUnder: B });
+    await declineAnd(ring, 'success');
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    expect(ring.clear.mock.calls).toEqual([[B], [A]]);
+  });
+
+  it('clears nothing for the covered chat when the Decline fails and the ring stays', async () => {
+    const ring = mountRing({ chatUnder: B });
+    await declineAnd(ring, 'error');
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.viewing.getRingingConversation()).toBe(A);
+  });
+
+  it('clears nothing for a chat that is not on screen when the ring runs out', () => {
+    const ring = mountRing({ chatUnder: B });
+    ring.appState('background');
+    jest.advanceTimersByTime(30_000);
+    expect(ring.clear).not.toHaveBeenCalled();
+  });
+
+  /* The next queued request rings in the same update ------------------ */
+
+  // clearIncomingRequest promotes the oldest queued request as it ends a ring
+  // (useStore.ts), so the chat under the ring is covered again at once. Both
+  // reveal clears used to run as if it could be seen, and cancelled its entry,
+  // the queued request's own among it, while the next ring hid it.
+  const QUEUED = 'eeeeeeee-0000-4000-8000-0000000000ee';
+  const PEER_B = 'ffffffff-0000-4000-8000-0000000000ff';
+  const queuedFor = (conversationId: string) => ({
+    ...REQUEST_ROW,
+    requestId: QUEUED,
+    conversationId,
+    peerId: PEER_B,
+  });
+
+  it('keeps the covered chat\'s entry while the queued request for it rings, and clears it when that ring leaves', () => {
+    const ring = mountRing({ chatUnder: B, queued: [queuedFor(B)] });
+    jest.advanceTimersByTime(30_000);
+    expect(ring.store.incomingRequest?.requestId).toBe(QUEUED);
+    expect(ring.clear).not.toHaveBeenCalled();
+    ring.rerun();
+    jest.advanceTimersByTime(29_000);
+    expect(ring.clear).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1_000);
+    expect(ring.store.incomingRequest).toBeNull();
+    expect(ring.clear.mock.calls).toEqual([[B]]);
+  });
+
+  it('keeps its own chat\'s entry while a queued ring for another covers it, and the last ring to leave clears it', () => {
+    const ring = mountRing({ chatUnder: A, queued: [queuedFor(B)] });
+    jest.advanceTimersByTime(30_000);
+    expect(ring.clear).not.toHaveBeenCalled();
+    ring.rerun();
+    jest.advanceTimersByTime(30_000);
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+  });
+
+  it('clears only the declined request\'s own entry when a Decline lands with the next request ringing over the chat', async () => {
+    const ring = mountRing({ chatUnder: B, queued: [queuedFor(B)] });
+    await declineAnd(ring, 'success');
+    expect(ring.store.incomingRequest?.requestId).toBe(QUEUED);
+    // A's entry is the answered request's; B's is covered by the next ring.
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+    ring.rerun();
+    jest.advanceTimersByTime(30_000);
+    expect(ring.clear.mock.calls).toEqual([[A], [B]]);
+  });
+
+  it('leaves the entry of the chat an Accept lands on while the next request rings over it', async () => {
+    const ring = mountRing({ chatUnder: A, queued: [queuedFor(B)] });
+    press(ring, 'chat-ring-accept');
+    await answer(ring.accept, 'success', 'session-1');
+    expect(ring.store.incomingRequest?.requestId).toBe(QUEUED);
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
+  });
+
+  /* Answers to two rings on one always-mounted hook ---------------------- */
+
+  // TanStack Query's observer keeps only the latest mutate's callbacks, and
+  // the per-request `busy` lets the next ring be answered while the older
+  // answer is still out. Each answer now settles on its own promise.
+  it('runs an older Decline\'s landing after the next ring was declined too', async () => {
+    jest.setSystemTime(1_790_000_000_000);
+    const ring = mountRing({ queued: [queuedFor(B)] });
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(30_000);
+    ring.rerun();
+    press(ring, 'chat-ring-decline');
+    expect(ring.decline.calls.map(call => call.variables.requestId)).toEqual([REQUEST, QUEUED]);
+    await answer(ring.decline, 'success', undefined, 0);
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+    expect(ring.viewing.declinedAt(A)).toBe(1_790_000_000_000);
+    await answer(ring.decline, 'success', undefined, 1);
+    expect(ring.clear.mock.calls).toEqual([[A], [B]]);
+    expect(ring.viewing.declinedAt(B)).toBe(1_790_000_030_000);
+  });
+
+  it('says so when an older Decline fails after the next ring was declined', async () => {
+    const ring = mountRing({ queued: [queuedFor(B)] });
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(30_000);
+    ring.rerun();
+    press(ring, 'chat-ring-decline');
+    await answer(ring.decline, 'error', undefined, 0);
+    expect(ring.setNotice.mock.calls).toEqual([['Could not decline. It is still waiting in the chat.']]);
+  });
+
+  it('opens an older Accept\'s chat after the next ring was accepted too', async () => {
+    const ring = mountRing({ queued: [queuedFor(B)] });
+    press(ring, 'chat-ring-accept');
+    jest.advanceTimersByTime(30_000);
+    ring.rerun();
+    press(ring, 'chat-ring-accept');
+    await answer(ring.accept, 'success', 'session-1', 0);
+    expect(ring.onOpenConversation.mock.calls).toEqual([[PEER]]);
+    await answer(ring.accept, 'success', 'session-2', 1);
+    expect(ring.onOpenConversation.mock.calls).toEqual([[PEER], [PEER_B]]);
+  });
+
+  /* A Decline is stamped when it was pressed ----------------------------- */
+
+  it('keeps a message sent while the Decline was on the wire, in the shade and past the late-push rule', async () => {
+    // Pressed at T0 and landed six seconds later. The member wrote at T0+2 s,
+    // posted silently under the ring; the landing cancelled it unseen, and a
+    // push for it arriving after the landing was ignored as "before the
+    // Decline".
+    const T0 = 1_790_000_000_000;
+    jest.setSystemTime(T0);
+    const ring = mountRing();
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(2_000);
+    ring.viewing.recordPosted(A, T0 + 2_000);
+    jest.advanceTimersByTime(4_000);
+    await answer(ring.decline, 'success');
+    expect(ring.clear).not.toHaveBeenCalled();
+    expect(ring.viewing.declinedAt(A)).toBe(T0);
+    expect(
+      foregroundPushAction({ conversationId: A, sentAt: T0 + 2_000 }, null, true, null, ring.viewing.declinedAt(A)),
+    ).toBe('show-in-app');
+    // The request's own push, sent before the press, is still the answered one.
+    expect(
+      foregroundPushAction({ conversationId: A, sentAt: T0 - 1_000 }, null, true, null, ring.viewing.declinedAt(A)),
+    ).toBe('ignore');
+  });
+
+  it('clears the kept entry when the chat the ring covered is that conversation, now on screen', async () => {
+    // Something posted since the press keeps the entry, but the ring has
+    // left and the person is reading the very chat it covered.
+    const T0 = 1_790_000_000_000;
+    jest.setSystemTime(T0);
+    const ring = mountRing({ chatUnder: A });
+    press(ring, 'chat-ring-decline');
+    ring.viewing.recordPosted(A, T0 + 2_000);
+    jest.advanceTimersByTime(4_000);
+    await answer(ring.decline, 'success');
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+  });
+
+  it('clears the entry a ring-out skipped for a Decline in flight, once that Decline settles, with the chat on screen', async () => {
+    const ring = mountRing({ chatUnder: A });
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(30_000);
+    expect(ring.clear).not.toHaveBeenCalled();
+    await answer(ring.decline, 'error');
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+  });
+
+  it('keeps the entry after a failed Decline while the ring is still up', async () => {
+    const ring = mountRing({ chatUnder: A });
+    await declineAnd(ring, 'error');
+    expect(ring.clear).not.toHaveBeenCalled();
+  });
+
+  it('still clears the entry when nothing newer than the press was posted', async () => {
+    const T0 = 1_790_000_000_000;
+    jest.setSystemTime(T0);
+    const ring = mountRing();
+    ring.viewing.recordPosted(A, T0 - 1_000);
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(6_000);
+    await answer(ring.decline, 'success');
+    expect(ring.clear.mock.calls).toEqual([[A]]);
+  });
+
+  /* A Decline, remembered ---------------------------------------------- */
+
+  it('remembers a Decline that landed, so the request\'s late push does not peek', async () => {
+    jest.setSystemTime(1_790_000_002_000);
+    const ring = mountRing();
+    await declineAnd(ring, 'success');
+    expect(ring.viewing.declinedAt(A)).toBe(1_790_000_002_000);
+    // The member's first message, sent as the ring started, arriving now.
+    expect(
+      foregroundPushAction({ conversationId: A, sentAt: 1_790_000_000_000 }, null, true, null, ring.viewing.declinedAt(A)),
+    ).toBe('ignore');
+  });
+
+  it('remembers nothing for a Decline that failed', async () => {
+    const ring = mountRing();
+    await declineAnd(ring, 'error');
+    expect(ring.viewing.declinedAt(A)).toBeNull();
+  });
+
+  it('remembers nothing when a newer request for the conversation rings, whose push is still to come', async () => {
+    const NEWER = 'eeeeeeee-0000-4000-8000-00000000000e';
+    const ring = mountRing();
+    jest.advanceTimersByTime(20_000);
+    press(ring, 'chat-ring-decline');
+    jest.advanceTimersByTime(10_000);
+    ring.store.incomingRequest = { ...REQUEST_ROW, requestId: NEWER, conversationId: A };
+    await answer(ring.decline, 'success');
+    expect(ring.viewing.declinedAt(A)).toBeNull();
   });
 });
 
@@ -2065,21 +3295,125 @@ describe('account deletion keeps push until the account is actually gone', () =>
     // And the precondition that makes the order safe: stopPush cannot throw.
     const push = withoutComments(read('src/lib/push.ts'));
     const stop = push.slice(push.indexOf('export function stopPush'), push.indexOf('const MESSAGE_BODY'));
-    expect(stop).toMatch(/halt\(\);\s*const run = revoke\(\);/);
-    expect(stop).toMatch(/async function revoke\(\): Promise<void> \{\s*try \{[^]*\} catch \(err\) \{/);
+    expect(stop).toMatch(/halt\(\);\s*const run = revoke\(account\);/);
+    // Both halves in a try of their own, so the row delete failing still
+    // revokes the token, and neither can throw.
+    expect(stop).toMatch(
+      /async function revoke\([^)]*\): Promise<boolean> \{\s*let rowGone = false;\s*try \{[^]*?\} catch \(err\) \{[^]*?try \{\s*await deleteToken\(getMessaging\(\)\);\s*return true;\s*\} catch \(err\) \{/,
+    );
     // The wait for a registration on the wire is inside that try, and first.
     expect(stop).toMatch(/try \{\s*await drainRegistrations\(STOP_DRAIN_MS\);\s*const token = await getToken/);
   });
 });
 
-describe('the lock-screen Decline clears under the post lock', () => {
-  it('ChatRequestReceiver cancels through Conversations.clear, never a bare cancel', () => {
-    const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../android/app/src/main/java/com/companionchat/ChatRequestReceiver.kt'),
-      'utf8',
-    ) as string;
-    expect(src).toContain('Conversations.clear(context, conversationId)');
-    expect(src).not.toMatch(/NotificationManagerCompat[\s\S]*\.cancel\(/);
+describe('the lock-screen Decline runs without the app and clears only once it landed', () => {
+  const receiver = withoutComments(read('android/app/src/main/java/com/companionchat/ChatRequestReceiver.kt'));
+  const service = withoutComments(read('android/app/src/main/java/com/companionchat/ChatRequestDeclineService.kt'));
+
+  it('ChatRequestReceiver clears nothing and hands the Decline to a headless task', () => {
+    // It cleared first and emitted to a listener that exists only while the
+    // signed-in tree is mounted: with the app swiped away, the Decline was
+    // lost and its shade entry already gone.
+    expect(receiver).not.toContain('Conversations.clear');
+    expect(receiver).not.toMatch(/\.cancel(All)?\(/);
+    expect(receiver).not.toContain('ReactBridgeEvents');
+    expect(receiver).toContain('Intent(context, ChatRequestDeclineService::class.java)');
+    expect(receiver).toMatch(/context\.startService\(task\)\s*HeadlessJsTaskService\.acquireWakeLockNow\(context\)/);
+  });
+
+  it('runs the task index.js registers, in the foreground too', () => {
+    expect(service).toContain('class ChatRequestDeclineService : HeadlessJsTaskService()');
+    expect(service).toContain('const val TASK = "ChatRequestDecline"');
+    expect(service).toContain('return HeadlessJsTaskConfig(TASK, data, TIMEOUT_MS, true)');
+    expect(withoutComments(read('index.js'))).toContain(
+      "AppRegistry.registerHeadlessTask('ChatRequestDecline', () => declineFromNotification);",
+    );
+    expect(read('android/app/src/main/AndroidManifest.xml')).toMatch(
+      /<service\s+android:name="\.ChatRequestDeclineService"\s+android:exported="false" \/>/,
+    );
+    // Nothing in the tree runs the RPC for it any more.
+    expect(withoutComments(read('App.tsx'))).not.toContain("'chatRequestDecline'");
+  });
+
+  it('tells the mounted tree under the one name it listens for, and the tree refetches what changed', () => {
+    // Only the emit side was held: the listener could be renamed, and a
+    // shade Decline then left the thread showing live Accept and Decline
+    // buttons for a request already declined.
+    const decline = withoutComments(read('src/lib/chatRequestDecline.ts'));
+    const emitted = /DeviceEventEmitter\.emit\('([^']+)', conversationId\)/.exec(decline)?.[1];
+    expect(emitted).toBe('chatRequestDeclined');
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toMatch(
+      new RegExp(
+        `const sub = DeviceEventEmitter\\.addListener\\('${emitted}', \\(conversationId: string\\) => \\{\\s*` +
+          'refetchAfterDecline\\(queryClient, conversationId\\);\\s*\\}\\);\\s*return \\(\\) => sub\\.remove\\(\\);',
+      ),
+    );
+    expect(count(app, `addListener('${emitted}'`)).toBe(1);
+  });
+
+  function loadDecline(rpcResult: { error: { code: string } | null } | Error) {
+    jest.resetModules();
+    const rn = require('react-native') as typeof import('react-native');
+    const clear = jest.fn(async (_conversationId: string) => undefined);
+    const clearRequest = jest.fn(async (_conversationId: string, _requestId: string) => undefined);
+    const pushLog = jest.fn();
+    (rn.NativeModules as Record<string, unknown>).Conversations = { clear, clearRequest, pushLog };
+    const { supabase } = require('../src/lib/supabase') as { supabase: { rpc: jest.Mock } };
+    const order: string[] = [];
+    supabase.rpc.mockImplementation(async () => {
+      order.push('rpc');
+      if (rpcResult instanceof Error) throw rpcResult;
+      return rpcResult;
+    });
+    clear.mockImplementation(async () => {
+      order.push('clear');
+    });
+    clearRequest.mockImplementation(async () => {
+      order.push('clearRequest');
+    });
+    const emit = jest.spyOn(rn.DeviceEventEmitter, 'emit').mockImplementation(() => undefined);
+    const { declineFromNotification } = require('../src/lib/chatRequestDecline') as typeof import('../src/lib/chatRequestDecline');
+    return { declineFromNotification, rpc: supabase.rpc, clear, clearRequest, emit, order, pushLog };
+  }
+
+  // pushLog mirrors a warning to the console in __DEV__, which jest is; the
+  // line is asserted through the native stub instead.
+  beforeEach(() => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('declines, then clears the notification and tells a mounted tree', async () => {
+    const d = loadDecline({ error: null });
+    await d.declineFromNotification({ requestId: REQUEST, conversationId: A });
+    expect(d.rpc).toHaveBeenCalledWith('decline_session_request', { p_request_id: REQUEST });
+    // Only while the entry is still this request: never the conversation's
+    // unconditional clear, which cancelled a message posted meanwhile.
+    expect(d.order).toEqual(['rpc', 'clearRequest']);
+    expect(d.clearRequest.mock.calls).toEqual([[A, REQUEST]]);
+    expect(d.clear).not.toHaveBeenCalled();
+    expect(d.emit).toHaveBeenCalledWith('chatRequestDeclined', A);
+  });
+
+  it.each([
+    ['an error the RPC reports', { error: { code: 'PGRST301' } }],
+    ['a request that never got there', new Error('TypeError: Network request failed')],
+  ] as const)('keeps the notification when the Decline did not land: %s', async (_name, result) => {
+    const d = loadDecline(result);
+    await d.declineFromNotification({ requestId: REQUEST, conversationId: A });
+    expect(d.clear).not.toHaveBeenCalled();
+    expect(d.clearRequest).not.toHaveBeenCalled();
+    expect(d.emit).not.toHaveBeenCalled();
+    expect(d.pushLog.mock.calls[0][0]).toBe(true);
+  });
+
+  it('does nothing without a request id', async () => {
+    const d = loadDecline({ error: null });
+    await d.declineFromNotification({ conversationId: A });
+    expect(d.rpc).not.toHaveBeenCalled();
+    expect(d.clear).not.toHaveBeenCalled();
+    expect(d.clearRequest).not.toHaveBeenCalled();
   });
 });
 
@@ -2104,20 +3438,677 @@ describe('a sign-in waits for a sign-out still finishing (Greptile P1 on 6c8e3b7
     expect(bodyOf(signature)).toMatch(/\): Promise<[^>]+> \{\s*await afterPendingSignOut\(\);/);
   });
 
-  it('records the whole sign-out, push teardown included, the moment it starts', () => {
-    const begin = bodyOf('export function beginSignOut(');
-    expect(begin).toMatch(/await stopPush\(\);\s*await signOut\(\);/);
-    expect(begin).toMatch(/\}\)\(\);\s*trackSignOut\(run\);\s*return run;/);
-    expect(bodyOf('export function signOut(')).toMatch(/const run = endSession\(\);\s*trackSignOut\(run\);/);
-    // Never rejects into a sign-in.
-    expect(auth).toMatch(/run\.catch\(\(\) => undefined\)/);
-  });
-
   it('Settings signs out through beginSignOut, not its own unrecorded chain', () => {
     const settings = read('src/screens/SettingsSheet.tsx');
     const press = settings.slice(settings.indexOf('const onSignOutPress'), settings.indexOf('}, [onSignedOut, queryClient]);'));
     expect(press).toContain('beginSignOut()');
     expect(press).not.toMatch(/await stopPush\(\)|await signOut\(\)/);
+  });
+});
+
+describe('sign-out drops the device session first and ends the old one on a client of its own', () => {
+  /*
+   * Driven, not read. auth.ts is loaded with its collaborators replaced by
+   * recorders: MMKV by a Map, the app's Supabase client and the sign-out
+   * client by stand-ins that log what they are asked, push by a `stopPush`
+   * whose teardown is held open. The sign-in used to be held by source
+   * regexes only, which a no-op `afterPendingSignOut` still passed.
+   */
+  const SESSION_KEY = 'sb-test-auth-token';
+  const STORED = JSON.stringify({ access_token: 'access-A', refresh_token: 'refresh-A', user: { id: 'user-a' } });
+
+  function gate() {
+    let open: () => void = () => undefined;
+    const promise = new Promise<void>(resolve => {
+      open = resolve;
+    });
+    return { promise, open };
+  }
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i += 1) {
+      await Promise.resolve();
+    }
+  };
+
+  function loadAuth(options: {
+    firebase?: Promise<void>;
+    firebaseFails?: boolean;
+    ghostSignOut?: () => Promise<{ error: unknown }>;
+    store?: Map<string, string>;
+    /** Whether a push half fails: the row delete and the token delete both. */
+    pushFails?: () => boolean;
+  } = {}) {
+    jest.resetModules();
+    const store = options.store ?? new Map<string, string>([[SESSION_KEY, STORED]]);
+    const events: string[] = [];
+    jest.doMock('../src/lib/storage', () => ({
+      storage: {
+        get: (key: string) => store.get(key) ?? null,
+        set: (key: string, value: string) => {
+          store.set(key, value);
+        },
+        remove: (key: string) => {
+          store.delete(key);
+        },
+      },
+      supabaseStorage: {},
+    }));
+    const ghost = {
+      auth: {
+        setSession: jest.fn(async (tokens: { access_token: string; refresh_token: string }) => {
+          events.push(`ghost setSession ${tokens.access_token}`);
+          return { data: {}, error: null };
+        }),
+        signOut: jest.fn(async (opts: { scope: string }) => {
+          events.push(`ghost signOut ${opts.scope}`);
+          return options.ghostSignOut ? options.ghostSignOut() : { error: null };
+        }),
+      },
+    };
+    const main = {
+      rpc: jest.fn(async () => ({ error: null })),
+      auth: {
+        signOut: jest.fn(async (opts?: { scope?: string }) => {
+          events.push(`main signOut ${opts?.scope ?? 'global'}`);
+          return { error: null };
+        }),
+        exchangeCodeForSession: jest.fn(async () => {
+          events.push('exchangeCodeForSession');
+          return { data: {}, error: null };
+        }),
+        getSession: jest.fn(async () => ({ data: { session: null }, error: null })),
+        signInWithOAuth: jest.fn(async () => {
+          events.push('signInWithOAuth');
+          return { data: { url: 'https://accounts.example/consent' }, error: null };
+        }),
+      },
+    };
+    jest.doMock('../src/lib/supabase', () => ({
+      supabase: main,
+      SESSION_STORAGE_KEY: SESSION_KEY,
+      signOutClient: () => ghost,
+    }));
+    const pushTeardown = gate();
+    /** Whether somebody's session was stored when each push half started. */
+    const signedInAtPush: boolean[] = [];
+    const stopPush = jest.fn((account: unknown) => {
+      events.push('stopPush');
+      signedInAtPush.push(store.has(SESSION_KEY));
+      return (async () => {
+        const db = await account;
+        events.push(`push row delete as ${db === ghost ? 'the old account' : String(db)}`);
+        await pushTeardown.promise;
+        return !(options.pushFails?.() ?? false);
+      })();
+    });
+    // The account half alone: the row, never the device's listeners or token.
+    const unregisterPush = jest.fn(async (account: unknown) => {
+      events.push('unregisterPush');
+      const db = await account;
+      events.push(`push row delete only, as ${db === ghost ? 'the old account' : String(db)}`);
+      return !(options.pushFails?.() ?? false);
+    });
+    jest.doMock('../src/lib/push', () => ({
+      stopPush,
+      unregisterPush,
+      signedInOnDevice: () => store.has(SESSION_KEY),
+      storedAccountId: () => {
+        const raw = store.get(SESSION_KEY);
+        return raw === undefined ? null : (JSON.parse(raw) as { user: { id: string } }).user.id;
+      },
+    }));
+    jest.doMock('../src/lib/firebasePhone', () => ({
+      firebaseSendOtp: jest.fn(),
+      firebaseConfirmOtp: jest.fn(),
+      firebaseSignOut: jest.fn(async () => {
+        events.push('firebaseSignOut');
+        await options.firebase;
+        if (options.firebaseFails) {
+          throw new Error('firebase');
+        }
+      }),
+    }));
+    jest.doMock('../src/lib/sentry', () => ({ reportSwallowed: jest.fn() }));
+    const clearAll = jest.fn(async () => {
+      events.push('clearAll');
+    });
+    jest.doMock('../src/lib/conversations', () => ({
+      ...jest.requireActual('../src/lib/conversations'),
+      clearAllConversations: clearAll,
+    }));
+    const viewing = require('../src/lib/viewingConversation') as ViewingModule;
+    const auth = require('../src/api/auth') as typeof import('../src/api/auth');
+    return {
+      auth,
+      viewing,
+      store,
+      events,
+      main,
+      ghost,
+      stopPush,
+      unregisterPush,
+      signedInAtPush,
+      pushTeardown,
+      clearAll,
+    };
+  }
+
+  afterEach(() => {
+    for (const name of [
+      '../src/lib/storage',
+      '../src/lib/push',
+      '../src/lib/firebasePhone',
+      '../src/lib/sentry',
+      '../src/lib/conversations',
+    ]) {
+      jest.dontMock(name);
+    }
+    // Back to the file's own stand-ins, which `load()` configures per test.
+    jest.doMock('../src/lib/supabase', () => ({
+      supabase: { rpc: jest.fn(), from: jest.fn(), auth: { getSession: jest.fn() } },
+      SESSION_STORAGE_KEY: STORED_SESSION_KEY,
+    }));
+    jest.doMock('../src/lib/storage', () => mockStorageModule);
+  });
+
+  it('removes the stored session before it returns, so a process killed at once relaunches signed out', () => {
+    const a = loadAuth({ firebase: new Promise<void>(() => undefined) });
+    a.viewing.setViewingConversation(A);
+    a.viewing.setRingingConversation(B);
+    a.viewing.recordDeclined(A);
+    void a.auth.beginSignOut();
+    // Synchronously: nothing awaited yet, and the session is already gone.
+    expect(a.store.has(SESSION_KEY)).toBe(false);
+    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: true }]);
+    // The push teardown has started (registration halted) in the same step.
+    expect(a.stopPush).toHaveBeenCalledTimes(1);
+    // Nothing this account set decides a push for the next one.
+    expect(a.viewing.getViewingConversation()).toBeNull();
+    expect(a.viewing.getRingingConversation()).toBeNull();
+    expect(a.viewing.declinedAt(A)).toBeNull();
+  });
+
+  it('lets a sign-in start once the device half is done, without waiting for the server half', async () => {
+    const firebase = gate();
+    const a = loadAuth({ firebase: firebase.promise });
+    const out = a.auth.beginSignOut();
+    const signIn = a.auth.signInWith('google');
+    await settle();
+    // The device half is still running: no sign-in yet.
+    expect(a.events).not.toContain('signInWithOAuth');
+    firebase.open();
+    await signIn;
+    // Local sign-out first (no request, nothing stored), then the sign-in,
+    // with the server half still held open behind it.
+    expect(a.events.indexOf('main signOut local')).toBeGreaterThan(-1);
+    expect(a.events.indexOf('signInWithOAuth')).toBeGreaterThan(a.events.indexOf('main signOut local'));
+    expect(a.events).not.toContain('ghost signOut local');
+    a.pushTeardown.open();
+    await out;
+    // The old session is ended on its own client, and the app's client is
+    // never asked to sign out again: that call is what ended new sessions.
+    expect(a.main.auth.signOut.mock.calls).toEqual([[{ scope: 'local' }]]);
+    expect(a.ghost.auth.setSession).toHaveBeenCalledWith({ access_token: 'access-A', refresh_token: 'refresh-A' });
+    expect(a.events).toContain('push row delete as the old account');
+    expect(a.events.indexOf('ghost signOut local')).toBeGreaterThan(a.events.indexOf('signInWithOAuth'));
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+    expect(a.clearAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('still lets the sign-in through when the device half fails', async () => {
+    const a = loadAuth({ firebaseFails: true });
+    const out = a.auth.beginSignOut();
+    await a.auth.signInWith('google');
+    expect(a.events).toContain('signInWithOAuth');
+    a.pushTeardown.open();
+    await expect(out).rejects.toThrow('firebase');
+  });
+
+  it('keeps the dropped session for the next launch when the server could not be reached, and finishes it there', async () => {
+    const { AuthRetryableFetchError } = jest.requireActual('@supabase/supabase-js') as typeof import('@supabase/supabase-js');
+    const a = loadAuth({ ghostSignOut: async () => ({ error: new AuthRetryableFetchError('Failed to fetch', 0) }) });
+    const out = a.auth.beginSignOut();
+    a.pushTeardown.open();
+    await out;
+    expect(a.store.has(SESSION_KEY)).toBe(false);
+    // Kept, and with its push half written down as done: only the session
+    // is left to end.
+    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: false }]);
+    // The next launch: a fresh module graph over the same storage.
+    const next = loadAuth({ store: a.store });
+    const resumed = next.auth.resumePendingSignOuts();
+    next.pushTeardown.open();
+    await resumed;
+    expect(next.events).toEqual(['ghost setSession access-A', 'ghost signOut local']);
+    expect(next.store.has('auth.pendingSignOut')).toBe(false);
+    // Once per process.
+    await next.auth.resumePendingSignOuts();
+    expect(next.ghost.auth.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a pending sign-out the server refused, rather than retrying it forever', async () => {
+    const a = loadAuth({ ghostSignOut: async () => ({ error: Object.assign(new Error('invalid'), { status: 400 }) }) });
+    const out = a.auth.beginSignOut();
+    a.pushTeardown.open();
+    await out;
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it('takes a Truecaller-link session back the same way, without the push teardown', async () => {
+    const a = loadAuth();
+    await a.auth.signOut();
+    expect(a.store.has(SESSION_KEY)).toBe(false);
+    expect(a.stopPush).not.toHaveBeenCalled();
+    expect(a.events).toContain('ghost signOut local');
+    expect(a.clearAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes pending sign-outs one at a time, and again whenever asked, not once per process', async () => {
+    // One at a time: each runs a push teardown, and two at once raced their
+    // deleteTokens against the next sign-in. Again whenever asked: the FCM
+    // background handler retries on every push that reaches a signed-out
+    // phone, which a headless process never had a boot retry for.
+    const { AuthRetryableFetchError } = jest.requireActual('@supabase/supabase-js') as typeof import('@supabase/supabase-js');
+    const STORED_B = JSON.stringify({ access_token: 'access-B', refresh_token: 'refresh-B', user: { id: 'user-b' } });
+    const store = new Map<string, string>([
+      ['auth.pendingSignOut', JSON.stringify([{ session: STORED, push: true }, { session: STORED_B, push: true }])],
+    ]);
+    let reachable = false;
+    const a = loadAuth({
+      store,
+      ghostSignOut: async () =>
+        reachable ? { error: null } : { error: new AuthRetryableFetchError('Failed to fetch', 0) },
+    });
+    a.pushTeardown.open();
+    await a.auth.resumePendingSignOuts();
+    const one = (token: string) => [
+      `ghost setSession ${token}`,
+      'stopPush',
+      'push row delete as the old account',
+      'ghost signOut local',
+    ];
+    expect(a.events).toEqual([...one('access-A'), ...one('access-B')]);
+    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toHaveLength(2);
+    // The boot retry is once per process; the other is not.
+    await a.auth.resumePendingSignOuts();
+    expect(a.ghost.auth.signOut).toHaveBeenCalledTimes(2);
+    reachable = true;
+    await a.auth.finishPendingSignOuts();
+    expect(a.ghost.auth.signOut).toHaveBeenCalledTimes(4);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  /* A retry that runs after somebody signed in ------------------------- */
+
+  const STORED_B = JSON.stringify({ access_token: 'access-B', refresh_token: 'refresh-B', user: { id: 'user-b' } });
+
+  it('never tears push down for a retry that finds the next account signed in', async () => {
+    // The online listener triggers a retry with nobody signed in; it parks on
+    // the first attempt; B signs in; the first attempt's /logout fails on the
+    // network. The retry used to run stopPush again, whose halt and
+    // deleteToken belong to B by then.
+    const { AuthRetryableFetchError } = jest.requireActual('@supabase/supabase-js') as typeof import('@supabase/supabase-js');
+    const a = loadAuth({ ghostSignOut: async () => ({ error: new AuthRetryableFetchError('Failed to fetch', 0) }) });
+    const out = a.auth.beginSignOut();
+    const retry = a.auth.finishPendingSignOuts();
+    await settle();
+    a.store.set(SESSION_KEY, STORED_B);
+    a.pushTeardown.open();
+    await out;
+    await retry;
+    expect(a.stopPush).toHaveBeenCalledTimes(1);
+    expect(a.signedInAtPush).toEqual([false]);
+  });
+
+  it('runs only the old account\'s row delete, as that account, when the push half is still owed and somebody signed in', async () => {
+    // The first attempt's push half failed, so its entry still owes it. The
+    // retry runs with B signed in: the old account's row, never B's device.
+    let pushFails = true;
+    const a = loadAuth({ pushFails: () => pushFails });
+    const out = a.auth.beginSignOut();
+    const retry = a.auth.finishPendingSignOuts();
+    await settle();
+    a.store.set(SESSION_KEY, STORED_B);
+    a.pushTeardown.open();
+    await out;
+    pushFails = false;
+    await retry;
+    expect(a.stopPush).toHaveBeenCalledTimes(1);
+    expect(a.signedInAtPush).toEqual([false]);
+    expect(a.unregisterPush).toHaveBeenCalledTimes(1);
+    expect(a.events.slice(a.events.indexOf('unregisterPush'))).toEqual([
+      'unregisterPush',
+      'push row delete only, as the old account',
+      'ghost signOut local',
+    ]);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it('clears what a dead session left on the device, with no server half', async () => {
+    // auth-js already dropped the refused session; the outbox is still A's.
+    const a = loadAuth({ store: new Map([[OUTBOX_KEY, QUEUED]]) });
+    a.viewing.setViewingConversation(A);
+    const dead = a.auth.forgetDeadSession();
+    expect(a.store.has(OUTBOX_KEY)).toBe(false);
+    expect(a.viewing.getViewingConversation()).toBeNull();
+    await dead;
+    expect(a.clearAll).toHaveBeenCalledTimes(1);
+    expect(a.ghost.auth.setSession).not.toHaveBeenCalled();
+    expect(a.stopPush).not.toHaveBeenCalled();
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it('leaves the row alone when the same person signed back in, and still ends the old session', async () => {
+    // A flaky sign-out kept the entry with its push half owed; A signed back
+    // in and registered the same token under the same id. The old session's
+    // row delete (`user_id = auth.uid()`) would be A's live registration.
+    const store = new Map<string, string>([
+      ['auth.pendingSignOut', JSON.stringify([{ session: STORED, push: true }])],
+      [SESSION_KEY, JSON.stringify({ access_token: 'access-A2', refresh_token: 'refresh-A2', user: { id: 'user-a' } })],
+    ]);
+    const a = loadAuth({ store });
+    a.pushTeardown.open();
+    await a.auth.resumePendingSignOuts();
+    expect(a.unregisterPush).not.toHaveBeenCalled();
+    expect(a.stopPush).not.toHaveBeenCalled();
+    expect(a.events).toEqual(['ghost setSession access-A', 'ghost signOut local']);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it('asks again before each entry, so a sign-in between two pending sign-outs spares the next account', async () => {
+    const STORED_C = JSON.stringify({ access_token: 'access-C', refresh_token: 'refresh-C', user: { id: 'user-c' } });
+    const store = new Map<string, string>([
+      ['auth.pendingSignOut', JSON.stringify([{ session: STORED, push: true }, { session: STORED_C, push: true }])],
+    ]);
+    const a = loadAuth({ store });
+    const resumed = a.auth.resumePendingSignOuts();
+    await settle();
+    // B signs in while the first entry's teardown is still running.
+    a.store.set(SESSION_KEY, STORED_B);
+    a.pushTeardown.open();
+    await resumed;
+    expect(a.signedInAtPush).toEqual([false]);
+    expect(a.unregisterPush).toHaveBeenCalledTimes(1);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it('keeps a sign-out whose push half did not finish, and does not end the session that alone can finish it', async () => {
+    // The token delete failed and the row delete removed nothing (143). The
+    // entry used to be forgotten after a /logout, and the row went on
+    // delivering the old account's pushes.
+    let pushFails = true;
+    const a = loadAuth({ pushFails: () => pushFails });
+    const out = a.auth.beginSignOut();
+    a.pushTeardown.open();
+    await out;
+    expect(JSON.parse(a.store.get('auth.pendingSignOut') ?? '[]')).toEqual([{ session: STORED, push: true }]);
+    expect(a.events).not.toContain('ghost signOut local');
+    // The next retry, with the network back: the whole teardown, then /logout.
+    pushFails = false;
+    await a.auth.finishPendingSignOuts();
+    expect(a.stopPush).toHaveBeenCalledTimes(2);
+    expect(a.events[a.events.length - 1]).toBe('ghost signOut local');
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it('never runs a sign-out\'s server half twice at once: a retry waits for the one still on the wire', async () => {
+    const a = loadAuth();
+    const out = a.auth.beginSignOut();
+    const retry = a.auth.finishPendingSignOuts();
+    await settle();
+    expect(a.ghost.auth.setSession).toHaveBeenCalledTimes(1);
+    a.pushTeardown.open();
+    await out;
+    await retry;
+    // The first one landed and forgot its entry, so the retry found nothing.
+    expect(a.ghost.auth.setSession).toHaveBeenCalledTimes(1);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it.each([
+    ['the staged link expired while the browser was open', JSON.stringify({ challenge: 'c'.repeat(40), expiresAt: 1 })],
+    ['the link itself failed', JSON.stringify({ challenge: 'c'.repeat(40), expiresAt: Date.now() + 600_000 })],
+    ['no link was staged for the marked callback', null],
+  ])('takes back the browser Google session with a LOCAL sign-out when %s', async (_name, staged) => {
+    // auth-js's bare signOut() is scope 'global': a failed link on a new
+    // phone revoked the same Google account's sessions on every device.
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const store = new Map<string, string>([[SESSION_KEY, STORED]]);
+    if (staged !== null) {
+      store.set('auth.truecallerGoogleLink', staged);
+    }
+    const a = loadAuth({ store });
+    const result = await a.auth.handleAuthDeepLink('companionchat://auth-callback/truecaller-link?code=abc');
+    expect(result.status).toBe('failed');
+    expect(a.main.auth.signOut.mock.calls).toEqual([[{ scope: 'local' }]]);
+    // Through `signOut`: the device half at once, the session's own /logout
+    // on the sign-out client, tracked like any other.
+    expect(a.store.has(SESSION_KEY)).toBe(false);
+    a.pushTeardown.open();
+    await a.auth.finishPendingSignOuts();
+    expect(a.events).toContain('ghost signOut local');
+    expect(a.stopPush).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
+  });
+
+  const OUTBOX_KEY = 'companion.outbox.v1';
+  const QUEUED = JSON.stringify([
+    { nonce: 'n-1', conversationId: A, body: 'see you at six', queuedAt: Date.now(), attempts: 0 },
+  ]);
+
+  it.each(['beginSignOut', 'signOut', 'deleteAccount'] as const)(
+    'forgets the queued sends on %s, so the next account never replays them',
+    async entry => {
+      // An outbox entry names a conversation and carries the text, and not who
+      // queued it; the drain replays every entry as whoever is signed in.
+      const a = loadAuth({ store: new Map([[SESSION_KEY, STORED], [OUTBOX_KEY, QUEUED]]) });
+      const done = a.auth[entry]();
+      if (entry !== 'deleteAccount') {
+        // In the synchronous device half, with the session.
+        expect(a.store.has(OUTBOX_KEY)).toBe(false);
+      }
+      a.pushTeardown.open();
+      await done;
+      expect(a.store.has(OUTBOX_KEY)).toBe(false);
+      const { readOutbox } = require('../src/lib/outboxStore') as typeof import('../src/lib/outboxStore');
+      expect(readOutbox()).toEqual([]);
+    },
+  );
+
+  it('keeps the queued sends when the deletion itself fails', async () => {
+    const a = loadAuth({ store: new Map([[SESSION_KEY, STORED], [OUTBOX_KEY, QUEUED]]) });
+    a.main.rpc.mockImplementation(async () => ({ error: { message: 'offline' } }) as never);
+    await expect(a.auth.deleteAccount()).rejects.toThrow('offline');
+    expect(a.store.get(OUTBOX_KEY)).toBe(QUEUED);
+  });
+
+  it('leaves the device after an account deletion, with nothing kept for a server that has no session left', async () => {
+    const a = loadAuth();
+    await a.auth.deleteAccount();
+    expect(a.main.rpc).toHaveBeenCalledWith('delete_user_account');
+    expect(a.store.has(SESSION_KEY)).toBe(false);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+    expect(a.clearAll).toHaveBeenCalledTimes(1);
+    expect(a.ghost.auth.setSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session when the deletion itself fails', async () => {
+    const a = loadAuth();
+    a.main.rpc.mockImplementation(async () => ({ error: { message: 'offline' } }) as never);
+    await expect(a.auth.deleteAccount()).rejects.toThrow('offline');
+    expect(a.store.get(SESSION_KEY)).toBe(STORED);
+    expect(a.clearAll).not.toHaveBeenCalled();
+  });
+
+  it('names the stored session with supabase-js\'s own key, so nobody is signed out by the upgrade', () => {
+    const lib = withoutComments(read('src/lib/supabase.ts'));
+    expect(lib).toContain(
+      "export const SESSION_STORAGE_KEY = `sb-${new URL(ENV.supabaseUrl).hostname.split('.')[0]}-auth-token`;",
+    );
+    expect(lib).toContain('storageKey: SESSION_STORAGE_KEY,');
+    expect(read('node_modules/@supabase/supabase-js/dist/index.cjs')).toContain(
+      'const defaultStorageKey = `sb-${baseUrl.hostname.split(".")[0]}-auth-token`;',
+    );
+  });
+});
+
+describe('every user-initiated sign-out takes the whole teardown', () => {
+  it('the permissions gate signs out like Settings, and leaves the gate', () => {
+    const app = withoutComments(read('App.tsx'));
+    const gate = app.slice(app.indexOf('<PermissionsScreen'), app.indexOf("if (boot.phase === 'error')"));
+    expect(gate).toMatch(/onSignOut=\{\(\) => \{\s*queryClient\.clear\(\);\s*resetStore\(\);\s*toSignedOut\(\);\s*beginSignOut\(\)\.catch\(/);
+  });
+
+  it('no screen signs out with the bare signOut, except to take back a sign-in that failed half way', () => {
+    for (const file of ['App.tsx', 'src/screens/SettingsSheet.tsx', 'src/screens/PermissionsScreen.tsx']) {
+      const code = withoutComments(read(file));
+      expect({ file, bare: /\bsignOut\(\)/.test(code.replace(/\bbeginSignOut\(\)/g, '')) }).toEqual({ file, bare: false });
+    }
+    const onboarding = withoutComments(read('src/screens/OnboardingScreen.tsx'));
+    expect(count(onboarding, 'await signOut();')).toBe(1);
+  });
+
+  it('drops a chat, call or V2 link that arrives with nobody signed in, rather than hold it for the next account', () => {
+    // Held in Root's state, which survives signedOut to ready, a leftover
+    // shortcut's tap was applied inside whichever account signed in next.
+    const app = withoutComments(read('App.tsx'));
+    const consume = app.slice(
+      app.indexOf('const consume = (url: string | null): void => {'),
+      app.indexOf('void Linking.getInitialURL().then(consume);'),
+    );
+    expect(consume).toMatch(
+      /^const consume = \(url: string \| null\): void => \{\s*if \(url === null\) \{\s*return;\s*\}\s*if \(!signedInOnDevice\(\) && isAccountLink\(url\)\) \{/,
+    );
+    const gate = consume.indexOf('if (!signedInOnDevice() && isAccountLink(url)) {');
+    const gateEnd = consume.indexOf('return;', gate);
+    for (const hold of ['setPendingV2Peer(', 'setPendingIncoming(', 'setPendingPeer(']) {
+      expect({ hold, after: consume.indexOf(hold) > gateEnd }).toEqual({ hold, after: true });
+    }
+    // Behind the gate, only a leftover call's notification is taken down.
+    expect(consume.slice(gate, gateEnd)).not.toMatch(/setPending|endCall|handleAuthDeepLink|setBoot/);
+    expect(consume.slice(gate, gateEnd)).toContain('void clearCall(leftoverCall);');
+  });
+
+  it('retries a pending sign-out when a signed-out device comes back online', () => {
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toMatch(
+      /onlineManager\.subscribe\(online => \{\s*if \(online && !signedInOnDevice\(\)\) \{\s*void finishPendingSignOuts\(\);\s*\}\s*\}\)/,
+    );
+  });
+
+  it('finishes a dead process\'s sign-out at every boot, before the session is even read, whatever it finds', () => {
+    // A pending server half is the push row still delivering to this phone,
+    // signed in or not, so the call is unconditional and first.
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toMatch(
+      /useEffect\(\(\) => \{\s*let cancelled = false;\s*\(async \(\) => \{\s*try \{\s*assertEnv\(\);\s*void resumePendingSignOuts\(\);\s*const hadStoredSession = signedInOnDevice\(\);\s*const \{ session, retryableError \} = await currentSession\(\);/,
+    );
+    expect(count(app, 'resumePendingSignOuts()')).toBe(1);
+  });
+
+  it('the root forgets a tap or a ring held for the account that left', () => {
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toMatch(
+      /const toSignedOut = useCallback\(\(\) => \{\s*setPendingPeer\(null\);\s*setPendingV2Peer\(null\);\s*setPendingIncoming\(null\);\s*setBoot\(\{ phase: 'signedOut' \}\);/,
+    );
+    expect(app).toContain('onSignedOut={toSignedOut}');
+  });
+
+  it('a boot that finds its stored session dead signs out through toSignedOut and runs the device half', () => {
+    // A revoked session: a tap held for it at arrival, and its outbox, would
+    // otherwise carry into the next sign-in.
+    const app = withoutComments(read('App.tsx'));
+    expect(app).toMatch(
+      /const hadStoredSession = signedInOnDevice\(\);\s*const \{ session, retryableError \} = await currentSession\(\);/,
+    );
+    expect(app).toMatch(
+      /if \(hadStoredSession\) \{\s*void forgetDeadSession\(\);\s*\}\s*toSignedOut\(\);\s*return;\s*\}/,
+    );
+    // Every signed-out phase set with no message goes through toSignedOut.
+    expect(app.match(/setBoot\(\{ phase: 'signedOut' \}\)/g)).toHaveLength(1);
+  });
+});
+
+describe('a push start stands down for a session that ended before it ran', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('starts nothing when the effect was cleaned up while the permissions config was pending', async () => {
+    const h = load();
+    let answer: (level: 'optional' | 'required') => void = () => undefined;
+    const level = new Promise<'optional' | 'required'>(resolve => {
+      answer = resolve;
+    });
+    const cleanup = h.push.startPushWhenConfigured(() => level);
+    cleanup();
+    answer('optional');
+    await jest.runAllTimersAsync();
+    expect(registerCalls(h)).toBe(0);
+    expect(h.listenerCount()).toBe(0);
+  });
+
+  it('stops what the start returns when the cleanup ran while it was starting', async () => {
+    const h = load();
+    let release: () => void = () => undefined;
+    h.request.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          release = () => resolve('granted');
+        }),
+    );
+    const cleanup = h.push.startPushWhenConfigured(async () => 'optional');
+    await jest.advanceTimersByTimeAsync(0);
+    cleanup();
+    release();
+    await jest.runAllTimersAsync();
+    expect(h.listenerCount()).toBe(0);
+  });
+
+  it('registers and listens as usual when nothing ended it', async () => {
+    const h = load();
+    const cleanup = h.push.startPushWhenConfigured(async () => 'optional');
+    await jest.runAllTimersAsync();
+    expect(registerCalls(h)).toBe(1);
+    expect(h.listenerCount()).toBe(1);
+    cleanup();
+    expect(h.listenerCount()).toBe(0);
+  });
+
+  it('registers nothing and listens to nothing for a start with no session behind it', async () => {
+    // A start that begins after the sign-out takes a fresh generation of its
+    // own, so only the account check can see it is stale.
+    const h = load();
+    await h.push.stopPush();
+    h.setSessionUser(null);
+    const stop = await h.push.startPush();
+    expect(registerCalls(h)).toBe(0);
+    expect(h.listenerCount()).toBe(0);
+    stop();
+  });
+
+  it('registers nothing for a start whose session changed hands while it waited', async () => {
+    const h = load();
+    let release: () => void = () => undefined;
+    h.request.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          release = () => resolve('granted');
+        }),
+    );
+    const started = h.push.startPush();
+    await jest.advanceTimersByTimeAsync(0);
+    h.setSessionUser('user-b');
+    release();
+    await started;
+    expect(registerCalls(h)).toBe(0);
+    expect(h.listenerCount()).toBe(0);
   });
 });
 

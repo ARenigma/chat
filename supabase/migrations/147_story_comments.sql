@@ -104,6 +104,15 @@ create index if not exists story_comments_author_created
 -- ---------------------------------------------------------------------------
 -- Takes a COMMENT id, never an (author, provider) pair: with a pair it would
 -- answer "are these two blocked" for anyone, which is 005's disclosure.
+--
+-- And never a suspended or banned author's. A provider is hidden from the
+-- audience the moment they are suspended (provider_is_listed carries 004's
+-- boundary), and a commenter used to have no such line: the operator banned a
+-- member over a minor_safety comment and every viewer still read it until the
+-- story expired. A ban is a suspension with no end (moderate.mjs), so the one
+-- test covers both, and lifting the suspension brings the comments back,
+-- which is what an appeal that succeeds should do. The same clause is in
+-- my_story_insights' count (149), so the number on the tray matches the sheet.
 create or replace function public.story_comment_is_visible(p_comment_id uuid)
 returns boolean
 language sql
@@ -115,8 +124,10 @@ as $$
     select 1
     from public.story_comments c
     join public.stories s on s.id = c.story_id
+    join public.profiles a on a.id = c.author_id
     where c.id = p_comment_id
       and c.deleted_at is null
+      and (a.suspended_until is null or a.suspended_until <= now())
       and public.story_is_visible(s.id)
       and not public.is_blocked_pair(auth.uid(), c.author_id)
       and not public.is_blocked_pair(s.provider_id, c.author_id)
@@ -124,8 +135,9 @@ as $$
 $$;
 
 comment on function public.story_comment_is_visible(uuid) is
-  'Whether the caller may see this comment: not deleted, its story visible to '
-  'the caller, and the author blocked with neither the caller nor the provider.';
+  'Whether the caller may see this comment: not deleted, its author not '
+  'suspended or banned, its story visible to the caller, and the author '
+  'blocked with neither the caller nor the provider.';
 
 revoke all on function public.story_comment_is_visible(uuid) from public, anon;
 grant execute on function public.story_comment_is_visible(uuid) to authenticated, service_role;
@@ -156,9 +168,20 @@ revoke all on public.story_comments from anon, authenticated;
 -- Generous for a person, since there is no reply to answer, and useless for a
 -- script. Taken under a per-author lock so two parallel posts cannot both
 -- read 4.
+--
+-- The client names the comment, as it names a story (create_story, 143) and
+-- a message (081's nonce): p_comment_id is a v4 uuid minted once per comment
+-- and resent on every retry. Without it, a post whose response was lost was
+-- posted again by the retry, a second identical public comment under the
+-- story that also spent a second unit of the 5 and the 20 below. Checked
+-- under the author's lock and before the count, so a retry of a comment that
+-- landed is the original success, even with the budget now spent, and never
+-- a second row; the same id from another account is BAD_REQUEST, which tells
+-- that account nothing about whose it is.
 create or replace function public.post_story_comment(
-  p_story_id uuid,
-  p_body     text
+  p_comment_id uuid,
+  p_story_id   uuid,
+  p_body       text
 )
 returns json
 language plpgsql
@@ -179,11 +202,25 @@ begin
     return json_build_object('success', false, 'error', 'UNAUTHORIZED');
   end if;
 
+  if p_comment_id is null then
+    return json_build_object('success', false, 'error', 'BAD_REQUEST');
+  end if;
+
   -- Blank is refused up front; length and line breaks by the CHECK, caught
   -- below, so the numbers are stated once.
   if v_trimmed is null then
     return json_build_object('success', false, 'error', 'BAD_REQUEST');
   end if;
+
+  -- The caller's own profile first, FOR KEY SHARE, the lock the insert's
+  -- foreign key check would take anyway, but before anything takes the story.
+  -- The insert used to lock the story (its foreign key) and then this
+  -- profile, the reverse of an account deletion (150), whose prologue holds
+  -- the peer's profile FOR UPDATE and whose cascade then reaches the story:
+  -- each held what the other waited on. Taken first, this waits for that
+  -- deletion to commit and then finds the story gone (566's 24).
+  -- https://www.postgresql.org/docs/16/explicit-locking.html#LOCKING-ROWS
+  perform 1 from public.profiles where id = v_uid for key share;
 
   -- A blocked member lands here too: the story is not visible to them, and
   -- NOT_FOUND does not say why.
@@ -215,6 +252,19 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended('story_comment:' || v_uid::text, 0));
 
+  -- A retry after a lost response is the comment already posted (above).
+  select * into v_comment from public.story_comments where id = p_comment_id;
+  if found then
+    if v_comment.author_id <> v_uid then
+      return json_build_object('success', false, 'error', 'BAD_REQUEST');
+    end if;
+    return json_build_object(
+      'success', true,
+      'comment_id', v_comment.id,
+      'created_at', v_comment.created_at
+    );
+  end if;
+
   select
     count(*) filter (where story_id = p_story_id)::int,
     count(*) filter (where created_at > now() - interval '1 hour')::int
@@ -227,8 +277,8 @@ begin
     return json_build_object('success', false, 'error', 'RATE_LIMITED');
   end if;
 
-  insert into public.story_comments (story_id, author_id, body)
-  values (p_story_id, v_uid, v_trimmed)
+  insert into public.story_comments (id, story_id, author_id, body)
+  values (p_comment_id, p_story_id, v_uid, v_trimmed)
   returning * into v_comment;
 
   -- Commenting is seeing, as reacting is (146).
@@ -246,17 +296,23 @@ exception
   -- story_comment_body_or_tombstone.
   when check_violation then
     return json_build_object('success', false, 'error', 'BAD_REQUEST');
+  -- The same id posted at the same moment by another account, under its own
+  -- author lock: the id check above cannot see an uncommitted row, the
+  -- primary key can.
+  when unique_violation then
+    return json_build_object('success', false, 'error', 'BAD_REQUEST');
 end;
 $$;
 
-comment on function public.post_story_comment(uuid, text) is
+comment on function public.post_story_comment(uuid, uuid, text) is
   'The only writer of story_comments. Members only (so never the story''s '
   'provider: there is no reply path); 1-500 visible characters, at most 5 '
   'line breaks; 5 per member per story and 20 per member per hour; refused '
-  'while stories are switched off.';
+  'while stories are switched off. Idempotent on the client-minted comment '
+  'id: a retry returns the original, another account''s id is BAD_REQUEST.';
 
-revoke all on function public.post_story_comment(uuid, text) from public, anon;
-grant execute on function public.post_story_comment(uuid, text) to authenticated;
+revoke all on function public.post_story_comment(uuid, uuid, text) from public, anon;
+grant execute on function public.post_story_comment(uuid, uuid, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 4. Deleting

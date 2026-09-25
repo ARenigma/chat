@@ -144,6 +144,9 @@ object Conversations {
     // one brand (Amit, 2026-08-27) — the small icon and the CallStyle accent.
     private const val BRAND_COLOR = 0xFFF2543D.toInt()
 
+    /** The extra a chat-request notification names its request by (`clearRequest`). */
+    private const val EXTRA_REQUEST_ID = "com.companionchat.extra.REQUEST_ID"
+
     /**
      * The id of the PRE-notification: the ring posted from the FCM push, before
      * `CallForegroundService` exists to post one of its own.
@@ -220,7 +223,13 @@ object Conversations {
      * the reference app's service takes the call over).
      */
     fun cancelCallPrenotification(context: Context) {
-        NotificationManagerCompat.from(context).cancel(CALL_PRENOTIFICATION_ID)
+        // Under the post lock and with the ring's stamp dropped, as [clear]
+        // does for a conversation: the cancel is applied later, and until then
+        // the ring is still listed live, so a photo fill waiting on the lock
+        // would otherwise post the dead ring back (see `postLock`).
+        synchronized(postLock) {
+            cancelLocked(NotificationManagerCompat.from(context), CALL_PRENOTIFICATION_ID)
+        }
     }
 
     /**
@@ -241,25 +250,97 @@ object Conversations {
 
     /**
      * Held across every read-then-post of a conversation notification, and
-     * across [clear].
+     * across [clear] and [clearAll]. Guards [posted], [cleared] and
+     * [clearedAll] too.
      *
      * A text post runs on the bridge thread and a photo fill on
      * [avatarExecutor], and both read the live notification before they post
      * over it. Without one lock the fill could read, a newer message could post
      * in between, and the fill would then put the older transcript back over
-     * it, or re-post a notification [clear] had just cancelled. Never held
-     * across the download, only across the read and the `notify`.
+     * it. Never held across the download, only across the read and the
+     * `notify`.
      *
-     * [clear] is the only cancel it covers. The other ways a notification
-     * leaves the shade take no lock of ours: the lock-screen Decline cancels
-     * directly in ChatRequestReceiver, and the system removes one the person
-     * swipes away or taps (`setAutoCancel`). Any of those can land between a
-     * fill's read and its `notify`, and the fill then puts the notification
-     * back. The window is the read, the shortcut push and the post, after the
-     * download has finished.
+     * The lock alone does NOT keep a cleared notification cleared, and it used
+     * to claim it did. `cancel` returns before the cancel is applied: the
+     * system service schedules it on its own worker handler, and
+     * `getActiveNotifications` ("ones that have been posted by the calling app
+     * that have not yet been dismissed by the user or cancel()ed by the app")
+     * keeps listing the record until that runs. A fill that took the lock just
+     * after [clear] released it still found the notification "live", posted
+     * it, and its post was queued behind the cancel, so the cancelled
+     * notification came back. Nothing the system returns can tell the two
+     * apart, so the answer is kept here: every post stamps its id with a
+     * fresh version ([stampPostLocked]), [clear] and [clearAll] throw the
+     * stamps away, and a fill posts only if the stamp its own post left is
+     * still the current one ([stillCurrentLocked]). The same record keeps a
+     * text post right after a clear from reading the cancelled transcript back
+     * and re-posting its lines ([activeMessagingStyle]).
+     * https://developer.android.com/reference/androidx/core/app/NotificationManagerCompat#getActiveNotifications()
+     *
+     * What still takes no lock of ours: the system removing a notification the
+     * person swipes away or taps (`setAutoCancel`). One that lands between a
+     * fill's read and its `notify` is undone by the fill. The window is the
+     * read, the shortcut push and the post, after the download has finished.
+     * The lock-screen Decline no longer cancels anything itself; it clears
+     * through [clearRequest] once its RPC has succeeded (ChatRequestReceiver).
      * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
      */
     private val postLock = Any()
+
+    /** The source of [posted]'s versions. Guarded by [postLock]. */
+    private var postVersion = 0L
+
+    /**
+     * Each notification id's version, stamped by its latest post since it was
+     * last cleared. Guarded by [postLock].
+     */
+    private val posted = HashMap<Int, Long>()
+
+    /**
+     * Ids [clear] cancelled with no post since: a live-list entry for one is a
+     * cancel not yet applied. Guarded by [postLock].
+     */
+    private val cleared = HashSet<Int>()
+
+    /**
+     * Whether [clearAll] ran in this process: from then on, only ids posted
+     * since can be trusted in the live list. Guarded by [postLock].
+     */
+    private var clearedAll = false
+
+    /** A chat request's post: which request, and the version its post stamped. */
+    private data class RequestPost(val requestId: String, val version: Long)
+
+    /**
+     * The latest chat-request post of each notification id, for
+     * [clearRequest]. A request and a message for the same conversation share
+     * one id, so the id alone cannot say whether what is posted there is still
+     * the request. Guarded by [postLock].
+     */
+    private val requestPosts = HashMap<Int, RequestPost>()
+
+    /** Stamp a post of [id] and return its version, for the post's fill. Under [postLock]. */
+    private fun stampPostLocked(id: Int): Long {
+        postVersion += 1
+        posted[id] = postVersion
+        cleared.remove(id)
+        return postVersion
+    }
+
+    /**
+     * Whether a fill for the post stamped [version] may still post: no newer
+     * post of [id] (which brings its own fill) and no clear since. Under
+     * [postLock].
+     */
+    private fun stillCurrentLocked(id: Int, version: Long): Boolean = posted[id] == version
+
+    /**
+     * Whether what the system lists live for [id] is really live, rather than
+     * a cancel of ours still on its way. A notification left by an earlier
+     * process is trusted until this one clears. Under [postLock].
+     */
+    private fun liveTrustedLocked(id: Int): Boolean =
+        id !in cleared && (!clearedAll || posted.containsKey(id))
 
     /**
      * How long the callee's ring may stay up, matched to `RING_TIMEOUT_IN_MS` in
@@ -413,17 +494,29 @@ object Conversations {
      *     through the conversation's channel; below HIGH, the post goes on
      *     Messages itself, quieted, so the system shows it at or below what
      *     the person chose (nothing at all if they blocked it). A choice made
-     *     on the in-app channel needs nothing here: the post is on that
-     *     parent, so the system applies it.
+     *     on the in-app channel needs nothing here while the post is on that
+     *     parent, since the system applies it, except OFF: the yield to
+     *     Messages leaves that parent, so the in-app conversation channel is
+     *     read first and a conversation turned off there gets no post.
      *   - Background post, choice made on the in-app channel (the conversation
      *     made Silent or turned off from an in-app banner): Messages alone
      *     would never see it. So the in-app channel's conversation channel is
      *     read too, and only when it is a conversation channel
      *     (`conversationId != null`): this app never creates one, so one that
-     *     exists is the person's. Turned off, the post is skipped; below HIGH,
-     *     the post goes on Messages quieted. A choice the person made on
-     *     Messages for this conversation wins over it, because that is the
-     *     channel the system itself applies to this post.
+     *     exists is the person's. Turned off, the post is skipped, and that is
+     *     checked FIRST, before anything Messages says: "Makes no sound and
+     *     doesn't appear in the status bar or shade" is the one setting that
+     *     cannot be half-applied, and a conversation the person turned off
+     *     anywhere is off. Checked after, a person who had once made the
+     *     conversation Priority or Silent from a background post, and later
+     *     turned it off from an in-app banner, still got every background
+     *     message (Greptile P1 on bb32af4). Nor can a later Messages choice be
+     *     what it overrides: once off, no post for this conversation reaches
+     *     the shade on either parent, so there is no notification left to
+     *     long-press. Below HIGH, the post goes on Messages quieted, unless the
+     *     person also made a choice on Messages for this conversation: that one
+     *     wins for loudness, because it is the channel the system itself
+     *     applies to this post.
      *
      * DEVIATION, stated: only the quieter half can be carried across. Priority,
      * or a custom sound, chosen from an in-app banner lives on the in-app
@@ -449,6 +542,38 @@ object Conversations {
     ): Route? {
         val messages = manager.getNotificationChannelCompat(CHANNEL_ID, conversationId)
         if (inApp) {
+            /*
+             * "Messages while using the app" switched off is off, asked before
+             * anything else. A post on that parent gets it from the system,
+             * but the yield below moves the post to Messages whenever Messages
+             * is under HIGH, and Messages' lookup never reads the in-app
+             * parent: a person who turned the in-app channel off still got
+             * every foreground push, quietly, in the shade. The one-argument
+             * lookup reads the parent itself, whatever conversation channels
+             * sit under it ("Returns the notification channel settings for a
+             * given channel id").
+             * https://developer.android.com/reference/androidx/core/app/NotificationManagerCompat#getNotificationChannelCompat(java.lang.String)
+             */
+            val parentOff = manager.getNotificationChannelCompat(CHANNEL_IN_APP)
+                ?.importance == NotificationManagerCompat.IMPORTANCE_NONE
+            if (parentOff) {
+                return null
+            }
+            /*
+             * Off from an in-app banner is off here too, and asked first. A
+             * post on the in-app parent gets it from the system, but the yield
+             * below moves the post to Messages whenever Messages is under
+             * HIGH, where the in-app conversation channel is never consulted:
+             * a conversation the person had turned off came back, quietly, in
+             * the shade on every foreground push, while its background posts
+             * were skipped.
+             */
+            val offHere = manager.getNotificationChannelCompat(CHANNEL_IN_APP, conversationId)
+                ?.takeIf { it.conversationId != null }
+                ?.importance == NotificationManagerCompat.IMPORTANCE_NONE
+            if (offHere) {
+                return null
+            }
             if (messages == null || messages.importance >= NotificationManagerCompat.IMPORTANCE_HIGH) {
                 return Route(CHANNEL_IN_APP, quiet = false)
             }
@@ -456,11 +581,13 @@ object Conversations {
         }
         val inAppChoice = manager.getNotificationChannelCompat(CHANNEL_IN_APP, conversationId)
             ?.takeIf { it.conversationId != null }
-        if (inAppChoice == null || messages?.conversationId != null) {
-            return Route(CHANNEL_ID, quiet = false)
-        }
+            ?: return Route(CHANNEL_ID, quiet = false)
+        // Off wins over everything, a Messages conversation channel included.
         if (inAppChoice.importance == NotificationManagerCompat.IMPORTANCE_NONE) {
             return null
+        }
+        if (messages?.conversationId != null) {
+            return Route(CHANNEL_ID, quiet = false)
         }
         return Route(
             CHANNEL_ID,
@@ -539,6 +666,10 @@ object Conversations {
      *
      * [silent] posts it in the shade with no banner and no sound (see
      * [Route.silencedIf]); only ever passed with [inApp].
+     *
+     * [recipientId] is the account the push was for (send-push's
+     * `recipientId`, migration 143), or null when the sender named none. It
+     * rides on the tap's link and the shortcut's (see [withRecipient]).
      */
     fun notify(
         context: Context,
@@ -550,6 +681,7 @@ object Conversations {
         avatarUrl: String? = null,
         inApp: Boolean = false,
         silent: Boolean = false,
+        recipientId: String? = null,
     ) {
         ensureChannel(context)
 
@@ -597,7 +729,7 @@ object Conversations {
                 .setLongLived(true)
                 .setPerson(person)
                 .setCategories(setOf(SHARE_CATEGORY))
-                .setIntent(peerIntent(context, peerId))
+                .setIntent(peerIntent(context, peerId, recipientId))
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
 
@@ -630,7 +762,7 @@ object Conversations {
                     if (inApp) 0 else NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE,
                 )
                 .setAutoCancel(true)
-                .setContentIntent(openConversation(context, peerId))
+                .setContentIntent(openConversation(context, peerId, recipientId))
                 // Only where a quieter choice the person made on one channel
                 // has to be carried to a post on Messages (see `route`): an
                 // in-app post while Messages is turned down, or a background
@@ -672,13 +804,16 @@ object Conversations {
 
         // Extend the existing transcript if one is showing, so the shade reads as a
         // conversation rather than the latest line repeatedly replacing itself.
-        synchronized(postLock) {
+        // Stamped in the same hold, so the fill below can tell whether this is
+        // still the post it is filling in (`stillCurrentLocked`).
+        val version = synchronized(postLock) {
             val style = activeMessagingStyle(manager, id)
                 ?: NotificationCompat.MessagingStyle(
                     Person.Builder().setName(context.getString(R.string.you)).build(),
                 )
             style.addMessage(body, sentAt, personOf(null))
             post(style, null, route)
+            stampPostLocked(id)
         }
 
         if (avatarUrl != null) {
@@ -692,11 +827,14 @@ object Conversations {
                  * photo is still downloading, and rebuilding from a stale copy
                  * would delete it from the shade. The route too, for the same
                  * reason (`liveRoute`). Gone means cancelled, and the picture is
-                 * not a reason to bring it back. Only a cancel by `clear` is
-                 * kept out of the window between this read and the post
-                 * (`postLock`); a tap or a swipe that lands inside it is undone.
+                 * not a reason to bring it back. Cleared by `clear` or
+                 * `clearAll` is gone too, even while the system still lists it
+                 * (`stillCurrentLocked`, see `postLock`); so is a post a newer
+                 * one replaced, whose own fill brings the photo. Only a tap or
+                 * a swipe that lands between this read and the post is undone.
                  */
                 synchronized(postLock) {
+                    if (!stillCurrentLocked(id, version)) return@execute
                     val live = activeNotification(manager, id) ?: return@execute
                     val style = NotificationCompat.MessagingStyle
                         .extractMessagingStyleFromNotification(live)
@@ -715,11 +853,18 @@ object Conversations {
         .firstOrNull { it.id == id }
         ?.notification
 
-    /** The MessagingStyle of the notification currently posted at [id], if any. */
+    /**
+     * The MessagingStyle of the notification currently posted at [id], if any.
+     * None for an id this process cleared with no post since: the system can
+     * still list it while the cancel is on its way (see `postLock`), and
+     * extending it would post the lines just cleared back into the shade.
+     * Under [postLock].
+     */
     private fun activeMessagingStyle(
         manager: NotificationManagerCompat,
         id: Int,
     ): NotificationCompat.MessagingStyle? = activeNotification(manager, id)
+        ?.takeIf { liveTrustedLocked(id) }
         ?.let { NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(it) }
 
     /**
@@ -838,11 +983,19 @@ object Conversations {
             }
         }
 
-        post(null)
+        // Stamped like a conversation post, so a sign-out's `clearAll` also
+        // keeps this nudge's photo fill from posting it back.
+        val version = synchronized(postLock) {
+            post(null)
+            stampPostLocked(id)
+        }
 
         if (avatarUrl != null) {
             avatarExecutor.execute {
-                loadAvatarBitmap(avatarUrl, BIG_PICTURE_MAX_PX)?.let { post(it) }
+                val avatar = loadAvatarBitmap(avatarUrl, BIG_PICTURE_MAX_PX) ?: return@execute
+                synchronized(postLock) {
+                    if (stillCurrentLocked(id, version)) post(avatar)
+                }
             }
         }
     }
@@ -871,13 +1024,14 @@ object Conversations {
         callerName: String,
         avatarUrl: String? = null,
         medium: String = "voice",
+        recipientId: String? = null,
     ) {
         ensureCallChannel(context)
 
         val isVideo = medium == "video"
         val manager = NotificationManagerCompat.from(context)
-        val answer = callActionIntent(context, peerId, callId, "answer", medium)
-        val decline = callActionIntent(context, peerId, callId, "decline", medium)
+        val answer = callActionIntent(context, peerId, callId, "answer", medium, recipientId)
+        val decline = callActionIntent(context, peerId, callId, "decline", medium, recipientId)
 
         pendingCallIsVideo = isVideo
         pendingCallAnswer = answer
@@ -949,21 +1103,33 @@ object Conversations {
             }
         }
 
-        post(null)
+        // Stamped like a conversation post. Every ring shares one id, and each
+        // fill re-posts ITS call's name and Answer/Decline intents (the callId
+        // is in their data URI and request code), so a fill must know it is
+        // still filling the ring now at that id.
+        val version = synchronized(postLock) {
+            post(null)
+            stampPostLocked(CALL_PRENOTIFICATION_ID)
+        }
 
         if (avatarUrl != null) {
             avatarExecutor.execute {
+                val avatar = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX) ?: return@execute
                 /*
-                 * Only worth re-posting while the ring is still the ring. Once the
-                 * service has taken over (or the call is gone) this id is
-                 * cancelled, and re-posting would put a dead ring back on screen.
+                 * Only worth re-posting while the ring is still this call's ring.
+                 * A newer ring stamps the id again, and a fill that only checked
+                 * the live list put the older call's name and intents over it.
+                 * A cancel ([cancelCallPrenotification]) drops the stamp, since
+                 * the live list keeps a cancelled ring until the cancel is
+                 * applied and a fill would bring it back (see `postLock`). The
+                 * live check stays for what takes no lock of ours: the system's
+                 * own timeout and a tap.
                  */
-                loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)?.let {
-                    if (manager.activeNotifications.any { shown ->
-                            shown.id == CALL_PRENOTIFICATION_ID
-                        }
+                synchronized(postLock) {
+                    if (stillCurrentLocked(CALL_PRENOTIFICATION_ID, version) &&
+                        manager.activeNotifications.any { shown -> shown.id == CALL_PRENOTIFICATION_ID }
                     ) {
-                        post(IconCompat.createWithBitmap(it))
+                        post(IconCompat.createWithBitmap(avatar))
                     }
                 }
             }
@@ -993,8 +1159,10 @@ object Conversations {
      *
      * Accept opens the conversation via the same peerIntent a message tap uses;
      * if the request is still pending the in-app ChatRingScreen handles accept/decline.
-     * Decline broadcasts to ChatRequestReceiver, which calls decline_session_request
-     * without opening the UI.
+     * Decline broadcasts to ChatRequestReceiver, which hands it to a headless JS
+     * task (ChatRequestDeclineService) that calls decline_session_request
+     * without opening the UI and clears this notification only once the server
+     * has taken the Decline.
      *
      * [inApp] means what it means on [notify]: the foreground post, same
      * notification, on [CHANNEL_IN_APP], so it peeks without a sound. So does
@@ -1012,6 +1180,7 @@ object Conversations {
         avatarUrl: String? = null,
         inApp: Boolean = false,
         silent: Boolean = false,
+        recipientId: String? = null,
     ) {
         ensureChannel(context)
 
@@ -1019,7 +1188,7 @@ object Conversations {
         val id = notificationId(conversationId)
         // This post's route; its photo fill takes the live one, as in notify().
         val route = route(manager, conversationId, inApp)?.silencedIf(silent) ?: return
-        val accept = openConversation(context, peerId)
+        val accept = openConversation(context, peerId, recipientId)
 
         val declineIntent = Intent(ChatRequestReceiver.ACTION_DECLINE)
             .setClass(context, ChatRequestReceiver::class.java)
@@ -1052,7 +1221,7 @@ object Conversations {
                 .setLongLived(true)
                 .setPerson(person)
                 .setCategories(setOf(SHARE_CATEGORY))
-                .setIntent(peerIntent(context, peerId))
+                .setIntent(peerIntent(context, peerId, recipientId))
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
 
@@ -1064,6 +1233,9 @@ object Conversations {
                 .addPerson(person)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+                // Which request this is, for a process that did not post it
+                // (`clearRequest`); a message post over it carries none.
+                .addExtras(android.os.Bundle().apply { putString(EXTRA_REQUEST_ID, requestId) })
                 // Same channel, defaults and flags, for the same reasons, as
                 // notify(): an in-app post peeks without a sound, a post that
                 // carries the person's quieter choice across channels or was
@@ -1098,7 +1270,7 @@ object Conversations {
             }
         }
 
-        synchronized(postLock) {
+        val version = synchronized(postLock) {
             val style = activeMessagingStyle(manager, id)
                 ?: NotificationCompat.MessagingStyle(
                     Person.Builder().setName(context.getString(R.string.you)).build(),
@@ -1113,6 +1285,7 @@ object Conversations {
                     .build(),
             )
             post(style, null, route)
+            stampPostLocked(id).also { requestPosts[id] = RequestPost(requestId, it) }
         }
 
         if (avatarUrl != null) {
@@ -1122,12 +1295,13 @@ object Conversations {
                     ?: return@execute
                 // Same live re-read as notify(), transcript and route both: a
                 // second post can land while the photo downloads, on either
-                // channel, and a notification `clear` cancelled stays
-                // cancelled. Only `clear`'s (`postLock`): the lock-screen
-                // Decline's own cancel in ChatRequestReceiver, a tap and a
-                // swipe can still land between this read and the post, and the
-                // fill then brings the declined request back.
+                // channel, and a notification `clear` or `clearAll` cancelled
+                // stays cancelled even while the system still lists it
+                // (`stillCurrentLocked`). The lock-screen Decline clears through
+                // `clearRequest`, so a declined request stays gone too; only a
+                // tap or a swipe between this read and the post is undone.
                 synchronized(postLock) {
+                    if (!stillCurrentLocked(id, version)) return@execute
                     val live = activeNotification(manager, id) ?: return@execute
                     val style = NotificationCompat.MessagingStyle
                         .extractMessagingStyleFromNotification(live)
@@ -1149,6 +1323,7 @@ object Conversations {
         callId: String,
         action: String,
         medium: String,
+        recipientId: String?,
     ): android.app.PendingIntent {
         /*
          * `medium` is part of the link, not just the notification's subtext.
@@ -1162,8 +1337,11 @@ object Conversations {
         val intent = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_VIEW)
             .setData(
-                Uri.parse(
-                    "companionchat://call/$peerId?callId=$callId&action=$action&medium=$medium",
+                withRecipient(
+                    Uri.parse(
+                        "companionchat://call/$peerId?callId=$callId&action=$action&medium=$medium",
+                    ),
+                    recipientId,
                 ),
             )
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -1223,20 +1401,116 @@ object Conversations {
     /**
      * Clear a conversation's notification once it has been read in the app.
      *
-     * Under [postLock], so a photo fill that has already read the live
-     * notification cannot post it back after this cancels it.
+     * Under [postLock], and it throws the id's post stamp away in the same
+     * hold. The lock alone is not enough: the cancel is applied later, on the
+     * system's own handler, and until then the notification is still listed
+     * as active, so a photo fill waiting on the lock would find it and post it
+     * back. With the stamp gone the fill stands down (`stillCurrentLocked`),
+     * and a text post does not extend the cleared transcript
+     * (`activeMessagingStyle`). See `postLock`.
      */
     fun clear(context: Context, conversationId: String) {
         synchronized(postLock) {
-            NotificationManagerCompat.from(context).cancel(notificationId(conversationId))
+            cancelLocked(NotificationManagerCompat.from(context), notificationId(conversationId))
         }
     }
 
-    private fun openConversation(context: Context, peerId: String) =
+    /** [clear]'s cancel and its record. Under [postLock]. */
+    private fun cancelLocked(manager: NotificationManagerCompat, id: Int) {
+        manager.cancel(id)
+        posted.remove(id)
+        requestPosts.remove(id)
+        cleared.add(id)
+    }
+
+    /**
+     * Clear a chat request's notification once its lock-screen Decline has
+     * landed, but only while what is posted there is still that request.
+     *
+     * The Decline runs as a headless task (`declineFromNotification`), and
+     * between the press and the RPC's answer there is a React cold start and a
+     * round trip. A message the provider sent meanwhile replaces the request's
+     * entry at the same id, and alerts, and an unconditional [clear] then
+     * cancelled it: a message nobody had seen, cancelled on the strength of an
+     * answer to something else, which the platform says not to do.
+     * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
+     *
+     * A process that has posted at this id since its last clear knows what is
+     * there: the request, only if [requestPosts] holds it at the id's current
+     * version. One that has not (the Decline started a new process) reads the
+     * live notification, whose extras name the request it was posted for,
+     * unless this process cleared the id and the system still lists it
+     * (`liveTrustedLocked`).
+     */
+    fun clearRequest(context: Context, conversationId: String, requestId: String) {
+        synchronized(postLock) {
+            val manager = NotificationManagerCompat.from(context)
+            val id = notificationId(conversationId)
+            val stillTheRequest = if (posted.containsKey(id)) {
+                requestPosts[id] == RequestPost(requestId, posted.getValue(id))
+            } else {
+                liveTrustedLocked(id) &&
+                    activeNotification(manager, id)?.extras?.getString(EXTRA_REQUEST_ID) == requestId
+            }
+            if (stillTheRequest) {
+                cancelLocked(manager, id)
+            }
+        }
+    }
+
+    /**
+     * Take everything the signed-in account put on this device out of it:
+     * every notification this app posted and every conversation shortcut.
+     * Called on sign-out and after account deletion (src/lib/conversations.ts).
+     *
+     * Without it, one account's MessagingStyle entries stayed in the shade and
+     * on the lock screen after it signed out, its long-lived shortcuts stayed
+     * in direct share and the launcher, and a tap on either opened
+     * `companionchat://peer/<id>` inside whichever account signed in next.
+     *
+     * Notifications: `cancelAll`, because every one this app posts (messages,
+     * requests, nudges, a call's ring) belongs to the session that is ending.
+     * A foreground service's own notification is not removed by it ("If the
+     * notification does not currently represent a foreground service ... it
+     * will be removed"), so a call in progress keeps its ongoing notification.
+     * Under [postLock], with every stamp thrown away and [clearedAll] set, for
+     * the reason [clear] does it: the cancels are applied later, and a fill
+     * or a text post must not bring any of it back meanwhile.
+     * https://developer.android.com/reference/android/app/NotificationManager#cancelAll()
+     *
+     * Shortcuts: the dynamic list AND the cached copies. `pushDynamicShortcut`
+     * publishes each conversation's shortcut as long-lived, and "if a shortcut
+     * is set as long-lived, it may still be available in the system as a
+     * cached shortcut even after being removed from the list of dynamic
+     * shortcuts" (ShortcutManagerCompat#removeAllDynamicShortcuts), so the
+     * cached ones are listed (FLAG_MATCH_CACHED) and removed by id with
+     * `removeLongLivedShortcuts`. Pinned shortcuts are the person's own and
+     * are left where they put them.
+     * https://developer.android.com/reference/androidx/core/content/pm/ShortcutManagerCompat#removeLongLivedShortcuts(android.content.Context,java.util.List%3Cjava.lang.String%3E)
+     */
+    fun clearAll(context: Context) {
+        synchronized(postLock) {
+            NotificationManagerCompat.from(context).cancelAll()
+            posted.clear()
+            requestPosts.clear()
+            cleared.clear()
+            clearedAll = true
+        }
+        val ids = ShortcutManagerCompat.getShortcuts(
+            context,
+            ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED,
+        ).map { it.id }
+        if (ids.isNotEmpty()) {
+            ShortcutManagerCompat.removeLongLivedShortcuts(context, ids)
+        }
+        ShortcutManagerCompat.removeAllDynamicShortcuts(context)
+    }
+
+    private fun openConversation(context: Context, peerId: String, recipientId: String? = null) =
         android.app.PendingIntent.getActivity(
             context,
             peerId.hashCode(),
-            peerIntent(context, peerId)
+            peerIntent(context, peerId, recipientId)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             android.app.PendingIntent.FLAG_IMMUTABLE or
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT,
@@ -1267,10 +1541,29 @@ object Conversations {
      * through `getInitialURL` / the `url` event — the same path OAuth uses, which
      * already survives process death via MainActivity's `onNewIntent` + setIntent.
      */
-    private fun peerIntent(context: Context, peerId: String): Intent =
+    private fun peerIntent(context: Context, peerId: String, recipientId: String? = null): Intent =
         Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_VIEW)
-            .setData(Uri.parse("companionchat://peer/$peerId"))
+            .setData(withRecipient(Uri.parse("companionchat://peer/$peerId"), recipientId))
+
+    /**
+     * [uri] with `for=<recipientId>` appended, when the push named its account.
+     *
+     * A tap can land long after the post: a notification or a long-lived
+     * shortcut left from an account that has since signed out, or one posted
+     * during the overlap before its sign-out finished. The link used to name
+     * only the peer, so App.tsx opened that peer's chat inside whichever
+     * account was signed in when it arrived. With the account on the link,
+     * App.tsx opens it only for that account. `appendQueryParameter` encodes
+     * the value, and the JS side passes only a uuid (conversations.ts).
+     * https://developer.android.com/reference/android/net/Uri.Builder#appendQueryParameter(java.lang.String,%20java.lang.String)
+     */
+    private fun withRecipient(uri: Uri, recipientId: String?): Uri =
+        if (recipientId.isNullOrEmpty()) {
+            uri
+        } else {
+            uri.buildUpon().appendQueryParameter("for", recipientId).build()
+        }
 
     /*
      * `hashCode` rather than a counter, so the same conversation always maps to

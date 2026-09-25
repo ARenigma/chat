@@ -14,16 +14,19 @@
  *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/moderate.mjs list
  *
  * Commands
- *   list [--limit=n]                    the open queue, minor_safety first
+ *   list [--limit=n]                    the open queue, child safety first
  *   show <report-id>                    one report with its evidence, and a
  *                                        10-minute link to a reported voice
- *                                        note or story's media
+ *                                        note or story's media (a comment's
+ *                                        story: only while it is live, and
+ *                                        never past its 24 hours)
  *   act <report-id> --action=<a> [opts] record an action and resolve the report
  *   dismiss <report-id> [--note=...]    close with no action
  *   purge                               drop resolved reports past retention
- *   maintenance                          refund unanswered messages, refresh
- *                                        published reply latencies, delete
- *                                        orphaned voice audio (cron this)
+ *   maintenance                          refresh published reply latencies,
+ *                                        delete orphaned voice audio, drop
+ *                                        resolved reports past retention
+ *                                        (cron this)
  *   metrics [--days=n]                  the safety counters
  *   applications [--status=s]            the provider application queue
  *                                        (default: submitted; try --status=under_review)
@@ -35,6 +38,9 @@
  *   decline <user-id> [--note=...]       reject, with a note they can read
  *
  * `act` actions: none | warned | suspended | banned | conversation_closed
+ *   any action but `none` on a story-comment report also takes the comment
+ *   down (a tombstone, as the author's own delete makes), and on a story
+ *   report takes the story down (its media is kept while the report names it)
  *   --days=n   suspension length; required for `suspended`
  *   --note=... free text recorded in the audit trail
  *   --actor=x  who is acting; defaults to $USER
@@ -123,6 +129,15 @@ async function confirm(question) {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The reasons a report is routed first for. Child safety under both of its
+ * names: 'minor_safety' is the older one, 'child_safety' what the app's
+ * taxonomy files (026, appConfig's fallback). Marked by 'minor_safety' alone,
+ * a child-safety report read like spam. The queue's ORDER BY is the same set
+ * (moderation_queue, 150).
+ */
+const ROUTED_FIRST = ['minor_safety', 'child_safety', 'self_harm'];
+
 async function list() {
   const limit = Number(flag('limit') ?? 40);
   const rows = await rest(`moderation_queue?limit=${limit}`);
@@ -140,20 +155,57 @@ async function list() {
     )}h`;
     // A repeat subject is the single most useful column in a triage list.
     const priors = String(r.reports_against_subject ?? 0);
-    const marker =
-      r.reason === 'minor_safety' || r.reason === 'self_harm' ? '!' : ' ';
+    const marker = ROUTED_FIRST.includes(r.reason) ? '!' : ' ';
     console.log(
       `${marker}${short(r.id).padEnd(8)}${r.reason.padEnd(17)}${age.padEnd(
         7,
       )}` +
         `${priors.padEnd(7)}${short(r.subject_user_id).padEnd(9)}` +
-        `${clip(r.evidence_body ?? r.detail, 46)}`,
+        `${evidenceText(r, 46)}`,
     );
   }
   console.log(
     `\n${rows.length} open. ` +
-      '! = routed first (minor_safety, self_harm). `show <id>` for detail.',
+      `! = routed first (${ROUTED_FIRST.join(
+        ', ',
+      )}). \`show <id>\` for detail.`,
   );
+}
+
+/**
+ * What a report's EVIDENCE shows: what kind of thing was reported, and the
+ * words snapshotted when it was filed. Never the reporter's own detail. That
+ * used to stand in for a missing snapshot, under the same label, and a
+ * caption-less story report has none, so "he wrote that he will hurt me" read
+ * as evidence the moment before a ban. The reporter's words are printed as
+ * theirs (`show`, and the `act` confirmation).
+ *
+ * The kind comes first, whatever the words. A story report's snapshot is its
+ * caption, and a captioned photo showed as the bare caption: an explicit
+ * image captioned "good morning" read "good morning" in the queue and in the
+ * ban confirmation, a line that looks like a chat message and never says the
+ * thing reported is media. And a voice note has no words at all
+ * (evidence_voice_path, 011/094): it read "[no snapshot]", before the y/N,
+ * for a report whose evidence is kept and playable (`show`).
+ */
+function evidenceText(r, n) {
+  const body = r.evidence_body ?? null;
+  const surface = r.evidence_surface ?? null;
+  if (surface === 'story') {
+    return body === null
+      ? '[story media]'
+      : clip(`[story media] caption: ${body}`, n);
+  }
+  if (surface === 'story_comment') {
+    return body === null ? '[story comment]' : clip(`[comment] ${body}`, n);
+  }
+  if (body !== null) {
+    return clip(body, n);
+  }
+  if (r.evidence_voice_path) {
+    return '[voice note]';
+  }
+  return '[no snapshot]';
 }
 
 async function show() {
@@ -165,16 +217,20 @@ async function show() {
   if (r === undefined) {
     fail(`no report ${id}`);
   }
-  const priors = await rest(
-    `reports?subject_user_id=eq.${r.subject_user_id}&select=id&limit=100`,
-  );
+  const priors = await priorsAgainst(r.subject_user_id);
   console.log(`report        ${r.id}`);
   console.log(`reason        ${r.reason}`);
   console.log(`status        ${r.status}`);
   console.log(`filed         ${r.created_at}`);
   console.log(`reporter      ${r.reporter_id ?? '(deleted account)'}`);
   console.log(`subject       ${r.subject_user_id ?? '(deleted account)'}`);
-  console.log(`priors        ${priors.length} report(s) against this subject`);
+  console.log(
+    `priors        ${
+      priors === null
+        ? 'n/a (deleted account)'
+        : `${priors} report(s) against this subject`
+    }`,
+  );
   console.log(`conversation  ${r.conversation_id ?? ','}`);
   // Story reports (150) carry no conversation. `?? null` because a database
   // without 150 has no such columns and PostgREST simply omits them, which
@@ -194,9 +250,21 @@ async function show() {
   // Only printed when set, so a chat report reads exactly as it always has.
   if (aboutStory) {
     console.log(`story         ${storyId ?? '(expired or deleted)'}`);
+    // Whose story, kept past the purge (150), so a comment report still says
+    // which provider the comments were piling onto.
+    const provider = r.evidence_story_provider_id ?? null;
+    console.log(
+      `story by      ${provider ?? '(deleted account or not recorded)'}`,
+    );
   }
   if (aboutComment) {
     console.log(`comment       ${commentId ?? '(expired with its story)'}`);
+  }
+  if (aboutStory) {
+    // The public name it was posted under, snapshotted with the report (150):
+    // display_name is client-writable, so the name on the profile now may not
+    // be the one the audience read it next to.
+    console.log(`posted as     ${r.evidence_author_name ?? '(not recorded)'}`);
   }
   console.log(`\nreporter said:\n  ${clip(r.detail, 500)}`);
   // evidence_body is the words snapshotted at report time, whichever surface
@@ -216,46 +284,103 @@ async function show() {
   if (r.evidence_voice_path) {
     // A reported voice note is unreadable, so the queue has to hand over
     // something playable or "he sent me something vile" is unactionable the
-    // moment it was spoken rather than typed. Ten minutes: long enough to listen
-    // twice, short enough that a pasted link in a chat log expires.
-    const signed = await sign('voice-notes', r.evidence_voice_path, 600);
+    // moment it was spoken rather than typed. Ten minutes on the token: long
+    // enough to listen twice. What the token does NOT bound is printed with it
+    // (`EVIDENCE_LINK_CAVEAT`).
+    const signed = await sign(
+      'voice-notes',
+      r.evidence_voice_path,
+      EVIDENCE_LINK_SECONDS,
+    );
     console.log('\nreported voice note:');
-    console.log(`  ${signed ?? '(the audio is gone; the report outlived it)'}`);
-    console.log('  link expires in 10 minutes');
+    console.log(`  ${signedText(signed, 'the audio')}`);
+    if (signed.url !== undefined) {
+      console.log(
+        `  token lasts ${linkLifetime(
+          EVIDENCE_LINK_SECONDS,
+        )}. ${EVIDENCE_LINK_CAVEAT}`,
+      );
+    }
   }
   if (aboutStory) {
     // The voice note's reasoning, for a photo or a video. A caption is
     // optional, so for most story reports the media IS the evidence, and the
     // bucket is private (144): without a link there is nothing to look at.
     // Same ten minutes, for the same reasons.
-    const path = storyMedia ?? (await liveStoryMediaPath(storyId));
-    if (path === null) {
+    const media =
+      storyMedia !== null
+        ? { path: storyMedia, seconds: EVIDENCE_LINK_SECONDS }
+        : await liveStoryMedia(storyId);
+    if (media === null) {
       console.log('\nstory media:');
       console.log(
-        '  (the story is gone; a comment report keeps the words and the caption, not the media)',
+        '  (the story has expired or is gone; a comment report keeps the words and the caption, not the media)',
       );
     } else {
       // story_media_path_is_scoped (143) allows .mp4 for a video and only
       // jpg, jpeg, png or webp for an image, so the extension is the type.
-      const kind = path.endsWith('.mp4') ? 'video' : 'photo';
-      const signed = await sign('stories', path, 600);
+      const kind = media.path.endsWith('.mp4') ? 'video' : 'photo';
+      const signed = await sign('stories', media.path, media.seconds);
       console.log(
         aboutComment
           ? `\nthe story the comment is on (${kind}):`
           : `\nreported story ${kind}:`,
       );
-      console.log(
-        `  ${signed ?? '(the media is gone; the report outlived it)'}`,
-      );
-      if (signed !== null) {
-        console.log('  link expires in 10 minutes');
+      console.log(`  ${signedText(signed, 'the media')}`);
+      if (signed.url !== undefined) {
+        console.log(
+          `  token lasts ${linkLifetime(
+            media.seconds,
+          )}. ${EVIDENCE_LINK_CAVEAT}`,
+        );
       }
     }
   }
 }
 
 /**
- * The media key of a story that still exists, or null.
+ * How long the token on a link to reported evidence lasts: long enough to
+ * watch or listen twice.
+ */
+const EVIDENCE_LINK_SECONDS = 600;
+
+/**
+ * What that token does not bound, printed next to every evidence link.
+ *
+ * "Link expires in 10 minutes" was not true once the link had been opened.
+ * The Smart CDN serves a cached response for the same signed URL until the
+ * object is updated or deleted, "even if the token in that URL has already
+ * expired" (144's header and story-media-url cite it), and reported evidence
+ * is exactly what is NOT deleted: the story media purge skips any object a
+ * report names (151), and the voice-note purge any report's path (094). So an
+ * operator who opened a link and then pasted it into a thread, trusting ten
+ * minutes, handed over the evidence for as long as it is retained.
+ * https://supabase.com/docs/guides/storage/cdn/smart-cdn
+ */
+const EVIDENCE_LINK_CAVEAT =
+  'Once opened, the CDN keeps serving this URL until the evidence is purged: never paste it anywhere.';
+
+/** "10 minutes", or the seconds when a story's own end makes it shorter. */
+const linkLifetime = seconds =>
+  seconds === EVIDENCE_LINK_SECONDS ? '10 minutes' : `${seconds} seconds`;
+
+/**
+ * The lifetime of a link to a LIVE story's media: the evidence window, cut to
+ * the story's own remaining time, or null when under a second is left. The
+ * rule story-media-url applies to a viewer (Math.min(TTL_SECONDS, left)), so
+ * an operator's link cannot outlive the 24 hours either.
+ */
+function storyLinkSeconds(expiresAt, now) {
+  const left = Math.floor((Date.parse(expiresAt) - now) / 1000);
+  if (!Number.isFinite(left) || left < 1) {
+    return null;
+  }
+  return Math.min(EVIDENCE_LINK_SECONDS, left);
+}
+
+/**
+ * The media key of a story that is still LIVE, and how long a link to it may
+ * last, or null.
  *
  * Only reached for a report on a COMMENT. A report on a story snapshots its key
  * (evidence_story_media_path, 150), and the media purge (151) keeps every object
@@ -263,24 +388,120 @@ async function show() {
  * report is retained. A comment report snapshots the comment's words, which are
  * the evidence, and not the story, which is context: retaining it would keep a
  * provider's photo past its 24 hours because of something a commenter did. So
- * the story can be shown only while its row still exists. Read with the service
+ * the story can be shown only while it is live. It used to be "while its row
+ * still exists", and the row outlives the 24 hours until the hourly sweep
+ * (151), so a `show` in that gap signed a working 10-minute link to media the
+ * provider's audience could no longer see. Unexpired in the query, and the
+ * link capped at what is left (`storyLinkSeconds`). Read with the service
  * role, because no client policy applies to an operator.
  */
-async function liveStoryMediaPath(storyId) {
-  if (storyId === null) {
+async function liveStoryMedia(storyId, now = Date.now()) {
+  if (storyId === null || storyId === undefined) {
     return null;
   }
-  const [story] = await rest(`stories?id=eq.${storyId}&select=media_path`);
-  return story?.media_path ?? null;
+  const [story] = await rest(
+    `stories?id=eq.${storyId}` +
+      `&expires_at=gt.${encodeURIComponent(new Date(now).toISOString())}` +
+      '&select=media_path,expires_at',
+  );
+  if (story === undefined || !story.media_path) {
+    return null;
+  }
+  const seconds = storyLinkSeconds(story.expires_at, now);
+  return seconds === null ? null : { path: story.media_path, seconds };
 }
 
 /**
- * A short-lived URL for a private object.
+ * How many reports name this subject, or null for a subject whose account is
+ * gone. subject_user_id is set null when the account is deleted (005), and a
+ * null interpolated into the filter was `eq.null`, which PostgREST sends to
+ * Postgres as the string 'null' against a uuid column: 22P02, a 400, and
+ * `rest` exits before the report is printed at all. The one case the script
+ * already had words for ("(deleted account)") was the case it crashed on.
+ */
+async function priorsAgainst(subjectId) {
+  if (subjectId === null || subjectId === undefined) {
+    return null;
+  }
+  const rows = await rest(
+    `reports?subject_user_id=eq.${subjectId}&select=id&limit=100`,
+  );
+  return rows.length;
+}
+
+/**
+ * Take down the comment an actioned story-comment report is about.
  *
- * Storage is not PostgREST, so this cannot go through `rest`. Returns null rather
- * than failing the command: a report whose audio or story media has already been
- * purged is still a report worth reading. The service key goes in the headers
- * only; the URL printed carries the object's own expiring token and nothing else.
+ * `act` recorded the decision, suspended or banned the author, and closed the
+ * report, and never touched the comment: it stayed public under the story for
+ * up to 24 hours after the report read "actioned". The suspension clause in
+ * story_comment_is_visible (147) now hides a suspended author's comments, and
+ * this is the rest: a `warned` author's comment, or a ban that is later
+ * lifted, still comes down. A tombstone, the same one the author's or the
+ * provider's delete makes (body null, deleted_at set), so the report's own
+ * snapshot is the only copy of the words, as it is for any deleted comment.
+ * `none` touches nothing; a report whose comment is already purged has
+ * nothing left to take down. Only a comment not already deleted is written.
+ */
+async function takeDownReportedComment(report, action, now = Date.now()) {
+  const commentId = report.story_comment_id ?? null;
+  if (action === 'none' || commentId === null) {
+    return false;
+  }
+  await rest(`story_comments?id=eq.${commentId}&deleted_at=is.null`, {
+    method: 'PATCH',
+    body: { body: null, deleted_at: new Date(now).toISOString() },
+    prefer: 'return=minimal',
+  });
+  return true;
+}
+
+/**
+ * Take down the story an actioned story report is about.
+ *
+ * `act` recorded the decision and closed the report and left the story up:
+ * in every tray and signable through story-media-url for the rest of its 24
+ * hours, however the report was actioned. Only a suspension or a ban hid it,
+ * and only through provider_is_listed while it lasted. So any action but
+ * `none` deletes the row, as the provider's own delete does. The evidence
+ * survives it: the report snapshotted the media's key
+ * (evidence_story_media_path, 150), the delete records the name for the purge
+ * (stories_release_media), and the purge keeps every object a report names
+ * (story_objects_to_purge, 151). A comment report is not this: its evidence
+ * is the comment, and its story is someone else's context
+ * (`takeDownReportedComment`).
+ */
+async function takeDownReportedStory(report, action) {
+  const storyId = report.story_id ?? null;
+  if (
+    action === 'none' ||
+    report.evidence_surface !== 'story' ||
+    storyId === null
+  ) {
+    return false;
+  }
+  await rest(`stories?id=eq.${storyId}`, {
+    method: 'DELETE',
+    prefer: 'return=minimal',
+  });
+  return true;
+}
+
+/**
+ * A short-lived URL for a private object: `{ url }`, `{ gone: true }` when
+ * Storage says there is no such object, or `{ error: status }` for anything
+ * else.
+ *
+ * Storage is not PostgREST, so this cannot go through `rest`. It does not fail
+ * the command: a report whose audio or story media has already been purged is
+ * still a report worth reading. But gone and failed are told apart. Every
+ * non-OK answer used to read "the media is gone; the report outlived it",
+ * and for a report that is almost never true (the purges keep every object a
+ * report names, 094 and 151), so a 503 or a 429 during `show` on a child
+ * safety report told the operator the evidence no longer existed. Storage
+ * answers a missing object with 404, or with 400 and `error: "not_found"` in
+ * the body. The service key goes in the headers only; the URL printed carries
+ * the object's own expiring token and nothing else.
  */
 async function sign(bucket, path, seconds) {
   const response = await fetch(
@@ -296,10 +517,28 @@ async function sign(bucket, path, seconds) {
     },
   );
   if (!response.ok) {
-    return null;
+    const body = await response.json().catch(() => null);
+    const notFound =
+      response.status === 404 ||
+      body?.error === 'not_found' ||
+      String(body?.statusCode ?? '') === '404';
+    return notFound ? { gone: true } : { error: response.status };
   }
   const { signedURL } = await response.json();
-  return signedURL === undefined ? null : `${URL_BASE}/storage/v1${signedURL}`;
+  return signedURL === undefined
+    ? { error: response.status }
+    : { url: `${URL_BASE}/storage/v1${signedURL}` };
+}
+
+/** What `show` prints for a `sign` answer about `what` ("the audio", "the media"). */
+function signedText(signed, what) {
+  if (signed.url !== undefined) {
+    return signed.url;
+  }
+  if (signed.gone === true) {
+    return `(${what} is gone; the report outlived it)`;
+  }
+  return `(could not sign a link to ${what}: Storage answered ${signed.error}; it is not gone, run show again)`;
 }
 
 const ACTIONS = new Set([
@@ -350,7 +589,8 @@ async function act() {
   if (action === 'suspended' || action === 'banned') {
     console.log(`subject  ${r.subject_user_id}`);
     console.log(`reason   ${r.reason}`);
-    console.log(`evidence ${clip(r.evidence_body ?? r.detail, 200)}`);
+    console.log(`evidence ${evidenceText(r, 200)}`);
+    console.log(`reporter said ${clip(r.detail, 200)}`);
     if (!(await confirm(`${action} until ${suspendedUntil}?`))) {
       console.log('aborted, nothing was written');
       return;
@@ -379,6 +619,10 @@ async function act() {
     });
   }
 
+  // After the audit row, like every enforcement step here.
+  const tookDown = await takeDownReportedComment(r, action);
+  const tookDownStory = await takeDownReportedStory(r, action);
+
   await rest(`reports?id=eq.${r.id}`, {
     method: 'PATCH',
     body: {
@@ -392,6 +636,12 @@ async function act() {
   console.log(`recorded ${action} on ${short(r.subject_user_id)} by ${actor}`);
   if (suspendedUntil !== null) {
     console.log(`enforced until ${suspendedUntil}`);
+  }
+  if (tookDown) {
+    console.log(`took down comment ${short(r.story_comment_id)}`);
+  }
+  if (tookDownStory) {
+    console.log(`took down story ${short(r.story_id)}`);
   }
 }
 
@@ -569,8 +819,18 @@ async function maintenance() {
    * constraint they protect. See `purge_orphaned_voice_notes` in migration 011.
    */
   const audio = await rpc('purge_orphaned_voice_notes');
+  /*
+   * Also scheduled on pg_cron (151), and here for a project without it: the
+   * report purge is what frees a reported story's media once its report's
+   * retention runs out (story_objects_to_purge keeps every object a report
+   * names).
+   */
+  const reports = await rpc('purge_expired_reports');
   console.log(`refreshed reply latency for ${latencies} provider(s)`);
   console.log(`deleted ${audio} orphaned voice note(s)`);
+  console.log(
+    `purged ${reports} resolved report(s) past the 90 day retention window`,
+  );
 }
 
 const COMMANDS = {

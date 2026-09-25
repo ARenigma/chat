@@ -1076,8 +1076,30 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
 - Fix: ChatRequestReceiver.kt (new BroadcastReceiver), registered in
   AndroidManifest.xml, emits chatRequestDecline to JS via ReactBridgeEvents.
   App.tsx listens via DeviceEventEmitter and calls decline_session_request RPC.
-- Verification: test on S22 with app killed — Decline button should dismiss notification
-  and decline the request without opening the app.
+- Finding (2026-09-25): the Decline was lost whenever the app UI was not
+  mounted. `ReactBridgeEvents.emit` does nothing without a React context, and
+  the only listener lived in the signed-in tree; index.js registers nothing
+  else for a headless context. The buttons only ever reach a member (only
+  `contact` pushes carry a request id, and 110 sends those to the member),
+  usually with the app swiped away. The receiver also cancelled the entry
+  BEFORE the hand-off, so the request stayed pending with its lock-screen
+  answer already gone.
+- Read: https://reactnative.dev/docs/headless-js-android,
+  https://developer.android.com/about/versions/oreo/background (temporary
+  allowlist: "Executing a PendingIntent from a notification").
+- Fix: the receiver starts `ChatRequestDeclineService`, a HeadlessJsTaskService
+  (`allowedInForeground`, wake lock taken before `onReceive` returns), which
+  runs the "ChatRequestDecline" task index.js registers:
+  `declineFromNotification` (src/lib/chatRequestDecline.ts) calls
+  decline_session_request and clears through `Conversations.clear` only on
+  success. The receiver clears nothing. App.tsx only refetches on the
+  task's "chatRequestDeclined" event. Asserted in
+  `__tests__/pushForeground.test.ts` (receiver and service source, and the
+  task driven against a failing and a succeeding RPC).
+- Verification: test on S22 with app killed — Decline button should decline the
+  request without opening the app, and the notification should leave only then
+  (`adb logcat -s PappalPush` shows "decline from notification: ok"). Offline,
+  it should stay. Not yet done.
 
 ### In-place media upgrade (migration 123)
 
@@ -1120,6 +1142,16 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
   Messages has its own conversation channel. Deviation, stated in the KDoc:
   Priority or a custom sound chosen on the in-app channel cannot be carried to
   a Messages post by a per-post flag. Asserted in `__tests__/pushForeground.test.ts`.
+- Finding 2 (Greptile P1 on bb32af4, 2026-09-25): the Messages conversation
+  channel was checked BEFORE the in-app one's "off", so a person who had once
+  made the conversation Priority or Silent from a background post and later
+  turned it off from an in-app banner still got every background message.
+  IMPORTANCE_NONE "Makes no sound and doesn't appear in the status bar or
+  shade" (channels page); a conversation turned off on either parent is off.
+  Fix: `route()` checks the in-app conversation channel's NONE first; a
+  Messages conversation choice still wins for loudness below that. Asserted by
+  running the shipped `route` body against a stand-in manager for every
+  combination (`__tests__/pushForeground.test.ts`); the bb32af4 body fails it.
 - Verification: on a device, make a conversation Silent from an in-app banner,
   background the app, send a message, and read `adb shell dumpsys notification`
   for the post's channel and its `mSilent`/importance. Not yet done.
@@ -1148,12 +1180,43 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
   under one lock, so a fill can no longer post over a newer message or bring
   back a notification cancelled by `clear()`.
 - Known gap in Fix 1, narrowed 2026-09-25: the lock-screen Decline now
-  cancels through `Conversations.clear()` in `ChatRequestReceiver`, so it takes
-  the lock and a fill can no longer bring a declined request back. What stays
-  open: the system removes a notification on a tap (`setAutoCancel`) or a swipe
-  without the lock, and one that lands between a fill's read and its `notify`
-  (a few ms to tens of ms, after the avatar download) is undone by the fill.
-  System cancels cannot be locked against.
+  clears through `Conversations.clear()` (from its headless task, once the RPC
+  succeeded). What stays open: the system removes a notification on a tap
+  (`setAutoCancel`) or a swipe without the lock, and one that lands between a
+  fill's read and its `notify` (a few ms to tens of ms, after the avatar
+  download) is undone by the fill. System cancels cannot be locked against.
+- Finding 4 (2026-09-25): the lock did not do what its KDoc said. AOSP
+  NotificationManagerService's `cancelNotification` schedules the cancel on its
+  worker handler, and `getActiveNotifications` ("not yet ... cancel()ed by the
+  app") keeps listing the record until that runs, so a fill that took the lock
+  just after `clear()` saw the notification live and posted it, and its enqueue
+  landed after the cancel. A text post right after a clear could likewise read
+  the cancelled transcript back and re-post its lines.
+- Fix 4: an app-side record under `postLock`. Every post stamps its id with a
+  fresh version (`stampPostLocked`) and hands it to its own fill; `clear()`
+  drops the stamp and marks the id cleared; `clearAll()` drops all of them. A
+  fill posts only if its stamp is still current (`stillCurrentLocked`), and a
+  text post ignores a live entry for an id cleared with no post since
+  (`liveTrustedLocked`). A fill for a post a newer one replaced also stands
+  down; the newer post's own fill brings the photo. The engagement nudge's
+  fill is stamped the same way. Asserted in `__tests__/pushForeground.test.ts`.
+- Finding 5 (2026-09-25): sign-out and account deletion left the account's
+  MessagingStyle entries in the shade and on the lock screen, and its
+  long-lived conversation shortcuts in direct share and the launcher; a tap
+  opened `companionchat://peer/<id>` in the next account.
+- Read: https://developer.android.com/reference/android/app/NotificationManager#cancelAll()
+  and ShortcutManagerCompat's `removeAllDynamicShortcuts` ("if a shortcut is
+  set as long-lived, it may still be available in the system as a cached
+  shortcut") and `removeLongLivedShortcuts`.
+- Fix 5: `Conversations.clearAll()` (bridged as `clearAll`, called from
+  src/api/auth.ts on every sign-out and after account deletion): `cancelAll()`
+  under the lock (a foreground service's own notification is exempt), then
+  the dynamic and cached shortcuts by id, then the dynamic list. Pinned
+  shortcuts are the person's and stay. Conversation channels the person
+  customised stay too; they hold a choice, not a way in.
+- Verification (4, 5): not yet done on a device. Sign out with a conversation
+  notification up and check `adb shell dumpsys notification` and
+  `adb shell dumpsys shortcut` hold nothing for the app.
 - Finding 2: a foreground push for the conversation whose chat request was
   ringing full screen was discarded. A provider who then locked the phone or
   left the app had no shade entry for the request.
@@ -1175,8 +1238,11 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
   while the ring hid the chat.
 - Fix 3: the ring test comes before the viewing test in `foregroundPushAction`,
   so that push is `show-silent` too. `useViewingConversation` does not clear
-  while a ring for its conversation is up. ChatRingScreen does that clear when
-  the ring leaves (Accept, or a ring-out) with that chat on screen. The ringing
+  while any ring is up (2026-09-25: it used to hold off only for a ring on its
+  own conversation, so chat A under ring B lost A's silent entries on every
+  return to the app). ChatRingScreen does that clear when the ring leaves
+  (Accept, a Decline that ended it, or a ring-out) with a chat on screen: the
+  ring's own conversation under its guards, a different one always. The ringing
   signal is now held for the whole ring, in use or not, because AppState calls
   listeners in subscription order and the chat under a ring subscribed first:
   a signal the ring took back on return would still be clear when the chat

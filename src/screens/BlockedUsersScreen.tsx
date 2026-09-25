@@ -78,15 +78,15 @@ export function BlockedUsersScreen({ onBack }: Props) {
             they were blocked.
           </Text>
           {list.map(p => (
-            <View key={p.blocked_id} style={styles.row}>
+            <View key={p.handle} style={styles.row}>
               <Avatar initial={initialOf(p.display_name)} size={40} />
               <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
                 {p.display_name}
               </Text>
               <Pressable
-                onPress={() => unblock.mutate(p.blocked_id)}
+                onPress={() => unblock.mutate(p.handle)}
                 disabled={unblock.isPending}
-                testID={`unblock-${p.blocked_id}`}
+                testID={`unblock-${p.handle}`}
                 accessibilityLabel={`Unblock ${p.display_name}`}
                 press="chip"
                 style={styles.unblock}>

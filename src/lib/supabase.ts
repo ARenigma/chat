@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { ENV } from './env';
 import { supabaseStorage } from './storage';
 import type { Database } from './database.types';
@@ -37,6 +37,18 @@ function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise
 }
 
 /**
+ * The storage key the session is kept under in `supabaseStorage`.
+ *
+ * Exactly the key supabase-js derives when none is passed
+ * (`sb-<project ref>-auth-token`, from the URL's first label), stated here
+ * rather than left implicit so sign-out can drop the stored session
+ * synchronously as its FIRST step (`beginSignOut` in src/api/auth.ts). A
+ * different value would sign every installed device out on upgrade, which is
+ * why a test pins it to supabase-js's own formula.
+ */
+export const SESSION_STORAGE_KEY = `sb-${new URL(ENV.supabaseUrl).hostname.split('.')[0]}-auth-token`;
+
+/**
  * `detectSessionInUrl: false` because React Native has no URL bar, the OAuth
  * code arrives through a deep link and is exchanged explicitly in
  * `src/api/auth.ts`. `flowType: 'pkce'` is what makes that exchange safe on a
@@ -45,6 +57,7 @@ function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise
 export const supabase = createClient<Database>(ENV.supabaseUrl, ENV.supabaseAnonKey, {
   auth: {
     storage: supabaseStorage,
+    storageKey: SESSION_STORAGE_KEY,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
@@ -62,3 +75,32 @@ export const supabase = createClient<Database>(ENV.supabaseUrl, ENV.supabaseAnon
     },
   },
 });
+
+/**
+ * A client of its own for the server half of a sign-out, holding the session
+ * being signed out in memory and nowhere else.
+ *
+ * Sign-out drops the device's session first (`beginSignOut`), so a sign-in can
+ * start at once, and the requests that still need the old account's identity
+ * (the push_tokens row delete, and `/logout`) run on this instead of the app's
+ * client, which by then may hold the next account's session. Ending the old
+ * session through the app's client is exactly what ended new sessions: auth-js
+ * `signOut` removes whatever session is stored when its `/logout` returns.
+ *
+ * `persistSession: false` keeps it in memory (auth-js's own in-memory storage
+ * when not persisting), under a key of its own, with no refresh timer; it
+ * lives for one sign-out.
+ */
+export function signOutClient(): SupabaseClient<Database> {
+  return createClient<Database>(ENV.supabaseUrl, ENV.supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: 'pappal-sign-out',
+    },
+    global: {
+      fetch: fetchWithTimeout,
+    },
+  });
+}

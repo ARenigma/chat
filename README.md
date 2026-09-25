@@ -244,7 +244,7 @@ npm run moderate applications              # the queue, oldest first
 npm run moderate admit <user-id>
 npm run moderate needinfo <user-id> --fields=about,headline --note="..."
 npm run moderate decline <user-id> --note="..."
-npm run moderate maintenance               # cron this: refunds + reply latencies
+npm run moderate maintenance               # cron this: reply latencies, orphaned audio, expired reports
 ```
 
 ### Nobody pays for silence
@@ -404,8 +404,11 @@ deleting their account. So `reports` keeps a snapshot of the reported text, and
 de-identified.
 
 Retention is bounded in code rather than promised in a policy:
-`purge_expired_reports()` drops resolved reports 90 days after resolution, and
-`npm run moderate purge` runs it.
+`purge_expired_reports()` drops resolved reports 90 days after resolution. It
+runs nightly on pg_cron (migration 151), and `npm run moderate purge` and
+`npm run moderate maintenance` run it too. It is also what frees a reported
+story's media: the story media purge keeps every object a report names for as
+long as the report exists, so this schedule is part of the 24 hour bound.
 
 **Voice note audio needs its own sweep, and this is why.** The recordings live in
 a private Supabase Storage bucket, and storage has no foreign key to `messages`.
@@ -467,7 +470,7 @@ touched, which the pgTAP suite asserts directly rather than assuming.
 ### The queue
 
 ```bash
-npm run moderate list                       # open reports, minor_safety first
+npm run moderate list                       # open reports, child safety first
 npm run moderate show <report-id>           # detail plus the evidence snapshot
 npm run moderate act <id> --action=suspended --days=7 --note="..."
 npm run moderate dismiss <id> --note="..."
@@ -477,7 +480,7 @@ npm run moderate metrics --days=14
 A CLI rather than a web console, and that is the honest sequencing: what a queue
 needs first is that reports are _seen_ and that acting on one is recorded. Every
 action goes through the same tables a console would, so building the UI later is
-a UI change and not a rewrite. `minor_safety` and `self_harm` sort first
+a UI change and not a rewrite. Child safety (`child_safety`, and the older `minor_safety`) and `self_harm` sort first
 regardless of age, and the triage list carries a **priors** column, because a
 repeat subject should not look like a first-time report.
 

@@ -149,9 +149,12 @@ reset role;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
+-- By the handle the Blocked list shows (152): a DELETE whose WHERE reads
+-- blocked_id needs SELECT on it, which a client no longer has.
 select lives_ok(
   $$delete from public.blocks
-    where blocked_id = 'aaaaaaaa-0000-4000-8000-000000000001'$$,
+    where handle = (select handle from public.blocked_people
+                    where blocked_id = 'aaaaaaaa-0000-4000-8000-000000000001')$$,
   'the block can be lifted by its owner'
 );
 select is(

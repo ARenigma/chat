@@ -320,9 +320,14 @@ export type MyReport = {
   resolved_at: string | null;
 };
 
+/**
+ * A row of `blocks` as a client may read it (152): its own rows only (RLS),
+ * and without `blocked_id`, which `authenticated` may not SELECT. What a
+ * client knows a block by is its `handle`.
+ */
 export type Block = {
   blocker_id: string;
-  blocked_id: string;
+  handle: string;
   created_at: string;
 };
 
@@ -334,7 +339,14 @@ export type Block = {
  * where the caller is the one blocked is never on it (005).
  */
 export type BlockedPerson = {
-  blocked_id: string;
+  /** The block's own opaque id: what the list is keyed by and unblock deletes by. */
+  handle: string;
+  /**
+   * The blocked account, only for somebody the caller shares a conversation
+   * with (whose id the chat already gave them); null for a commenter blocked
+   * from a story, whose account id the story surfaces withhold.
+   */
+  blocked_id: string | null;
   /** A provider's name, a member's chosen username, or `member_handle()`. */
   display_name: string;
   /** A `clay:<seed>` avatar, or null. Never a URL, for 148's reason. */
@@ -961,9 +973,12 @@ export type StoryCommentReaction = {
   created_at: string;
 };
 
-/** `story_viewers` (149): the provider's viewer list. The only read of who reacted. */
+/**
+ * `story_viewers` (149): the provider's viewer list. The only read of who
+ * reacted, by public name. No account id: every commenter is a viewer, and
+ * the feed withholds a commenter's id from everyone, the provider included.
+ */
 export type StoryViewer = {
-  viewer_id: string;
   display_name: string;
   /**
    * A `clay:<seed>` avatar, or null. Never a URL. Viewers are members (143),
@@ -1005,6 +1020,12 @@ export type StoryError =
   | 'MEDIA_MISSING'
   /** create_story: the upload's content type is not what its file name says. */
   | 'MEDIA_MISMATCH'
+  /**
+   * create_story: this story id's media was released (the story was deleted)
+   * or the purge has claimed the upload. Mint a new id and upload again; the
+   * old one is never posted (151).
+   */
+  | 'MEDIA_RELEASED'
   /** create_story: 30 live stories already. */
   | 'LIMIT_REACHED'
   /**
@@ -1168,8 +1189,9 @@ export type Database = {
       };
       /**
        * Registration happens through `register_push_token`, never an insert,
-       * the client must not be able to name the user a token belongs to. Delete
-       * is allowed so a sign-out can revoke this device.
+       * the client must not be able to name the user a token belongs to. A
+       * sign-out's delete goes through `unregister_push_token` (143): the
+       * table has no SELECT policy, so a DELETE by token matches nothing.
        */
       push_tokens: {
         Row: {
@@ -1488,6 +1510,11 @@ export type Database = {
         Args: { p_token: string; p_platform?: string };
         Returns: void;
       };
+      /** 143. The caller's own row for this token; true when one went. */
+      unregister_push_token: {
+        Args: { p_token: string };
+        Returns: boolean;
+      };
       submit_review: {
         Args: {
           p_conversation_id: string;
@@ -1756,7 +1783,7 @@ export type Database = {
           created_at: string;
         } | null;
       };
-      /** 143. Upload to `stories/{uid}/{p_story_id}.{ext}` first; a retry with the same id is the same story. */
+      /** 143. Upload to `stories/{uid}/{p_story_id}.{ext}` first; a retry with the same id is the same story, and a deleted story's id is never posted again (MEDIA_RELEASED). */
       create_story: {
         Args: {
           p_story_id: string;
@@ -1780,21 +1807,29 @@ export type Database = {
         Args: { p_story_id: string };
         Returns: StoryReactionCount[];
       };
-      /** 147. Members only: the story's provider cannot reply. 1-500 visible characters, at most 6 lines. */
+      /**
+       * 147. Members only: the story's provider cannot reply. 1-500 visible
+       * characters, at most 6 lines. `p_comment_id` is a v4 uuid the client
+       * mints once per comment and resends on every retry: a retry returns
+       * the original success, another account's id is BAD_REQUEST.
+       */
       post_story_comment: {
-        Args: { p_story_id: string; p_body: string };
+        Args: { p_comment_id: string; p_story_id: string; p_body: string };
         Returns: PostStoryCommentResult;
       };
       /**
        * 150. The comment's author, or the story's provider. The provider may
        * pass a report reason: the report is filed first, in the same
-       * transaction, and if it is refused nothing is deleted.
+       * transaction, and if it is refused nothing is deleted. With a reason,
+       * `p_report_id` is a v4 uuid minted once and resent on every retry: a
+       * retry after the tombstone is the original success.
        */
       delete_story_comment: {
         Args: {
           p_comment_id: string;
           p_report_reason?: ReportReason | null;
           p_report_detail?: string | null;
+          p_report_id?: string | null;
         };
         Returns: DeleteStoryCommentResult;
       };
@@ -1805,6 +1840,16 @@ export type Database = {
        */
       block_story_commenter: {
         Args: { p_comment_id: string };
+        Returns: BlockStoryCommenterResult;
+      };
+      /** 152. Any viewer of the comment blocks its author; says nothing about them. */
+      block_story_comment_author: {
+        Args: { p_comment_id: string };
+        Returns: BlockStoryCommenterResult;
+      };
+      /** 152. Lifts the caller's own block with this handle, whichever path made it. */
+      unblock_by_handle: {
+        Args: { p_handle: string };
         Returns: BlockStoryCommenterResult;
       };
       /** 148. The story's provider only; the same emoji again takes it back. */
@@ -1824,12 +1869,16 @@ export type Database = {
       /**
        * 150. Same shape and failure mode as submit_report: returns the report id,
        * raises 54000 past 10 reports an hour (shared with submit_report).
+       * `p_report_id` is a v4 uuid the client mints once per report and resends
+       * on every retry: a retry returns the same id and spends no budget;
+       * another account's id raises 22023.
        */
       report_story: {
         Args: {
           p_story_id: string;
           p_reason: ReportReason;
           p_detail?: string | null;
+          p_report_id?: string | null;
         };
         Returns: string;
       };
@@ -1838,6 +1887,7 @@ export type Database = {
           p_comment_id: string;
           p_reason: ReportReason;
           p_detail?: string | null;
+          p_report_id?: string | null;
         };
         Returns: string;
       };

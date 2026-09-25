@@ -86,6 +86,20 @@ export function getViewingConversation(): string | null {
   return covers > 0 ? null : viewing;
 }
 
+/**
+ * Whether a sheet or the media viewer is open over the app. Both are React
+ * Native Modals, and on Android a Modal is a Dialog: a window of its own above
+ * the activity's. ChatRingScreen is a View in the activity's window, so its
+ * zIndex and elevation order it among the app's views and cannot lift it over
+ * a Dialog; a ring that starts under an open sheet or photo is out of sight
+ * and out of reach (`foregroundPushAction` reads this for that reason).
+ * https://reactnative.dev/docs/modal
+ * https://developer.android.com/reference/android/app/Dialog
+ */
+export function isViewingCovered(): boolean {
+  return covers > 0;
+}
+
 let ringing: string | null = null;
 
 /**
@@ -118,14 +132,109 @@ export function getRingingConversation(): string | null {
 }
 
 /**
+ * When this device's Decline of a chat request landed, by conversation.
+ *
+ * A request's push and its ring cross different wires: the ring is a Realtime
+ * insert on an open socket, the push goes through 092's trigger, pg_net,
+ * send-push and FCM. A provider who declines within a second or two of the
+ * ring can have the push for that same request land AFTER the Decline, with
+ * no ring up and no chat on screen, and it was decided `show-in-app`: a banner
+ * for a request just answered, and a shade entry the Decline had just taken
+ * out. So the answer is remembered here, and a push for the conversation that
+ * was sent no later than it is one the provider has already dealt with
+ * (`foregroundPushAction`).
+ *
+ * Keyed on the conversation and the push's `sentAt`, not the request id: the
+ * push a member's first message sends is a plain message push with no
+ * `requestId` (only `contact` pushes carry one). `sentAt` is the server's
+ * clock (send-push's `created_at`) and this is the device's, so a device clock
+ * running ahead by a few seconds can also quiet a message sent that soon after
+ * the Decline; it is still in the thread and in the Home list. Module state,
+ * as `viewing` is, and emptied on sign-out (`resetViewingSignals`).
+ */
+const declined = new Map<string, number>();
+
+/** Remember that a Decline for `conversationId`'s request landed at `at`. */
+export function recordDeclined(conversationId: string, at: number = Date.now()): void {
+  declined.set(conversationId, at);
+}
+
+/** When this device's last Decline for `conversationId` landed, or `null`. */
+export function declinedAt(conversationId: string): number | null {
+  return declined.get(conversationId) ?? null;
+}
+
+/**
+ * The newest `sentAt` this device has put into a conversation's notification,
+ * by conversation: what a landed Decline asks before it clears the entry.
+ *
+ * A Decline is an RPC, and the member can keep writing while it is on the
+ * wire (077's send_message allows it while a request is pending, and 082
+ * says messages still flow after a decline). A message sent in that window
+ * was posted into the conversation's entry, silently under the ring, and the
+ * landing's clear then cancelled it unseen: the platform's own example of a
+ * conversation notification cancelled too early. So a Decline clears only when
+ * nothing newer than its press was posted (ChatRingScreen). Server clock, as
+ * `sentAt` is, against the device's press time: the same skew `declined`
+ * already accepts. Emptied on sign-out with the rest.
+ * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
+ */
+const posted = new Map<string, number>();
+
+/** Record that a push for `conversationId`, sent at `sentAt`, was posted. */
+export function recordPosted(conversationId: string, sentAt: number = Date.now()): void {
+  const before = posted.get(conversationId);
+  if (before === undefined || sentAt > before) {
+    posted.set(conversationId, sentAt);
+  }
+}
+
+/** Whether a push sent after `at` has been posted for `conversationId`. */
+export function postedSince(conversationId: string, at: number): boolean {
+  const last = posted.get(conversationId);
+  return last !== undefined && last > at;
+}
+
+/**
+ * Whether `push` was sent no later than this device's Decline of its
+ * conversation's request (`declinedAtMs`, from `declinedAt`): the late half of
+ * an event already answered. One predicate for both handlers
+ * (`foregroundPushAction`, and `handleBackgroundPush` in push.ts), because the
+ * background one used to skip the check and alert for a request declined a
+ * second before the provider pressed Home.
+ */
+export function sentBeforeDecline(
+  push: Partial<Pick<ConversationPush, 'sentAt'>>,
+  declinedAtMs: number | null,
+): boolean {
+  return declinedAtMs !== null && push.sentAt !== undefined && push.sentAt <= declinedAtMs;
+}
+
+/**
+ * Forget every signal this module holds for the signed-in account: the chat
+ * on screen, the ring, the Declines and what was posted. Run on sign-out and account deletion,
+ * so nothing one account's session set decides a push for the next one's.
+ * Covers are left alone; they belong to whichever sheet is open, and each one
+ * releases its own.
+ */
+export function resetViewingSignals(): void {
+  viewing = null;
+  ringing = null;
+  declined.clear();
+  posted.clear();
+}
+
+/**
  * What a foreground push does.
  *
  *   - `ignore`: the push is not a conversation push, or it is for the
  *     conversation on screen with no ring over it, where Realtime has already
- *     drawn the message and a notification on top of it would be noise.
- *   - `show-silent`: the push is for the conversation whose chat request is
- *     ringing full screen in the app, even when that conversation's chat is
- *     the screen under the ring. The ring is that same event on screen, so
+ *     drawn the message and a notification on top of it would be noise, or it
+ *     was sent before this device declined the conversation's request
+ *     (`recordDeclined`).
+ *   - `show-silent`: a chat request is ringing full screen in the app and can
+ *     be seen, for this conversation or another, even when this
+ *     conversation's chat is the screen under the ring. The ring is that same event on screen, so
  *     no banner and no sound; but it still goes into the shade, silently
  *     (NotificationCompat#setSilent), because the ring is out of sight the
  *     moment AppState leaves active: a provider who locks the phone or
@@ -136,6 +245,9 @@ export function getRingingConversation(): string | null {
  *     banner, with no sound or vibration. The person is already holding the
  *     phone and looking at the app, somewhere other than this chat; the banner
  *     tells them where the message is, and a sound would only repeat it.
+ *     Also while a ring is up UNDER a sheet or the media viewer (`covered`):
+ *     the ring is not what is on screen then, so its push is the only sign of
+ *     it the person can see.
  *   - `show`: post it exactly as the background handler does, alerting. Only
  *     when RNFirebase reported the app as foreground but the app is not
  *     actually in use (see `inUse`).
@@ -157,12 +269,24 @@ export type ForegroundPushAction = 'show-in-app' | 'show-silent' | 'show' | 'ign
  * exactly as the background handler would have.
  */
 export function foregroundPushAction(
-  push: Pick<ConversationPush, 'conversationId'> | null,
+  push: (Pick<ConversationPush, 'conversationId'> & Partial<Pick<ConversationPush, 'sentAt'>>) | null,
   viewingId: string | null,
   inUse = true,
   ringingId: string | null = null,
+  declinedAtMs: number | null = null,
+  covered = false,
 ): ForegroundPushAction {
   if (push === null) {
+    return 'ignore';
+  }
+  /*
+   * A push sent no later than this device's Decline of the conversation's
+   * request (`recordDeclined`): the late half of an event already answered.
+   * Before the in-use test, since an answered request is not news on a locked
+   * phone either; a message sent after the Decline has a later `sentAt` and is
+   * decided below as any other.
+   */
+  if (sentBeforeDecline(push, declinedAtMs)) {
     return 'ignore';
   }
   if (!inUse) {
@@ -221,8 +345,20 @@ export function foregroundPushAction(
    * `ignore`d as "already on screen", and no banner may peek over the ring
    * for any conversation. Everything goes to the shade silently until the
    * ring leaves.
+   *
+   * Unless the ring is itself covered. A sheet or the media viewer is a
+   * Modal, which Android draws as a Dialog window above the activity's, and
+   * the ring is a View inside the activity's window (`isViewingCovered`): a
+   * request that started ringing while a photo was open rang behind it,
+   * unseen and unpressable, and its own push was silenced on the grounds that
+   * the ring was showing it. Then the ring timed out and only a silent entry
+   * was left. With a cover up, the push peeks as any in-app push does: a
+   * heads-up is the system's, drawn over whatever the app has open, Dialog
+   * included. (The viewing signal already reads null under a cover, so
+   * nothing below is `ignore`d as on screen either.)
+   * https://developer.android.com/develop/ui/views/notifications#Heads-up
    */
-  if (ringingId !== null) {
+  if (ringingId !== null && !covered) {
     return 'show-silent';
   }
   if (viewingId !== null && push.conversationId === viewingId) {
@@ -261,13 +397,17 @@ export function foregroundPushAction(
  * it through `setAutoCancel`. Same id both posts use (`notificationId` in
  * Conversations.kt), so a chat request's notification goes too.
  *
- * Except while this conversation's chat request is ringing over it. The ring
- * is opaque and full screen (ChatRingScreen), so the chat is mounted, in use
- * and holding the signal while nobody can see it: the platform's view "where
- * the user can't see or address the message". The shade entry is then the
- * ring's out-of-app half (`show-silent` in `foregroundPushAction`), and
- * clearing it on a return would undo that. ChatRingScreen does this clear
- * instead, when the ring leaves with this chat on screen.
+ * Except while ANY chat request is ringing over it, this conversation's or
+ * another's. The ring is opaque and full screen (ChatRingScreen), so the chat
+ * is mounted, in use and holding the signal while nobody can see it: the
+ * platform's view "where the user can't see or address the message". Every
+ * push that lands meanwhile goes to the shade silently (`show-silent` in
+ * `foregroundPushAction`), for this chat too, and clearing it on a return, or
+ * when a sheet lifted over the ring, cancelled a message still hidden behind
+ * it. That used to hold only for the ring's own conversation, so chat A under
+ * ring B lost A's entry on every return to the app. ChatRingScreen does this
+ * clear instead, when the ring leaves with this chat on screen, whichever
+ * conversation the ring was for.
  * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
  * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
  */
@@ -286,17 +426,17 @@ export function useViewingConversation(conversationId: string | undefined): void
     };
     /*
      * Take this conversation out of the shade only once it can be seen: the
-     * app in use, nothing covering the chat, and no ring over it. A return to
-     * the app with a sheet or the media viewer still open used to clear a
-     * notification for a message still hidden behind it (Greptile P1 on
-     * d0a4f8d); that clear now waits for the cover to lift.
+     * app in use, nothing covering the chat, and no ring over it, for any
+     * conversation. A return to the app with a sheet or the media viewer still
+     * open used to clear a notification for a message still hidden behind it
+     * (Greptile P1 on d0a4f8d); that clear now waits for the cover to lift.
      */
     const clearIfSeen = (): void => {
       if (
         AppState.currentState === 'active' &&
         covers === 0 &&
         viewing === conversationId &&
-        getRingingConversation() !== conversationId
+        getRingingConversation() === null
       ) {
         void clearConversation(conversationId);
       }

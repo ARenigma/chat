@@ -47,10 +47,17 @@ import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
 import { consumeBack } from './src/lib/backGuard';
-import { onForegroundPush, setNotificationPolicy, startPush } from './src/lib/push';
+import {
+  onForegroundPush,
+  signedInOnDevice,
+  startPushWhenConfigured,
+  storedAccountId,
+} from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
+  isAccountLink,
+  linkIsForAccount,
   parseChatV2Url,
   providerParent,
   transitionFor,
@@ -69,7 +76,14 @@ import {
 } from './src/lib/perfTelemetry';
 import { supabase } from './src/lib/supabase';
 import { applyDemoCapturePolicy } from './src/lib/demoCapture';
-import { currentSession, handleAuthDeepLink, signOut } from './src/api/auth';
+import {
+  beginSignOut,
+  currentSession,
+  finishPendingSignOuts,
+  forgetDeadSession,
+  handleAuthDeepLink,
+  resumePendingSignOuts,
+} from './src/api/auth';
 import {
   effectivePermissionLevel,
   FALLBACK_PERMISSIONS,
@@ -93,7 +107,7 @@ import {
 } from './src/api/callMedia/profile';
 import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat';
 import { useRole } from './src/api/provider';
-import { useStore } from './src/store/useStore';
+import { resetStore, useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
 import { PermissionsScreen } from './src/screens/PermissionsScreen';
 import { SessionFeedbackSheet } from './src/components/SessionFeedbackSheet';
@@ -125,7 +139,7 @@ import { SplashScreen } from './src/screens/SplashScreen';
 import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
 import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
 import { ChatRingScreen } from './src/components/ChatRingScreen';
-import { useDeclineSessionRequest, useIncomingChatRequests } from './src/api/sessions';
+import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
 
 initSentry();
 
@@ -619,6 +633,17 @@ function Root() {
     benchmarkReadOnly: boolean;
   } | null>(null);
   const clearPendingV2Peer = useCallback(() => setPendingV2Peer(null), []);
+  /*
+   * The signed-out screen, with nothing of the leaving account's held here: a
+   * notification tap, a ring or a V2 link still waiting for a role would
+   * otherwise be applied inside whichever account signs in next.
+   */
+  const toSignedOut = useCallback(() => {
+    setPendingPeer(null);
+    setPendingV2Peer(null);
+    setPendingIncoming(null);
+    setBoot({ phase: 'signedOut' });
+  }, []);
   const [exitDialogVisible, setExitDialogVisible] = useState(false);
   useReportFullyDrawn(boot.phase !== 'loading' && boot.phase !== 'ready');
   // Refs so the BackHandler closure reads the current route without being in its
@@ -673,6 +698,12 @@ function Root() {
     (async () => {
       try {
         assertEnv();
+        // A sign-out whose server half a dead process never finished: its
+        // session is already off the device, so this runs behind the boot.
+        void resumePendingSignOuts();
+        // Read before the session is: a refresh the server refuses makes
+        // auth-js remove the stored session inside `currentSession`.
+        const hadStoredSession = signedInOnDevice();
         const { session, retryableError } = await currentSession();
         if (cancelled) {
           return;
@@ -713,7 +744,20 @@ function Root() {
             });
             return;
           }
-          setBoot({ phase: 'signedOut' });
+          /*
+           * Signed out the way every other path is (`toSignedOut`), not with
+           * a bare phase change. A session that was stored and has now died
+           * (revoked on the server) left a notification tap or ring already
+           * held for it: `consume` read MMKV at arrival, before the refresh
+           * failed, and held a link `SignedIn` then opened inside whichever
+           * account signed in next. And it never reached `beginSignOut`, so
+           * its device half runs here: its queued sends would otherwise be
+           * replayed as the next account (`forgetDeadSession`).
+           */
+          if (hadStoredSession) {
+            void forgetDeadSession();
+          }
+          toSignedOut();
           return;
         }
         /*
@@ -783,7 +827,7 @@ function Root() {
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, toSignedOut]);
 
   /*
    * Re-read the profile and advance the boot machine, one decision point for
@@ -850,6 +894,39 @@ function Root() {
         return;
       }
       /*
+       * A chat, call or V2 link that arrives with nobody signed in on the
+       * device belongs to an account that is not here, and is dropped rather
+       * than held. Held, it waited in Root's state (which survives signedOut
+       * to ready) and `SignedIn` applied it inside whichever account signed in
+       * next: a leftover pinned shortcut (Conversations.clearAll leaves those
+       * by design) or a notification posted after the sign-out opened the
+       * previous account's peer in the new one. Read at arrival, from MMKV,
+       * so a cold-start tap by a signed-in person still finds the session.
+       * A call link's notification is still taken down.
+       */
+      if (!signedInOnDevice() && isAccountLink(url)) {
+        const leftoverCall = url.match(/^companionchat:\/\/call\/[^?]+\?.*callId=([^&]+)/)?.[1];
+        if (leftoverCall !== undefined && isUuid(leftoverCall)) {
+          void clearCall(leftoverCall);
+        }
+        return;
+      }
+      /*
+       * And one for a DIFFERENT account than the one signed in (`for=`, the
+       * account the push was for, migration 143). The gate above only asks
+       * whether anybody is signed in; a notification posted for the previous
+       * account before its sign-out finished, or its long-lived shortcut,
+       * opened that account's peer here. Dropped the same way, a leftover
+       * call's notification taken down with it.
+       */
+      if (isAccountLink(url) && !linkIsForAccount(url, storedAccountId())) {
+        const otherCall = url.match(/^companionchat:\/\/call\/[^?]+\?.*callId=([^&]+)/)?.[1];
+        if (otherCall !== undefined && isUuid(otherCall)) {
+          void clearCall(otherCall);
+        }
+        return;
+      }
+      /*
        * Development/internal-only V2 chat seam. The parser validates the
        * complete URL and UUID as untrusted input. `allowBenchmarkRoutes` is a
        * compile-time Android build capability that is true only in `internal`;
@@ -886,9 +963,10 @@ function Root() {
        * `pendingIncoming` is held below: `role` is not known here, and a bare
        * `setRoute` always writes the member tree, so a provider's own tap set a
        * route their tree never draws. `SignedIn` applies it once `role`
-       * resolves. A peer link that arrives pre-session is dropped rather than
-       * queued (`SignedIn` never mounts to consume it), because the id belongs
-       * to a session that is not the current one.
+       * resolves. A peer link that arrives with no stored session never gets
+       * here: the gate at the top of `consume` drops it, because the id
+       * belongs to an account that is not the current one, and Root's state
+       * would otherwise carry it into the next sign-in.
        */
       /*
        * An incoming-call deep link, checked first. `companionchat://call/<peerId>
@@ -993,6 +1071,23 @@ function Root() {
     return () => sub.remove();
   }, []);
 
+  /*
+   * A signed-out device that comes back online finishes any sign-out whose
+   * server half failed on the network, instead of waiting for the next launch
+   * or the next push. Only while nobody is signed in: a pending entry's push
+   * teardown revokes this device's FCM token, which a signed-in account's
+   * `startPush` waits out only at its own start.
+   */
+  useEffect(
+    () =>
+      onlineManager.subscribe(online => {
+        if (online && !signedInOnDevice()) {
+          void finishPendingSignOuts();
+        }
+      }),
+    [],
+  );
+
   /**
    * Push is started only once there is a session, and stopped when it ends.
    *
@@ -1004,38 +1099,14 @@ function Root() {
     if (boot.phase !== 'ready') {
       return;
     }
-    let unsubscribeToken: (() => void) | undefined;
-
     // Push registration is best-effort. Notification permission is an opt-in:
     // denial leaves Home and chat fully usable, and startPush returns a no-op
-    // unsubscribe without uploading an unusable token.
-    void (async () => {
-      try {
-        const permissions = await fetchPermissionsConfig();
-        const notificationLevel = effectivePermissionLevel(
-          permissions,
-          'notification',
-        );
-
-        // Propagate the effective policy so ensurePermission() in push.ts
-        // knows whether to show the blocked-settings alert on Android 13+.
-        setNotificationPolicy(notificationLevel);
-
-        if (notificationLevel !== 'optional') {
-          unsubscribeToken = await startPush();
-        } else {
-          try {
-            unsubscribeToken = await startPush();
-          } catch {
-            // Optional for internal builds — boot continues without notifications.
-          }
-        }
-
-      } catch {
-        // Push registration is best-effort; failures here do not affect boot.
-      }
-    })();
-
+    // unsubscribe without uploading an unusable token. The policy is read
+    // first so ensurePermission() in push.ts knows whether to show the
+    // blocked-settings alert on Android 13+. `startPushWhenConfigured` owns
+    // the ordering against this cleanup: a sign-out while the config RPC is
+    // still pending used to be followed by a start for the ended session.
+    //
     // A backgrounded tap on a message notification used to be picked up here
     // via `onNotificationOpen` (RNFirebase's `onNotificationOpenedApp`).
     // Removed (2026-09-17 audit): that API tracks a tap on a notification FCM
@@ -1044,9 +1115,9 @@ function Root() {
     // `Linking.addEventListener('url', ...)` the deep-link effect above
     // already runs, since `companionchat://peer/<id>` is a normal `Linking`
     // URL event whether the app was backgrounded or cold.
-    return () => {
-      unsubscribeToken?.();
-    };
+    return startPushWhenConfigured(async () =>
+      effectivePermissionLevel(await fetchPermissionsConfig(), 'notification'),
+    );
   }, [boot.phase]);
 
   /*
@@ -1472,7 +1543,19 @@ function Root() {
       <PermissionsScreen
         onGranted={advanceBootAfterProfile}
         onSignOut={() => {
-          void signOut();
+          /*
+           * The same teardown as Settings' Sign out, not a bare `signOut()`,
+           * which revoked no push registration (the push effect only runs in
+           * the ready phase, so a row from an earlier session kept ringing
+           * this phone) and never left this gate. Device first, and the
+           * server half behind it (`beginSignOut`).
+           */
+          queryClient.clear();
+          resetStore();
+          toSignedOut();
+          beginSignOut().catch(() => {
+            // Best-effort, as in Settings: nothing is left on screen to tell.
+          });
         }}
       />
     );
@@ -1517,7 +1600,7 @@ function Root() {
         onPeerHandled={clearPendingPeer}
         pendingV2Peer={pendingV2Peer}
         onV2PeerHandled={clearPendingV2Peer}
-        onSignedOut={() => setBoot({ phase: 'signedOut' })}
+        onSignedOut={toSignedOut}
         /*
          * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
          * While `PROVIDER_INTENT_KEY` is set, the boot effect above skips
@@ -1852,7 +1935,7 @@ function SignedIn({
    *
    * `useIncomingChatRequests` fires when a session_request INSERT lands on the
    * Realtime channel while the provider is live. The store's first-writer-wins
-   * guard prevents two overlapping rings. `setIncomingRequest` is stable (Zustand
+   * guard prevents two overlapping rings, and queues the second to ring next. `setIncomingRequest` is stable (Zustand
    * updater), so this callback never changes identity and never resubscribes.
    *
    * Peer name: looked up from the already-fetched conversations list. If the
@@ -1866,7 +1949,7 @@ function SignedIn({
    */
   const setIncomingRequest = useStore(s => s.setIncomingRequest);
   const onIncomingChatRequest = useCallback(
-    (request: { requestId: string; conversationId: string; initiatorId: string }) => {
+    (request: { requestId: string; conversationId: string; initiatorId: string; expiresAt: string }) => {
       if (role !== 'provider') return;
       const conv = (conversations ?? []).find(c => c.conversation_id === request.conversationId);
       const peerName =
@@ -1877,6 +1960,7 @@ function SignedIn({
         conversationId: request.conversationId,
         peerId: request.initiatorId,
         peerName,
+        expiresAt: request.expiresAt,
       });
     },
     [role, conversations, setIncomingRequest],
@@ -1884,23 +1968,41 @@ function SignedIn({
   useIncomingChatRequests(role === 'provider' ? selfId : undefined, onIncomingChatRequest);
 
   /*
-   * Decline action fired from the lock-screen chat-request notification button.
-   *
-   * ChatRequestReceiver emits "chatRequestDecline" with the payload
-   * "<requestId>|<conversationId>" when the provider taps Decline without opening
-   * the app. Parse it here and forward to the RPC, exactly as accepting from the
-   * in-app ring calls useAcceptSessionRequest. The effect re-subscribes only when
-   * the decline mutate function changes identity, which is stable across renders.
+   * Where an accepted chat request goes: its chat, except over a call. The
+   * ring is held while the call route is up (`held` on ChatRingScreen), but
+   * an Accept pressed before a call was routed can land after it, and
+   * pushing the chat route then unmounts CallScreen, whose unmount cleanup
+   * ends the call. The chat is in the list, and the notice says so.
    */
-  const declineSessionRequest = useDeclineSessionRequest();
+  const openAcceptedChat = useCallback(
+    (peerId: string) => {
+      if (currentProviderRouteRef.current.name === 'call') {
+        setNotice('Accepted. The chat is waiting in your list.', 'confirm');
+        return;
+      }
+      pushProvider({ name: 'chat', peerId });
+    },
+    [pushProvider, setNotice],
+  );
+
+  /*
+   * A Decline pressed on a chat-request notification has landed.
+   *
+   * The Decline itself is not run here any more. It was: ChatRequestReceiver
+   * emitted "chatRequestDecline" to this listener, which exists only while
+   * this tree is mounted, and the person who gets those buttons is a member
+   * whose app is usually swiped away, so the RPC never ran while the
+   * notification had already been cancelled. It now runs as a headless task
+   * with or without this tree (`declineFromNotification`, index.js), and this
+   * only refetches what it changed when the tree happens to be up, exactly as
+   * the in-app Decline does (`refetchAfterDecline`).
+   */
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('chatRequestDecline', (payload: string) => {
-      const [requestId = '', conversationId = ''] = payload.split('|');
-      if (!requestId) return;
-      declineSessionRequest.mutate({ requestId, conversationId });
+    const sub = DeviceEventEmitter.addListener('chatRequestDeclined', (conversationId: string) => {
+      refetchAfterDecline(queryClient, conversationId);
     });
     return () => sub.remove();
-  }, [declineSessionRequest]);
+  }, []);
 
   /*
    * A ring that arrived before the role did. `useRole` resolves after the deep
@@ -2105,7 +2207,8 @@ function SignedIn({
             in useIncomingChatRequests above; clearIncomingRequest is called by
             ChatRingScreen itself on accept/decline/expire. */}
         <ChatRingScreen
-          onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
+          held={providerRoute.name === 'call'}
+          onOpenConversation={openAcceptedChat}
         />
       </View>
     );

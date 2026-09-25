@@ -6,6 +6,8 @@
  * contract test pins that App.tsx actually consults it.
  */
 import {
+  isAccountLink,
+  linkIsForAccount,
   memberParent,
   parseChatV2Url,
   providerParent,
@@ -197,5 +199,41 @@ describe('parseChatV2Url', () => {
     expect(parseChatV2Url('companionchat://chat-v2/not-a-uuid', true)).toBeNull();
     expect(parseChatV2Url(`companionchat://peer/${PEER_ID}`, true)).toBeNull();
     expect(parseChatV2Url(`${url}?unexpected=true`, true)).toBeNull();
+  });
+});
+
+describe('isAccountLink', () => {
+  it.each([
+    [`companionchat://peer/${PEER_ID}`, true],
+    [`companionchat://call/${PEER_ID}?callId=${PEER_ID}&action=answer&medium=voice`, true],
+    [`companionchat://chat-v2/${PEER_ID}`, true],
+    // How a session arrives at all, and the harness's capture profile.
+    ['companionchat://auth-callback?code=abc', false],
+    ['companionchat://auth-callback/truecaller-link?code=abc', false],
+    ['companionchat://e2e-auth?access_token=a&refresh_token=r', false],
+    ['companionchat://call-sim?resolution=hd', false],
+  ])('%s is an account link: %s', (url, expected) => {
+    expect(isAccountLink(url)).toBe(expected);
+  });
+});
+
+describe('linkIsForAccount', () => {
+  // A notification's link names the account its push was for (143), so a tap
+  // after that account signed out opens nothing in the next one.
+  const USER_A = '22222222-2222-4222-8222-222222222222';
+  const USER_B = '33333333-3333-4333-8333-333333333333';
+  it.each([
+    [`companionchat://peer/${PEER_ID}?for=${USER_A}`, USER_A, true],
+    [`companionchat://peer/${PEER_ID}?for=${USER_A}`, USER_B, false],
+    [`companionchat://peer/${PEER_ID}?for=${USER_A}`, null, false],
+    [`companionchat://call/${PEER_ID}?callId=${PEER_ID}&action=answer&medium=voice&for=${USER_A}`, USER_A, true],
+    [`companionchat://call/${PEER_ID}?callId=${PEER_ID}&action=answer&medium=voice&for=${USER_A}`, USER_B, false],
+    // Not a uuid: not a link this app wrote.
+    [`companionchat://peer/${PEER_ID}?for=anyone`, USER_A, false],
+    // No `for`: posted before 143, or the V2 seam. Opens as before.
+    [`companionchat://peer/${PEER_ID}`, USER_B, true],
+    [`companionchat://call/${PEER_ID}?callId=${PEER_ID}&action=answer&medium=voice`, USER_B, true],
+  ])('%s for %s opens: %s', (url, account, expected) => {
+    expect(linkIsForAccount(url, account)).toBe(expected);
   });
 });

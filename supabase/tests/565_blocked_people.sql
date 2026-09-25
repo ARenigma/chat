@@ -4,8 +4,8 @@
 -- about the SCREEN's contract, which is wider than stories: BlockedUsersScreen
 -- reads nothing but this view, so every block the caller can make has to
 -- appear on it, and the unblock it offers (useUnblockUser in
--- src/api/safety.ts, `delete from blocks where blocked_id = <id>` with no
--- blocker filter) has to lift the caller's block and nobody else's.
+-- src/api/safety.ts, `unblock_by_handle(<handle>)`) has to lift the caller's
+-- block and nobody else's.
 --
 -- WHAT THIS IS GUARDING:
 --
@@ -19,14 +19,29 @@
 --   * Each caller sees their own blocks and no one else's: not the blocks
 --     made against them, not a third party's, and not by filtering the view
 --     for somebody else's blocked id (4-6).
---   * The client's unblock, which relies on RLS rather than a blocker filter,
---     lifts only the caller's own row when two people blocked the same
---     person (7), and a provider lifts a comment-made block of a member from
+--   * The client's unblock, by the handle the list shows, lifts only the
+--     caller's own row: another member's handle for the same person lifts
+--     nothing (7), and a provider lifts a comment-made block of a member from
 --     the list with no conversation between them (8).
+--   * An installed build's own statements still work on the blocks they
+--     could make: its block set, `from('blocks').select('*')`, and its
+--     unblock, a delete by blocked_id (13, 14). 152 first revoked the column
+--     they read, and both answered "permission denied".
+--   * The list names a chat peer's account, which the caller already has from
+--     the conversation and the block set hides threads by, and never a
+--     commenter's (12).
+--   * A name is shown only in a name's shape, as on the other story
+--     surfaces (9).
+--   * The WHERE is the access control, so the view is a security barrier
+--     (10), and a caller's own filter that raises cannot be run on another
+--     user's row and put their blocked id into the error (11). The probe
+--     forces a sequential scan: with the default plan the WHERE rides the
+--     blocks_pkey index condition and nothing leaks even without the
+--     barrier, which is how dropping it passed every suite.
 
 \set ON_ERROR_STOP on
 begin;
-select plan(8);
+select plan(14);
 
 -- ── Fixture ────────────────────────────────────────────────────────────────
 insert into auth.users (id, phone, email) values
@@ -147,10 +162,19 @@ select is(
 
 -- ── Unblocking from the list ───────────────────────────────────────────────
 -- useUnblockUser's exact statement, which names no blocker: RLS (005's owner
--- policy) is what keeps M3's unblock of Q from lifting M1's.
+-- policy) is what keeps M3 from lifting M1's block of Q, even with the handle
+-- of M1's row in hand, and M3's own handle lifts M3's.
+reset role;
+select set_config('test.m1_handle',
+  (select handle::text from public.blocks
+   where blocker_id = 'd5650000-0000-4565-8000-000000000001'
+     and blocked_id = 'd5650000-0000-4565-8000-000000000011'), true);
+set local role authenticated;
 set local request.jwt.claims = '{"sub":"d5650000-0000-4565-8000-000000000003","role":"authenticated"}';
-delete from public.blocks
-where blocked_id = 'd5650000-0000-4565-8000-000000000011';
+select public.unblock_by_handle(current_setting('test.m1_handle')::uuid);
+select public.unblock_by_handle(
+  (select handle from public.blocked_people
+   where blocked_id = 'd5650000-0000-4565-8000-000000000011'));
 reset role;
 select is(
   (select string_agg(right(blocker_id::text, 2), ',' order by blocker_id)
@@ -162,12 +186,77 @@ select is(
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"d5650000-0000-4565-8000-000000000010","role":"authenticated"}';
-delete from public.blocks
-where blocked_id = 'd5650000-0000-4565-8000-000000000002';
+-- M1 is P's chat peer (b1), so the list names M1's account; M2 only ever
+-- commented, so M2's row has a handle and no account id.
+select is(
+  (select string_agg(coalesce(blocked_id::text, 'null') || ' ' || display_name, ', '
+                     order by blocked_id)
+   from public.blocked_people),
+  'd5650000-0000-4565-8000-000000000001 quiet_otter, null Member d565',
+  '12. the list names a chat peer''s account, never a commenter''s'
+);
+select public.unblock_by_handle(
+  (select handle from public.blocked_people where blocked_id is null));
 select is(
   (select string_agg(display_name, ', ') from public.blocked_people),
   'quiet_otter',
   '8. a provider unblocks a member they never chatted with from the list, and only that member leaves it'
+);
+
+-- A finished member whose display_name was PATCHed to a contact line and a
+-- wall of newlines (148's public_display_name): the list shows the handle.
+reset role;
+update public.profiles
+set display_name = 'call 98xxxxxxxx' || repeat(E'\n', 200), profile_completed_at = now()
+where id = 'd5650000-0000-4565-8000-000000000004';
+insert into public.blocks (blocker_id, blocked_id) values
+  ('d5650000-0000-4565-8000-000000000010', 'd5650000-0000-4565-8000-000000000004');
+set local role authenticated;
+-- M4 never chatted with P either, so the row is found as the one with no id.
+select is(
+  (select display_name from public.blocked_people where blocked_id is null),
+  'Member d565',
+  '9. a display name that is not a name is listed as the handle, as on every story surface'
+);
+
+reset role;
+select is(
+  (select array_to_string(reloptions, ',') from pg_class where oid = 'public.blocked_people'::regclass),
+  'security_invoker=false,security_barrier=true',
+  '10. the view is a definer view behind a security barrier'
+);
+
+-- M4 has blocked nobody, so no row of M4's own ever reaches the filter.
+-- Without the barrier the planner pushes the cast below the view's WHERE on
+-- a sequential scan, and it raised "invalid input syntax for type integer"
+-- quoting another user's blocked_id.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"d5650000-0000-4565-8000-000000000004","role":"authenticated"}';
+set local enable_indexscan = off;
+set local enable_bitmapscan = off;
+select lives_ok(
+  $$ select count(*) from public.blocked_people where (blocked_id::text)::int > 0 $$,
+  '11. a filter that raises never sees another user''s row, even on a sequential scan'
+);
+reset enable_indexscan;
+reset enable_bitmapscan;
+
+-- ── What an installed build still does ─────────────────────────────────────
+-- M1 blocked Q from their chat (7 left it): the block set a build before 152
+-- reads, and the unblock it sends.
+set local request.jwt.claims = '{"sub":"d5650000-0000-4565-8000-000000000001","role":"authenticated"}';
+select is(
+  (select string_agg(blocked_id::text, ',') from public.blocks),
+  'd5650000-0000-4565-8000-000000000011',
+  '13. an installed build''s select * from blocks still reads its own chat block'
+);
+delete from public.blocks where blocked_id = 'd5650000-0000-4565-8000-000000000011';
+reset role;
+select is(
+  (select count(*)::int from public.blocks
+   where blocker_id = 'd5650000-0000-4565-8000-000000000001'),
+  0,
+  '14. and its unblock, a delete by blocked_id, still lifts it'
 );
 
 select * from finish();

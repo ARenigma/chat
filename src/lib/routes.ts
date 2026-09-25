@@ -299,3 +299,36 @@ export function parseChatV2Url(
   const providerId = url.match(/^companionchat:\/\/chat-v2\/([^/?#]+)$/)?.[1];
   return providerId !== undefined && isUuid(providerId) ? providerId : null;
 }
+
+/**
+ * Whether a deep link opens something that belongs to a signed-in account: a
+ * conversation (`peer/`, the notification body and its shortcut), a call
+ * (`call/`, CallStyle's Answer and Decline) or the V2 chat seam. App.tsx
+ * drops these when they arrive with no stored session instead of holding
+ * them for the next sign-in. The OAuth callback and the call-sim harness
+ * link are not account links: the first is how a session arrives at all.
+ */
+export function isAccountLink(url: string): boolean {
+  return /^companionchat:\/\/(peer|call|chat-v2)\//.test(url);
+}
+
+/**
+ * Whether an account link may open for `account`, the one signed in.
+ *
+ * A notification's links carry the account the push was for (`for=`,
+ * Conversations.withRecipient on the native side, from send-push's
+ * `recipientId`, migration 143). A tap on one left from an account that has
+ * since signed out, or posted during the overlap before its sign-out
+ * finished, used to open that account's peer inside whichever account was
+ * signed in. A link with no `for` predates it (or is the V2 seam) and opens
+ * as before; one whose `for` is not a uuid is not ours and opens nothing.
+ * Parsed with regex, as App.tsx's call links are: Hermes has no URLSearchParams.
+ */
+export function linkIsForAccount(url: string, account: string | null): boolean {
+  const query = url.split('#')[0]?.split('?')[1] ?? '';
+  const recipient = query.match(/(?:^|&)for=([^&]*)/)?.[1];
+  if (recipient === undefined) {
+    return true;
+  }
+  return isUuid(recipient) && recipient === account;
+}

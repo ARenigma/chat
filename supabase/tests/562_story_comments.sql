@@ -36,10 +36,17 @@
 --   * The provider's tray counts exactly the comments the feed shows: no
 --     tombstone, nothing by someone blocked with them (44b).
 --   * An expired story takes its comments out of every read (47).
+--   * A retry is the same comment: the client-minted id posts once, answers
+--     again even with the budget spent, and is nobody else's (48-52).
+--   * A public name is a name: a member's only in the username shape and
+--     after setup, a provider's only as one plain line, else the handle, on
+--     the feed and the viewer list alike (53-55).
+--   * A suspended or banned author's comments are hidden from everyone, the
+--     provider's count included, and come back when it is lifted (56-59).
 
 \set ON_ERROR_STOP on
 begin;
-select plan(59);
+select plan(71);
 
 -- ── Fixture ────────────────────────────────────────────────────────────────
 insert into auth.users (id, email, phone) values
@@ -49,6 +56,8 @@ insert into auth.users (id, email, phone) values
   ('c5620000-0000-4562-8000-000000000004', 'd562@test.local', null),             -- member, no name, limits
   ('c5620000-0000-4562-8000-000000000005', 'e562@test.local', null),             -- member, no policies
   ('c5620000-0000-4562-8000-000000000006', 'f562@test.local', null),             -- member, suspended
+  ('c5620000-0000-4562-8000-000000000007', 'g562@test.local', null),             -- member G, retries, later banned
+  ('c5620000-0000-4562-8000-000000000008', 'h562@test.local', null),             -- member H, a name that is not a name
   ('c5620000-0000-4562-8000-000000000010', 'p562@test.local', null),             -- provider P
   ('c5620000-0000-4562-8000-000000000011', 'q562@test.local', null);             -- provider Q
 
@@ -75,6 +84,22 @@ set    role                 = 'provider',
 where  id in ('c5620000-0000-4562-8000-000000000010',
               'c5620000-0000-4562-8000-000000000011');
 
+update public.profiles
+set display_name = 'steady_heron', profile_completed_at = now()
+where id = 'c5620000-0000-4562-8000-000000000007';
+
+-- display_name is client-writable with no shape (148's header): a contact
+-- line, then 300 newlines to take over the sheet.
+update public.profiles
+set display_name = 'WhatsApp me 98xxxxxxxx' || repeat(E'\n', 300) || 'end',
+    profile_completed_at = now()
+where id = 'c5620000-0000-4562-8000-000000000008';
+
+select test.accept_current_policies(id)
+from public.profiles
+where id in ('c5620000-0000-4562-8000-000000000007',
+             'c5620000-0000-4562-8000-000000000008');
+
 select test.accept_current_policies(id)
 from public.profiles
 where id in ('c5620000-0000-4562-8000-000000000001',
@@ -98,6 +123,10 @@ values
    now() - interval '1 hour', now() + interval '23 hours'),
   ('c5620000-0000-4562-8000-0000000000b1', 'c5620000-0000-4562-8000-000000000011', 'image',
    'c5620000-0000-4562-8000-000000000011/c5620000-0000-4562-8000-0000000000b1.jpg', 7000,
+   now() - interval '1 hour', now() + interval '23 hours'),
+  -- For 48-60: P's second story, which nothing above touches.
+  ('c5620000-0000-4562-8000-0000000000c1', 'c5620000-0000-4562-8000-000000000010', 'image',
+   'c5620000-0000-4562-8000-000000000010/c5620000-0000-4562-8000-0000000000c1.jpg', 7000,
    now() - interval '1 hour', now() + interval '23 hours');
 
 -- ── A comments, B reads it ─────────────────────────────────────────────────
@@ -105,7 +134,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000001","role":"authenticated"}';
 
 insert into test.fixture (k, v)
-select 'a1', (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', '  hello there  ')
+select 'a1', (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', '  hello there  ')
               ->> 'comment_id')::uuid;
 
 select isnt(
@@ -147,7 +176,7 @@ select is(
 );
 
 insert into test.fixture (k, v)
-select 'b1', (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'nice')
+select 'b1', (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'nice')
               ->> 'comment_id')::uuid;
 
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000001","role":"authenticated"}';
@@ -165,7 +194,7 @@ select is(
 
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000004","role":"authenticated"}';
 insert into test.fixture (k, v)
-select 'd1', (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'hi')
+select 'd1', (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'hi')
               ->> 'comment_id')::uuid;
 select is(
   (select author_display_name from public.story_comment_feed
@@ -177,30 +206,30 @@ select is(
 -- ── Who may not comment ────────────────────────────────────────────────────
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000010","role":"authenticated"}';
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'thanks!') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'thanks!') ->> 'error',
   'FORBIDDEN',
   '10. the provider cannot comment on (reply under) their own story'
 );
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000011","role":"authenticated"}';
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
   'NOT_FOUND',
   '11. nor can another provider, who cannot even see the story (143)'
 );
 
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000002","role":"authenticated"}';
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', '   ') ->> 'error')
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', '   ') ->> 'error')
   || '/' ||
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', repeat('x', 501)) ->> 'error'),
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', repeat('x', 501)) ->> 'error'),
   'BAD_REQUEST/BAD_REQUEST',
   '12. a blank comment and a 501-character one are both refused'
 );
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1',
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1',
                              E'\n\t' || chr(8203) || chr(160) || chr(10240) || E'\n') ->> 'error')
   || '/' ||
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1',
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1',
                              'line' || repeat(E'\nline', 6)) ->> 'error'),
   'BAD_REQUEST/BAD_REQUEST',
   '13. so are a comment with nothing visible in it and one of seven lines'
@@ -210,7 +239,7 @@ select is(
 -- U+FE0F that makes the heart an emoji. On Q's story, so a1's counts below
 -- are untouched.
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000b1',
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000b1',
                              chr(8203) || 'line' || repeat(E'\nline', 5) || ' ❤️' || E'\n ')
    ->> 'success')::boolean,
   true,
@@ -224,13 +253,13 @@ select is(
 
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000005","role":"authenticated"}';
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
   'POLICY_REQUIRED',
   '16. a member who has not accepted the current policies cannot comment'
 );
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000006","role":"authenticated"}';
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
   'SUSPENDED',
   '16b. a suspended member cannot comment'
 );
@@ -240,26 +269,26 @@ select is(
 -- 15's single-row read of Q's story is already done.
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000003","role":"authenticated"}';
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000b1', repeat('x', 500)) ->> 'success')::boolean,
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000b1', repeat('x', 500)) ->> 'success')::boolean,
   true,
   '12b. a comment of exactly 500 characters is accepted'
 );
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000b1', chr(127)) ->> 'error')
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000b1', chr(127)) ->> 'error')
   || '/' ||
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000b1', chr(155)) ->> 'error'),
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000b1', chr(155)) ->> 'error'),
   'BAD_REQUEST/BAD_REQUEST',
   '13b. a comment that is only a control character, DEL or a C1 CSI, is refused'
 );
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000b1',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000b1',
     'you are vile' || chr(27) || '[2K' || chr(27) || '[1A' || chr(27) || '[2K  thanks for the lovely photo')
   ->> 'error',
   'BAD_REQUEST',
   '13c. ...and so is one that hides a terminal escape sequence in its words'
 );
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000b1',
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000b1',
     'so' || chr(13) || chr(10) || 'lovely ' || chr(10084) || chr(65039) || ' ' || chr(127987) || chr(65039))
    ->> 'success')::boolean,
   true,
@@ -299,7 +328,7 @@ select ok(
   '19. ...because the feed is a security_barrier view'
 );
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'hello?') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'hello?') ->> 'error',
   'NOT_FOUND',
   '20. ...and cannot comment on it'
 );
@@ -352,7 +381,7 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000001","role":"authenticated"}';
 select is(
   (select count(*)::int
-   from (select public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'again ' || g)
+   from (select public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'again ' || g)
                   ->> 'success' as ok
          from generate_series(2, 5) g) posted
    where ok = 'true'),
@@ -362,7 +391,7 @@ select is(
 
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000001","role":"authenticated"}';
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'sixth') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'sixth') ->> 'error',
   'RATE_LIMITED',
   '24. the sixth comment on one story is refused'
 );
@@ -380,7 +409,7 @@ order by id limit 1;
 set local role authenticated;
 select public.delete_story_comment((select v from test.fixture where k = 'a_again'));
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'sixth again') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'sixth again') ->> 'error',
   'RATE_LIMITED',
   '25. deleting a comment does not buy another one'
 );
@@ -397,7 +426,7 @@ where author_id = 'c5620000-0000-4562-8000-000000000001'
 
 set local role authenticated;
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'hours later') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'hours later') ->> 'error',
   'RATE_LIMITED',
   '26. the per-story limit does not reset with the hour'
 );
@@ -414,12 +443,12 @@ from generate_series(1, 18) g;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000004","role":"authenticated"}';
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'twentieth') ->> 'success')::boolean,
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'twentieth') ->> 'success')::boolean,
   true,
   '27a. the twentieth comment in an hour is accepted'
 );
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'one more') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'one more') ->> 'error',
   'RATE_LIMITED',
   '27. ...and the twenty-first, on any story, is refused'
 );
@@ -431,7 +460,7 @@ where author_id = 'c5620000-0000-4562-8000-000000000004'
 
 set local role authenticated;
 select is(
-  (public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'one more') ->> 'success')::boolean,
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'one more') ->> 'success')::boolean,
   true,
   '28. ...and comments older than an hour do not count'
 );
@@ -445,7 +474,7 @@ where domain = 'kill_switches' and environment = 'prod';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000002","role":"authenticated"}';
 select is(
-  public.post_story_comment('c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
+  public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000a1', 'hello') ->> 'error',
   'STORIES_DISABLED',
   '29. no new comment while stories are switched off'
 );
@@ -636,6 +665,144 @@ select throws_ok(
   '42501',
   null,
   '46. no client edits a comment'
+);
+
+-- ── A retry is the same comment (147) ─────────────────────────────────────
+-- The client names the comment; a lost response retried with the same id is
+-- the original, not a second public comment and not a second unit of budget.
+reset role;
+insert into test.fixture (k, v) values ('g1', 'c5620000-0000-4562-8000-0000000000e1');
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000007","role":"authenticated"}';
+select is(
+  public.post_story_comment('c5620000-0000-4562-8000-0000000000e1', 'c5620000-0000-4562-8000-0000000000c1', 'first!')
+    ->> 'comment_id',
+  'c5620000-0000-4562-8000-0000000000e1',
+  '48. a comment is posted under the id its client minted'
+);
+select is(
+  (select (r ->> 'success') || '|' || (r ->> 'comment_id') from
+    (select public.post_story_comment('c5620000-0000-4562-8000-0000000000e1',
+                                      'c5620000-0000-4562-8000-0000000000c1', 'first!') as r) x),
+  'true|c5620000-0000-4562-8000-0000000000e1',
+  '49. the same id again is the original success'
+);
+-- Four more spend G's five on this story; the retry still answers, and a
+-- new id is refused.
+select public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000c1', 'more ' || g)
+from generate_series(1, 4) g;
+select is(
+  (public.post_story_comment('c5620000-0000-4562-8000-0000000000e1',
+                             'c5620000-0000-4562-8000-0000000000c1', 'first!') ->> 'success')
+  || '|' ||
+  (public.post_story_comment(gen_random_uuid(), 'c5620000-0000-4562-8000-0000000000c1', 'sixth') ->> 'error'),
+  'true|RATE_LIMITED',
+  '50. a retry is not a new comment, so a spent budget does not refuse it'
+);
+reset role;
+select is(
+  (select count(*)::int from public.story_comments
+   where author_id = 'c5620000-0000-4562-8000-000000000007'
+     and story_id = 'c5620000-0000-4562-8000-0000000000c1'),
+  5,
+  '51. three posts of one id made one row'
+);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000008","role":"authenticated"}';
+select is(
+  (public.post_story_comment('c5620000-0000-4562-8000-0000000000e1',
+                             'c5620000-0000-4562-8000-0000000000c1', 'mine now') ->> 'error')
+  || '|' ||
+  (public.post_story_comment(null, 'c5620000-0000-4562-8000-0000000000c1', 'no id') ->> 'error'),
+  'BAD_REQUEST|BAD_REQUEST',
+  '52. another account''s id, or none, is refused'
+);
+select public.post_story_comment('c5620000-0000-4562-8000-0000000000e2',
+                                 'c5620000-0000-4562-8000-0000000000c1', 'hello from H');
+
+-- ── A name that is not a name (148) ───────────────────────────────────────
+set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000002","role":"authenticated"}';
+select is(
+  (select author_display_name from public.story_comment_feed
+   where id = 'c5620000-0000-4562-8000-0000000000e2'),
+  public.member_handle('c5620000-0000-4562-8000-000000000008'),
+  '53. a display name outside the username shape is published as the handle'
+);
+reset role;
+select is(
+  (select string_agg(coalesce(public.public_display_name(p), 'NULL'), ' | ' order by k)
+   from (values
+     (1, 'member',   '  quiet_lark  ', now()),
+     (2, 'member',   'quiet_lark',     null::timestamptz),
+     (3, 'member',   'two words',      now()),
+     (4, 'member',   'abc',            now()),
+     (5, 'member',   repeat('x', 25),  now()),
+     (6, 'provider', 'Pandit Raghav',  null),
+     (7, 'provider', E'Line\nTwo',     null),
+     (8, 'provider', repeat('y', 41),  null),
+     (9, 'provider', E'Esc\x1b[2K',    null)
+   ) as v(k, role, name, done)
+   cross join lateral (
+     select (jsonb_populate_record(null::public.profiles, jsonb_build_object(
+       'id', 'c5620000-0000-4562-8000-0000000000f' || v.k,
+       'role', v.role, 'display_name', v.name, 'profile_completed_at', v.done))).*
+   ) p),
+  'quiet_lark | Member c562 | Member c562 | abc | Member c562 | Pandit Raghav | Member c562 | Member c562 | Member c562',
+  '54. a member''s name only in the username shape and once set up; a provider''s stage name if it is one plain line of at most 40'
+);
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000010","role":"authenticated"}';
+select is(
+  (select count(*)::int from public.story_viewers('c5620000-0000-4562-8000-0000000000c1')
+   where display_name = public.member_handle('c5620000-0000-4562-8000-000000000008')),
+  1,
+  '55. the provider''s viewer list names nobody the feed would not (149)'
+);
+
+-- ── A suspended or banned author's comments are not public (147) ─────────
+reset role;
+update public.profiles set suspended_until = now() + interval '3 days'
+where id = 'c5620000-0000-4562-8000-000000000007';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000002","role":"authenticated"}';
+select is(
+  (select count(*)::int from public.story_comment_feed
+   where story_id = 'c5620000-0000-4562-8000-0000000000c1'),
+  1,
+  '56. a suspended author''s comments leave the feed, and only theirs'
+);
+set local request.jwt.claims = '{"sub":"c5620000-0000-4562-8000-000000000010","role":"authenticated"}';
+select is(
+  (select count(*)::int from public.story_comment_feed
+   where story_id = 'c5620000-0000-4562-8000-0000000000c1')
+  || '/' ||
+  (select comment_count from public.my_story_insights()
+   where story_id = 'c5620000-0000-4562-8000-0000000000c1'),
+  '1/1',
+  '57. ...for the provider too, and the tray counts what the sheet shows (149)'
+);
+reset role;
+update public.profiles set suspended_until = '2999-01-01'
+where id = 'c5620000-0000-4562-8000-000000000007';
+set local role authenticated;
+select is(
+  (select count(*)::int from public.story_comment_feed
+   where story_id = 'c5620000-0000-4562-8000-0000000000c1'),
+  1,
+  '58. a ban is a suspension with no end, and hides them the same way'
+);
+reset role;
+update public.profiles set suspended_until = now() - interval '1 minute'
+where id = 'c5620000-0000-4562-8000-000000000007';
+set local role authenticated;
+select is(
+  (select count(*)::int from public.story_comment_feed
+   where story_id = 'c5620000-0000-4562-8000-0000000000c1')
+  || '/' ||
+  (select comment_count from public.my_story_insights()
+   where story_id = 'c5620000-0000-4562-8000-0000000000c1'),
+  '6/6',
+  '59. once it is lifted they are back'
 );
 
 -- ── Expiry ─────────────────────────────────────────────────────────────────
