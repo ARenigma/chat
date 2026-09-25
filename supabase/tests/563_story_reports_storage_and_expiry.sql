@@ -85,7 +85,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(113);
+select plan(115);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -1520,6 +1520,17 @@ select ok(
          where p.pronamespace = 'public'::regnamespace
            and p.proname in ('report_story', 'report_story_comment', 'delete_story_comment')) f),
   '39z. report retries compare story and comment ids null-safely (a purged story is never a match)'
+);
+
+select ok(
+  position('s.provider_id = auth.uid()' in pg_get_functiondef('public.story_comment_is_reportable(uuid)'::regprocedure)) > 0,
+  '39aa. a story''s provider can report a comment on it after blocking its author'
+);
+select ok(
+  (select position('where id = p_story_id and provider_id = v_uid' in d) < position('if v_refusal is not null' in d)
+   from (select pg_get_functiondef(p.oid) as d from pg_proc p
+         where p.pronamespace = 'public'::regnamespace and p.proname = 'create_story') f),
+  '39ab. a retry of a story already created answers before any refusal'
 );
 
 select * from finish();

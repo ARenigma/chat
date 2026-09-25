@@ -338,6 +338,17 @@ as $$
           and s.expires_at > now()
           and not public.is_blocked_pair(auth.uid(), c.author_id)
           and not public.is_blocked_pair(s.provider_id, c.author_id)
+      )
+      -- The story's own provider can always report a comment on it, blocked
+      -- author or not: blocking the author (152) must not take away the
+      -- report that is the provider's one route to moderation.
+      or exists (
+        select 1
+        from public.story_comments c
+        join public.stories s on s.id = c.story_id
+        where c.id = p_comment_id
+          and c.deleted_at is null
+          and s.provider_id = auth.uid()
       );
 $$;
 

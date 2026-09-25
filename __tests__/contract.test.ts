@@ -2135,10 +2135,8 @@ describe('a block is visible where it matters and reversible everywhere', () => 
     // The unblocked row leaves the cache before the refetch, so a refetch that
     // fails cannot leave it offered again after "Unblocked." has shown.
     const safety = read('src/api/safety.ts');
-    const unblock = safety.slice(
-      safety.indexOf('export function useUnblockUser'),
-      safety.indexOf('export interface ReportInput'),
-    );
+    const unblockAt = safety.indexOf('export function useUnblockUser');
+    const unblock = safety.slice(unblockAt, safety.indexOf('export interface ReportInput', unblockAt));
     const dropRow = unblock.indexOf(
       'setQueryData<BlockedPerson[]>(safetyKeys.blockedPeople',
     );
@@ -5753,10 +5751,8 @@ describe('every incoming-signal realtime channel repairs on CHANNEL_ERROR/TIMED_
     // 086's Accept and 077's provider send set only responded_at; the row
     // stays pending until the member confirms, and every resubscribe rang it.
     const sessions = withoutComments(read('src/api/sessions.ts'));
-    const recover = sessions.slice(
-      sessions.indexOf('async function recoverPending()'),
-      sessions.indexOf('.maybeSingle()'),
-    );
+    const recoverAt = sessions.indexOf('async function recoverPending()');
+    const recover = sessions.slice(recoverAt, sessions.indexOf('.maybeSingle()', recoverAt));
     expect(recover).toMatch(/\.eq\('status', 'pending'\)\s*\.is\('responded_at', null\)/);
   });
 

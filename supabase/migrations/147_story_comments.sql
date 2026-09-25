@@ -206,6 +206,19 @@ begin
     return json_build_object('success', false, 'error', 'BAD_REQUEST');
   end if;
 
+  -- A retry of a comment already posted answers with it before any refusal,
+  -- so a kill switch or policy change in between cannot turn it into an
+  -- error. Checked again under the author lock below for the concurrent case.
+  select * into v_comment from public.story_comments
+  where id = p_comment_id and author_id = v_uid;
+  if found then
+    return json_build_object(
+      'success', true,
+      'comment_id', v_comment.id,
+      'created_at', v_comment.created_at
+    );
+  end if;
+
   -- Blank is refused up front; length and line breaks by the CHECK, caught
   -- below, so the numbers are stated once.
   if v_trimmed is null then

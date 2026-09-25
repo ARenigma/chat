@@ -549,6 +549,23 @@ declare
   -- character in it is refused, by the CHECK.
   v_caption   text := public.story_text_trim(p_caption);
 begin
+  -- A retry of a create that already went through answers with that story
+  -- before any refusal: a kill switch, suspension or policy change that
+  -- lands in between must not turn a success into an error. Checked again
+  -- under the lock below for the concurrent case.
+  if p_story_id is not null then
+    select * into v_existing from public.stories
+    where id = p_story_id and provider_id = v_uid;
+    if found then
+      return json_build_object(
+        'success', true,
+        'story_id', v_existing.id,
+        'created_at', v_existing.created_at,
+        'expires_at', v_existing.expires_at
+      );
+    end if;
+  end if;
+
   -- The same answer the upload policy got (section 5), so a provider the
   -- bucket refused is refused here for the same reason, and the reverse.
   if v_refusal is not null then

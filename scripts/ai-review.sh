@@ -56,6 +56,7 @@ prompt='You are a strict senior code reviewer blocking merges, like Greptile. Re
 Output format, one finding per line, nothing else:
 P0|P1|P2 <path>:<line> <one-sentence defect and scenario>
 P0 = security or data loss, P1 = user-visible breakage, P2 = real but narrow bug.
+You see ONE chunk of a larger diff; other files are reviewed separately. Never report something as missing, unregistered or not passed just because it is not in this chunk: flag only defects provable from the code shown. Do not report robustness nits in test helpers unless a test passes on broken code today.
 If there are no such defects, output exactly: NONE'
 
 review_chunk() {
