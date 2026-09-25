@@ -296,6 +296,12 @@ export function stopCallForegroundService(): void {
 }
 
 /** Post an engagement nudge (BigPicture). Resolves `false` when the module is absent. */
+/*
+ * No `recipientId` here, and none needed: the account check runs once for
+ * every push kind before any of them is read (`pushIsForSignedInAccount` in
+ * src/lib/push.ts, on `remote.data.recipientId`), so an engagement push for
+ * another account is dropped before it reaches this call.
+ */
 export async function notifyEngagement(push: EngagementPush): Promise<boolean> {
   if (native === undefined) {
     return false;

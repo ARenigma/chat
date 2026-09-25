@@ -361,6 +361,8 @@ comment on function public.dispatch_story_media_purge() is
   'both are set.';
 
 revoke all on function public.dispatch_story_media_purge() from public, anon, authenticated;
+-- pg_cron runs it as its owner; service_role may also run it by hand.
+grant execute on function public.dispatch_story_media_purge() to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 5. Schedules

@@ -1063,8 +1063,7 @@ select ok(
 );
 select ok(
   (select position('for share of s' in d) > 0
-      and position('for share of s' in d) < position('deleted_at is null
-  for share' in d)
+      and position('for share of s' in d) < coalesce(nullif(regexp_instr(d, 'deleted_at is null\s+for share'), 0), -1)
    from (select pg_get_functiondef('public.react_to_story_comment(uuid, text)'::regprocedure) as d) f),
   '39j0. react_to_story_comment locks the story, then the live comment'
 );
