@@ -43,7 +43,9 @@ import { Pressable } from './Pressable';
 /** How long the ring lasts. A call's own window (send-call ttl '30s'). */
 export const CHAT_RING_SECONDS = 30;
 
-/** The line a queued request is announced with: a request push's own body. */
+/** The line a queued request is announced with: a request push's own body.
+ * @public Also read by the tests.
+ */
 export const QUEUED_REQUEST_LINE = 'wants to have a chat with you';
 
 /**

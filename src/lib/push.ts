@@ -108,6 +108,7 @@ let _notificationPolicy: 'optional' | 'required' = 'optional';
  *
  * Called from App.tsx after resolving effectivePermissionLevel('notification')
  * from the admin permissions config.
+ * @public Also read by the tests.
  */
 export function setNotificationPolicy(level: 'optional' | 'required'): void {
   _notificationPolicy = level;
@@ -153,6 +154,7 @@ async function ensurePermission(): Promise<boolean> {
  * permission dialog, the Credential Manager sheet, the share sheet — and each
  * pause is a `background` → `active` pair in AppState. A return that does not
  * outlast this is one of those, not the person coming back.
+ * @public Also read by the tests.
  */
 export const ACTIVE_SETTLE_MS = 1_500;
 
@@ -160,6 +162,7 @@ export const ACTIVE_SETTLE_MS = 1_500;
  * The least time between a successful registration and an AppState-driven
  * one. A person flicking between two apps is not a reason to call the RPC on
  * every switch; `last_seen_at` is read in months, not seconds.
+ * @public Also read by the tests.
  */
 export const ACTIVE_MIN_INTERVAL_MS = 60_000;
 
@@ -227,6 +230,7 @@ const inFlight = new Set<Promise<void>>();
  * deletion fails its foreign key and one answered before it goes with the
  * cascade. The wait happens only while an RPC is actually on the wire, which
  * is normally one round trip.
+ * @public Also read by the tests.
  */
 export const STOP_DRAIN_MS = 3_000;
 
@@ -439,6 +443,7 @@ function listen(): () => void {
  * Runs for BOTH trees: App.tsx calls it from the `boot.phase === 'ready'`
  * effect in Root, and `SignedIn` — which picks the member or the provider
  * tree by role — only ever renders in that phase.
+ * @public Also read by the tests.
  */
 export async function startPush(): Promise<() => void> {
   // A second start replaces the first rather than stacking listeners on it.
@@ -760,6 +765,7 @@ export function storedAccountId(): string | null {
  * long-lived shortcut, a tap that opened the old peer's chat. A push with no
  * `recipientId` comes from a sender deployed before it and is taken as
  * before; one naming anybody else is not this device's to show.
+ * @public Also read by the tests.
  */
 export function pushIsForSignedInAccount(
   data: Readonly<Record<string, string | object>> | undefined,

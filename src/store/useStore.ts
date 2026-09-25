@@ -43,7 +43,9 @@ export interface PlayingVoice {
 /** What a peer is doing in the composer, mirrored from their device. */
 export type PeerActivity = 'typing' | 'recording';
 
-/** A chat request as the ring shows it. */
+/** A chat request as the ring shows it.
+ * @public Also read by the tests.
+ */
 export interface IncomingRequest {
   requestId: string;
   conversationId: string;
