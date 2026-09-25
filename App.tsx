@@ -1949,7 +1949,7 @@ function SignedIn({
    */
   const setIncomingRequest = useStore(s => s.setIncomingRequest);
   const onIncomingChatRequest = useCallback(
-    (request: { requestId: string; conversationId: string; initiatorId: string; expiresAt: string }) => {
+    (request: { requestId: string; conversationId: string; initiatorId: string; expiresAt: string; createdAt?: string }) => {
       if (role !== 'provider') return;
       const conv = (conversations ?? []).find(c => c.conversation_id === request.conversationId);
       const peerName =
@@ -1961,6 +1961,7 @@ function SignedIn({
         peerId: request.initiatorId,
         peerName,
         expiresAt: request.expiresAt,
+        createdAt: request.createdAt,
       });
     },
     [role, conversations, setIncomingRequest],

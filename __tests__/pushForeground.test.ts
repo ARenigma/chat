@@ -2346,6 +2346,9 @@ describe('the chat-request ring takes its notification with it', () => {
     conversationId: A,
     peerId: PEER,
     peerName: 'Asha',
+    // Server time of the row, which a Decline is anchored to (Greptile P1 on
+    // 6bb4114): the same instant as the member message that opened it.
+    createdAt: new Date(1_790_000_000_000).toISOString(),
   };
 
   interface Element {
@@ -3087,6 +3090,8 @@ describe('the chat-request ring takes its notification with it', () => {
     requestId: QUEUED,
     conversationId,
     peerId: PEER_B,
+    // Created as the first ring ran out, so its anchor differs from the first's.
+    createdAt: new Date(1_790_000_030_000).toISOString(),
   });
 
   it('keeps the covered chat\'s entry while the queued request for it rings, and clears it when that ring leaves', () => {
@@ -3245,11 +3250,33 @@ describe('the chat-request ring takes its notification with it', () => {
     jest.setSystemTime(1_790_000_002_000);
     const ring = mountRing();
     await declineAnd(ring, 'success');
-    expect(ring.viewing.declinedAt(A)).toBe(1_790_000_002_000);
+    // Anchored to the request's server time, not the press two seconds on.
+    expect(ring.viewing.declinedAt(A)).toBe(1_790_000_000_000);
     // The member's first message, sent as the ring started, arriving now.
     expect(
       foregroundPushAction({ conversationId: A, sentAt: 1_790_000_000_000 }, null, true, null, ring.viewing.declinedAt(A)),
     ).toBe('ignore');
+  });
+
+  it('does not silence a new message when the phone clock runs ahead of the server', async () => {
+    // Greptile P1 on 6bb4114: stamped with a device clock a minute fast, a
+    // message the member sent 5 s after the request was treated as part of it.
+    jest.setSystemTime(1_790_000_000_000 + 60_000);
+    const ring = mountRing();
+    await declineAnd(ring, 'success');
+    expect(ring.viewing.declinedAt(A)).toBe(1_790_000_000_000);
+    expect(
+      foregroundPushAction({ conversationId: A, sentAt: 1_790_000_005_000 }, null, true, null, ring.viewing.declinedAt(A)),
+    ).toBe('show-in-app');
+  });
+
+  it('suppresses nothing when the request row carries no server time', async () => {
+    const ring = mountRing();
+    const { createdAt: _dropped, ...withoutTime } = ring.store.incomingRequest!;
+    ring.store.incomingRequest = withoutTime as typeof ring.store.incomingRequest;
+    ring.rerun();
+    await declineAnd(ring, 'success');
+    expect(ring.viewing.declinedAt(A)).toBeNull();
   });
 
   it('remembers nothing for a Decline that failed', async () => {
@@ -3325,8 +3352,9 @@ describe('the lock-screen Decline runs without the app and clears only once it l
     expect(service).toContain('class ChatRequestDeclineService : HeadlessJsTaskService()');
     expect(service).toContain('const val TASK = "ChatRequestDecline"');
     expect(service).toContain('return HeadlessJsTaskConfig(TASK, data, TIMEOUT_MS, true)');
-    expect(withoutComments(read('index.js'))).toContain(
-      "AppRegistry.registerHeadlessTask('ChatRequestDecline', () => declineFromNotification);",
+    // Structure, not layout: the pre-commit formatter wraps this call.
+    expect(withoutComments(read('index.js'))).toMatch(
+      /AppRegistry\.registerHeadlessTask\(\s*'ChatRequestDecline',\s*\(\) => declineFromNotification,?\s*\);/,
     );
     expect(read('android/app/src/main/AndroidManifest.xml')).toMatch(
       /<service\s+android:name="\.ChatRequestDeclineService"\s+android:exported="false" \/>/,

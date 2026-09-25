@@ -85,7 +85,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(111);
+select plan(112);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -1505,6 +1505,14 @@ select throws_ok(
   '42501',
   'moderation_actions is append-only',
   '49d. ...nor edits one from inside another trigger, where only the foreign key''s own set null passes'
+);
+
+select ok(
+  (select bool_and(position('<> p_story_id' in d) = 0 and position('<> p_comment_id' in d) = 0)
+   from (select pg_get_functiondef(p.oid) as d from pg_proc p
+         where p.pronamespace = 'public'::regnamespace
+           and p.proname in ('report_story', 'report_story_comment', 'delete_story_comment')) f),
+  '39z. report retries compare story and comment ids null-safely (a purged story is never a match)'
 );
 
 select * from finish();

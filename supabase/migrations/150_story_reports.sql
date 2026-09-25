@@ -393,7 +393,7 @@ begin
       -- story_id goes null when the story is purged; the surface does not.
       if v_existing.reporter_id is distinct from v_uid
          or v_existing.evidence_surface is distinct from 'story'
-         or v_existing.story_id <> p_story_id then
+         or v_existing.story_id is distinct from p_story_id then
         raise exception 'report id already used' using errcode = '22023';
       end if;
       return v_existing.id;
@@ -550,7 +550,7 @@ begin
     if found then
       if v_existing.reporter_id is distinct from v_uid
          or v_existing.evidence_surface is distinct from 'story_comment'
-         or v_existing.story_comment_id <> p_comment_id then
+         or v_existing.story_comment_id is distinct from p_comment_id then
         raise exception 'report id already used' using errcode = '22023';
       end if;
       return v_existing.id;
@@ -751,7 +751,7 @@ begin
       if found then
         if v_existing.reporter_id is distinct from v_uid
            or v_existing.evidence_surface is distinct from 'story_comment'
-           or v_existing.story_comment_id <> p_comment_id then
+           or v_existing.story_comment_id is distinct from p_comment_id then
           return json_build_object('success', false, 'error', 'BAD_REQUEST');
         end if;
         return json_build_object('success', true, 'report_id', v_existing.id);

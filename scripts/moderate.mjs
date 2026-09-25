@@ -599,19 +599,33 @@ async function act() {
 
   // Order matters: the audit row is written first, so an enforcement action can
   // never exist without a record of who ordered it.
-  await rest('moderation_actions', {
-    method: 'POST',
-    body: {
-      report_id: r.id,
-      subject_user_id: r.subject_user_id,
-      action,
-      actor,
-      note,
-    },
-    prefer: 'return=minimal',
-  });
+  //
+  // Resumable: a takedown below can fail after the audit row and suspension
+  // landed, which exits with the report still open. Re-running the same act
+  // used to record the action a second time (Greptile P1 on 6bb4114). An
+  // existing row for this report and action means this is that retry: the
+  // record and the suspension are kept, and only the takedowns and the
+  // resolve are finished.
+  const [already] = await rest(
+    `moderation_actions?report_id=eq.${r.id}&action=eq.${action}&select=id&limit=1`,
+  );
+  if (already !== undefined) {
+    console.log(`resuming: ${action} was already recorded for this report`);
+  }
+  if (already === undefined)
+    await rest('moderation_actions', {
+      method: 'POST',
+      body: {
+        report_id: r.id,
+        subject_user_id: r.subject_user_id,
+        action,
+        actor,
+        note,
+      },
+      prefer: 'return=minimal',
+    });
 
-  if (suspendedUntil !== null) {
+  if (suspendedUntil !== null && already === undefined) {
     await rest(`profiles?id=eq.${r.subject_user_id}`, {
       method: 'PATCH',
       body: { suspended_until: suspendedUntil },

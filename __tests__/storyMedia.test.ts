@@ -290,11 +290,19 @@ describe('moderate.mjs acts on stories as the owner rules say', () => {
    * records, and the CLI's own globals (the positional id, the flags, the
    * confirmation, the console) are stand-ins.
    */
-  function runAct(report: Record<string, unknown>, action: string, flags: Record<string, string> = {}) {
+  function runAct(
+    report: Record<string, unknown>,
+    action: string,
+    flags: Record<string, string> = {},
+    recorded: readonly string[] = [],
+  ) {
     const calls: Call[] = [];
     const logs: string[] = [];
     const rest = async (path: string, options?: Call['options']) => {
       calls.push({ path, options });
+      if (path.startsWith('moderation_actions?') && options === undefined) {
+        return recorded.some(a => path.includes(`action=eq.${a}`)) ? [{ id: 'm-1' }] : [];
+      }
       return path.startsWith('reports?id=eq.') && options === undefined ? [report] : null;
     };
     const clipStart = source.indexOf('const clip = (s, n) => {');
@@ -368,6 +376,19 @@ describe('moderate.mjs acts on stories as the owner rules say', () => {
         await act();
         expect(calls.filter(call => call.path.startsWith('stories?'))).toEqual([]);
       }
+    });
+  });
+
+  describe('act is resumable after a failed takedown (Greptile P1 on 6bb4114)', () => {
+    it('records the action and suspension once, then finishes the takedown and closes the report', async () => {
+      const { act, calls, logs } = runAct(STORY_REPORT, 'suspended', { days: '7' }, ['suspended']);
+      await act();
+      const paths = calls.map(call => `${call.options?.method ?? 'GET'} ${call.path}`);
+      expect(paths).not.toContain('POST moderation_actions');
+      expect(paths.some(path => path.startsWith('PATCH profiles?'))).toBe(false);
+      expect(paths).toContain('DELETE stories?id=eq.s-1');
+      expect(paths).toContain('PATCH reports?id=eq.r-1');
+      expect(logs.some(line => line.startsWith('resuming:'))).toBe(true);
     });
   });
 
@@ -469,6 +490,7 @@ describe('moderate.mjs acts on stories as the owner rules say', () => {
     it('runs in act after the audit row and before the report is closed', () => {
       const act = lift('async function act(');
       const audit = act.indexOf("await rest('moderation_actions', {");
+      // The audit row is still written before anything else (on a first run).
       const takeDown = act.indexOf('const tookDown = await takeDownReportedComment(r, action);');
       const close = act.indexOf("await rest(`reports?id=eq.${r.id}`, {");
       expect(audit).toBeGreaterThan(-1);

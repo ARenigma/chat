@@ -51,6 +51,13 @@ export interface IncomingRequest {
   peerName: string;
   /** The row's `expires_at`, when the caller had it; a queued one past it never rings. */
   expiresAt?: string;
+  /**
+   * The row's server `created_at`, the same instant as the member message that
+   * opened it (077). What a Decline is anchored to, so the late push of that
+   * message is recognised by server time on both sides, never this device's
+   * clock (Greptile P1 on 6bb4114).
+   */
+  createdAt?: string;
 }
 
 interface AppState {

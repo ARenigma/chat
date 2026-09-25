@@ -353,15 +353,18 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
     if (incoming === null) {
       return;
     }
-    const { requestId, conversationId } = incoming;
+    const { requestId, conversationId, createdAt } = incoming;
     /*
-     * When the provider answered, which is when the Decline is stamped: the
-     * press, not the landing. A message the member sent during the round trip
-     * has a later `sentAt` than the press and is news, and stamped at the
-     * landing it was quieted as part of the answered request (`recordDeclined`
-     * and `sentBeforeDecline`).
+     * What the Decline is anchored to, in SERVER time: the request row's
+     * `created_at`, which is the same instant as the member message that opened
+     * it (077), so that message's late push has `sentAt` equal to it. Anything
+     * the member sends after it is news. This used to be the device's own
+     * press time compared against server `sentAt`, and a phone clock running
+     * ahead quieted a genuinely new message as part of the answered request
+     * (Greptile P1 on 6bb4114). With no `createdAt` (an older row shape),
+     * nothing is suppressed: a stray banner beats a silenced message.
      */
-    const pressedAt = Date.now();
+    const answeredAt = createdAt !== undefined ? Date.parse(createdAt) : null;
     declining.current.add(requestId);
     // Its own promise, for Accept's reason (above).
     void decline
@@ -385,8 +388,8 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
          * up it would peek as a banner for a request already declined. Not
          * when a newer request for the conversation rings: that one's push is
          * still to come, and its shade entry is the newer ring's to keep.
-         * Remembered as of the press (`pressedAt`), and the entry is kept if
-         * anything sent after the press was posted into it meanwhile
+         * Remembered as of the request's server time (`answeredAt`), and the
+         * entry is kept if anything sent after it was posted into it meanwhile
          * (`postedSince`): that message is not part of the answered request,
          * and nobody has seen it.
          * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
@@ -397,9 +400,11 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
             clearRevealedChat(conversationId);
           }
           if (!newerRequestRings(requestId, conversationId)) {
-            recordDeclined(conversationId, pressedAt);
-            if (!postedSince(conversationId, pressedAt)) {
-              void clearConversation(conversationId);
+            if (answeredAt !== null && Number.isFinite(answeredAt)) {
+              recordDeclined(conversationId, answeredAt);
+              if (!postedSince(conversationId, answeredAt)) {
+                void clearConversation(conversationId);
+              }
             }
           }
         },

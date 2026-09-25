@@ -698,6 +698,8 @@ export interface IncomingChatRequest {
   /** The member who asked. Members have no directory row, so this is all we get. */
   initiatorId: string;
   expiresAt: string;
+  /** Server `created_at`: the same instant as the message that opened it (077). */
+  createdAt?: string;
 }
 
 /**
@@ -729,7 +731,7 @@ export function useIncomingChatRequests(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = (await (supabase as any)
         .from('session_requests')
-        .select('id, conversation_id, initiator_id, expires_at')
+        .select('id, conversation_id, initiator_id, expires_at, created_at')
         .eq('recipient_id', selfId as string)
         .eq('channel', 'chat')
         .eq('status', 'pending')
@@ -741,7 +743,7 @@ export function useIncomingChatRequests(
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()) as {
-        data: { id: string; conversation_id: string; initiator_id: string; expires_at: string } | null;
+        data: { id: string; conversation_id: string; initiator_id: string; expires_at: string; created_at?: string } | null;
         error: unknown;
       };
       // Best-effort recovery of a request that arrived while the socket was down;
@@ -756,6 +758,7 @@ export function useIncomingChatRequests(
           conversationId: result.data.conversation_id,
           initiatorId: result.data.initiator_id,
           expiresAt: result.data.expires_at,
+          createdAt: result.data.created_at,
         });
       }
     }
@@ -778,6 +781,7 @@ export function useIncomingChatRequests(
             channel: SessionChannel;
             status: string;
             expires_at: string;
+            created_at?: string;
           };
           if (row.channel === 'chat' && row.status === 'pending') {
             onIncoming({
@@ -785,6 +789,7 @@ export function useIncomingChatRequests(
               conversationId: row.conversation_id,
               initiatorId: row.initiator_id,
               expiresAt: row.expires_at,
+              createdAt: row.created_at,
             });
           }
         },
