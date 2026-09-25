@@ -940,7 +940,7 @@ interface PendingSignOut {
  */
 const PENDING_SIGN_OUT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-function readPending(): PendingSignOut[] {
+function readPendingRaw(): PendingSignOut[] {
   const raw = storage.get(PENDING_SIGN_OUT_KEY);
   if (raw === null) {
     return [];
@@ -963,6 +963,29 @@ function readPending(): PendingSignOut[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * The pending list, with entries past the age cap removed from STORAGE too,
+ * not only from the result: filtered on read alone, an expired session's
+ * tokens stayed on disk until some later write happened to rewrite the list.
+ */
+function readPending(): PendingSignOut[] {
+  const raw = storage.get(PENDING_SIGN_OUT_KEY);
+  const kept = readPendingRaw();
+  if (raw !== null) {
+    let stored = 0;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      stored = Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      stored = 0;
+    }
+    if (stored !== kept.length) {
+      writePending(kept);
+    }
+  }
+  return kept;
 }
 
 function writePending(entries: readonly PendingSignOut[]): void {

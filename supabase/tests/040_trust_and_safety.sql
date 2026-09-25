@@ -281,9 +281,9 @@ values ('own_report', public.submit_report(
   'other', null));
 reset role;
 
--- Read as the owner: since 150 a reporter can read only the columns
--- my_reports shows (id, reason, status, times), and not subject_user_id or
--- the evidence, which for a story comment would be a stranger's account id.
+-- Read as the owner, because since 150 a reporter cannot read these columns
+-- at all (the reporter-side refusal is asserted in 563, 6b-6d). This checks
+-- only what the insert recorded.
 select is(
   (select subject_user_id from public.reports
     where id = (select v from test.fixture where k = 'report')),

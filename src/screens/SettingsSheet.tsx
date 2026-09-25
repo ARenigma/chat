@@ -242,7 +242,13 @@ export function SettingsSheet({
        * error notice below. Its row delete now runs without a session and
        * finds nothing to remove, which is the cascade having done it already.
        */
-      await stopPush();
+      // Bounded: the account is already gone, so a stalled Play Services call
+      // in the teardown must not hold the busy sheet forever. The teardown
+      // carries on in the background either way.
+      await Promise.race([
+        stopPush(),
+        new Promise<void>(resolve => setTimeout(resolve, 5_000)),
+      ]);
       track('account_deleted');
       queryClient.clear();
       resetStore();

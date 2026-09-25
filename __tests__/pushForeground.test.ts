@@ -3342,9 +3342,11 @@ describe('account deletion keeps push until the account is actually gone', () =>
     const tryBlock = onDelete.slice(0, onDelete.indexOf('} catch (err) {'));
     const catchBlock = onDelete.slice(onDelete.indexOf('} catch (err) {'));
     expect(tryBlock.indexOf('await deleteAccount();')).toBeGreaterThan(-1);
-    expect(tryBlock.indexOf('await stopPush();')).toBeGreaterThan(
+    // After the deletion, and bounded so a stalled teardown cannot hold the sheet.
+    expect(tryBlock.indexOf('stopPush(),')).toBeGreaterThan(
       tryBlock.indexOf('await deleteAccount();'),
     );
+    expect(tryBlock).toMatch(/await Promise\.race\(\[\s*stopPush\(\),\s*new Promise<void>\(resolve => setTimeout\(resolve, 5_000\)\),\s*\]\);/);
     expect(count(onDelete, 'stopPush(')).toBe(1);
     expect(catchBlock).not.toContain('stopPush');
     expect(catchBlock).not.toContain('startPush');
