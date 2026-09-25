@@ -548,6 +548,7 @@ COLUMN reports.evidence_context text null=YES default=-
 COLUMN reports.evidence_story_media_path text null=YES default=-
 COLUMN reports.evidence_story_provider_id uuid null=YES default=-
 COLUMN reports.evidence_surface text null=YES default=-
+COLUMN reports.evidence_target_id uuid null=YES default=-
 COLUMN reports.evidence_voice_path text null=YES default=-
 COLUMN reports.id uuid null=NO default=gen_random_uuid()
 COLUMN reports.message_id uuid null=YES default=-

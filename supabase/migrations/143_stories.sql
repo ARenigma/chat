@@ -342,7 +342,10 @@ begin
     insert into admin.config_audit
       (action, domain, version_id, actor, reason)
     values
-      ('published_staging', 'kill_switches', v_id, 'migration_143',
+      -- 'promoted_prod' for the prod row, as 026's audit vocabulary has it,
+      -- so the prod publish is not recorded as a staging one.
+      (case when v_env = 'prod' then 'promoted_prod' else 'published_staging' end,
+       'kill_switches', v_id, 'migration_143',
        'stories_enabled=true (' || v_env || ')');
   end loop;
 end;

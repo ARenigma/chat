@@ -700,6 +700,7 @@ declare
   v_result text;
   v_conn   text;
 begin
+  perform test.dblink_reset();
   perform pg_advisory_lock(v_lock);
   foreach v_conn in array v_left loop
     perform test.dblink_connect(v_conn, test.conninfo());

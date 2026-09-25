@@ -85,7 +85,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(112);
+select plan(113);
 
 -- ── The storage stand-in ───────────────────────────────────────────────────
 create schema storage;
@@ -408,6 +408,13 @@ select is(
    from public.reports where id = (select v from test.fixture where k = 'r_comment')),
   null,
   '12c. a comment report keeps no copy of the provider''s story media'
+);
+select is(
+  (select string_agg(coalesce(evidence_target_id::text, 'null'), ',' order by evidence_surface)
+   from public.reports
+   where id in ((select v from test.fixture where k = 'r_story'), (select v from test.fixture where k = 'r_comment'))),
+  'c5630000-0000-4563-8000-0000000000a1,c5630000-0000-4563-8000-0000000000c1',
+  '12d. each report keeps the id it was about after the story is gone, for its retries'
 );
 select is(
   (select string_agg(coalesce(r.evidence_story_provider_id::text, 'null'), ',' order by f.k)

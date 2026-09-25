@@ -34,6 +34,12 @@ alter table public.reports
   add column if not exists evidence_surface text
     check (evidence_surface in ('story', 'story_comment')),
   add column if not exists evidence_context text,
+  -- The reported story's or comment's own id, copied at report time and never
+  -- nulled, unlike story_id and story_comment_id, which the purge clears. A
+  -- retry with the client-minted report id is matched on this: against the
+  -- nulled ids a genuine retry after a purge was refused, and a naive `<>`
+  -- matched a retry naming a different story.
+  add column if not exists evidence_target_id uuid,
   -- Whose story it was, for either kind of report. A story report's subject
   -- is the provider, but a COMMENT report's subject is the commenter, its
   -- story_id goes null when the story is purged, and its media path is
@@ -393,7 +399,7 @@ begin
       -- story_id goes null when the story is purged; the surface does not.
       if v_existing.reporter_id is distinct from v_uid
          or v_existing.evidence_surface is distinct from 'story'
-         or v_existing.story_id is distinct from p_story_id then
+         or v_existing.evidence_target_id is distinct from p_story_id then
         raise exception 'report id already used' using errcode = '22023';
       end if;
       return v_existing.id;
@@ -475,13 +481,13 @@ begin
     insert into public.reports (
       id, reporter_id, subject_user_id, story_id, reason, detail,
       evidence_body, evidence_story_media_path, evidence_at, evidence_surface,
-      evidence_story_provider_id, evidence_author_name
+      evidence_story_provider_id, evidence_author_name, evidence_target_id
     )
     values (
       coalesce(p_report_id, gen_random_uuid()), v_uid, v_story.provider_id, v_story.id,
       p_reason, nullif(btrim(p_detail), ''),
       v_story.caption, v_story.media_path, v_story.created_at, 'story',
-      v_story.provider_id, v_name
+      v_story.provider_id, v_name, v_story.id
     )
     returning id into v_id;
   exception
@@ -550,7 +556,7 @@ begin
     if found then
       if v_existing.reporter_id is distinct from v_uid
          or v_existing.evidence_surface is distinct from 'story_comment'
-         or v_existing.story_comment_id is distinct from p_comment_id then
+         or v_existing.evidence_target_id is distinct from p_comment_id then
         raise exception 'report id already used' using errcode = '22023';
       end if;
       return v_existing.id;
@@ -632,7 +638,7 @@ begin
     insert into public.reports (
       id, reporter_id, subject_user_id, story_id, story_comment_id, reason, detail,
       evidence_body, evidence_at, evidence_surface, evidence_context,
-      evidence_story_provider_id, evidence_author_name
+      evidence_story_provider_id, evidence_author_name, evidence_target_id
     )
     values (
       coalesce(p_report_id, gen_random_uuid()), v_uid, v_comment.author_id,
@@ -643,7 +649,7 @@ begin
       -- photo past its 24 hours because of what a commenter wrote is the
       -- trade moderate.mjs's liveStoryMediaPath already declines. The
       -- provider's id instead, so the report still says whose story it was.
-      'story_comment', v_parent.caption, v_parent.provider_id, v_name
+      'story_comment', v_parent.caption, v_parent.provider_id, v_name, v_comment.id
     )
     returning id into v_id;
   exception
@@ -750,7 +756,7 @@ begin
       if found then
         if v_existing.reporter_id is distinct from v_uid
            or v_existing.evidence_surface is distinct from 'story_comment'
-           or v_existing.story_comment_id is distinct from p_comment_id then
+           or v_existing.evidence_target_id is distinct from p_comment_id then
           return json_build_object('success', false, 'error', 'BAD_REQUEST');
         end if;
         return json_build_object('success', true, 'report_id', v_existing.id);
