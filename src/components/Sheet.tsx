@@ -27,6 +27,7 @@ import { secureModal, setSheetBackdropBlur } from '../lib/windowChrome';
 import { trackSheetClosed } from '../lib/perfTelemetry';
 import { Pressable } from './Pressable';
 import { coverViewing } from '../lib/viewingConversation';
+import { useActiveElement } from '../lib/activeElements';
 
 // Where the sheet starts its entry slide: safely below the tallest sheet, so it
 // begins off-screen and springs up into view. Only the last stretch is visible.
@@ -61,6 +62,11 @@ interface Props {
   detents?: 'auto' | 'large';
   /** When false, scrim tap does not dismiss (blocking gates). Default true. */
   dismissOnScrim?: boolean;
+  /**
+   * Return false to block the intent queue from closing this sheet (e.g. while
+   * a payment is in-flight). Default: always closeable. nav-migration §3.
+   */
+  canClose?: () => boolean;
 }
 
 /**
@@ -105,6 +111,7 @@ function SheetView({
   footer,
   detents = 'auto',
   dismissOnScrim = true,
+  canClose,
 }: Props) {
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
@@ -153,6 +160,11 @@ function SheetView({
   // Parked back off-screen whenever hidden so the NEXT open's first painted frame
   // is off-screen too — without this, a second open would flash the ghost again
   // because the value had settled at 0 from the previous open.
+  // Register with the active-element registry so closeAllActiveElements() can
+  // close this sheet when an intent needs the screen. canClose blocks the close
+  // while a payment is in-flight. nav-migration §3.
+  useActiveElement(visible, onClose, canClose);
+
   useEffect(() => {
     if (!visible) return;
     setSheetBackdropBlur(true);

@@ -12,6 +12,7 @@ import { ReactionStrip } from '../components/ReactionStrip';
 import type { ReactionEmoji } from '../lib/database.types';
 import { chatV2OwnerMenuItems, type ChatV2MessageActions } from './cells';
 import type { ChatV2Anchor } from './ChatMessageCellV2';
+import { useActiveElement } from '../lib/activeElements';
 
 /** Between the anchored surface and the bubble it belongs to. */
 const GAP = 8;
@@ -65,6 +66,9 @@ export function ChatActionsV2({
   onEdit,
   onDelete,
 }: Props) {
+  // Register with the active-element registry. nav-migration §3.
+  useActiveElement(request !== null, onClose);
+
   /*
    * The owner menu, derived from the CURRENT request and from nothing else.
    *

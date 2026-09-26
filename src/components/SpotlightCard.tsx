@@ -28,6 +28,7 @@ import { avatarImageSource } from '../lib/clayAvatars';
 import { initialOf } from '../lib/display';
 import { TactileCTA } from './TactileCTA';
 import { Pressable } from './Pressable';
+import { useActiveElement } from '../lib/activeElements';
 
 interface Props {
   visible: boolean;
@@ -79,6 +80,9 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
   const sheetH = windowHeight * 0.68;
   // Gesture nav / 3-button bar: keep copy above the system inset.
   const sheetBottomPad = Math.max(insets.bottom, TOKENS.space.md) + TOKENS.space.md;
+
+  // Register with the active-element registry. nav-migration §3.
+  useActiveElement(visible, onClose);
 
   const y = useSharedValue(SHEET_ENTRY_OFFSET);
   // Gesture worklets must read layout through a shared value. React state is

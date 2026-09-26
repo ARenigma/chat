@@ -257,7 +257,8 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
       body={sheetBody}
       onClose={onClose}
       onCancel={mockPhase === 'idle' || mockPhase === 'error' ? onClose : undefined}
-      cancelLabel="Back">
+      cancelLabel="Back"
+      canClose={() => mockPhase !== 'processing'}>
 
       {/*
         * THE TOTAL, at the same role the recharge screen states it.

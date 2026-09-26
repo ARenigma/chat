@@ -11,6 +11,7 @@ import Animated, { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { EASE_OUT, INTERACTION, M3, menuIn, menuOut } from '../theme/motion';
+import { useActiveElement } from '../lib/activeElements';
 
 /**
  * The scrim's own entrance and exit, hoisted so the builder allocates once.
@@ -80,6 +81,8 @@ const HOLE_PAD = 6;
 export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
   const styles = useStyles(makeStyles);
   const { width: winW, height: winH } = useWindowDimensions();
+  // Register with the active-element registry. nav-migration §3.
+  useActiveElement(visible, onClose);
 
   const layout = useMemo(() => {
     const menuH = items.length * ROW_H;

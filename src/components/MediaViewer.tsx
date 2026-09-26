@@ -33,6 +33,7 @@ import { useAttachmentUrl } from '../api/attachments';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { Icon } from './Icon';
 import { coverViewing } from '../lib/viewingConversation';
+import { useActiveElement } from '../lib/activeElements';
 import { LoadingIndicator } from './LoadingIndicator';
 import { Pressable } from './Pressable';
 /*
@@ -293,6 +294,8 @@ function MediaViewerView({
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
+  // Register with the active-element registry. nav-migration §3.
+  useActiveElement(image !== null, onClose);
   // The viewer is a separate Dialog window, so the activity's FLAG_SECURE does
   // not reach it — a photo opened full-screen would be screenshot-capturable.
   // Secure the dialog window on show (see src/lib/windowChrome.ts). No-op except
