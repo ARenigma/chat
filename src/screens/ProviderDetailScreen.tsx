@@ -1114,11 +1114,11 @@ const makeStyles = (t: Theme) =>
      * TWO STATED DEPARTURES. M3's tonal button has no stroke (strokeColor null,
      * strokeWidth 0dp) and 2dp of elevation; this keeps a 1dp accent stroke and
      * stays flat. The stroke is load-bearing rather than decorative —
-     * `bg/accentTint` (ramp 50 / 950) measures 1.17:1 against this page in
-     * light and 1.01:1 in dark, so the fill alone is not a findable boundary —
+     * `bg/accentTint` (ramp 50 / 900) measures 1.17:1 against this page in
+     * light and 1.13:1 in dark, so the fill alone is not a findable boundary —
      * and both it and the label are registered pairs in
-     * scripts/check-contrast.mjs (label text/onAccentTint 9.97:1 / 7.00:1,
-     * outline step 500 5.27:1 / 3.20:1). The elevation is dropped because
+     * scripts/check-contrast.mjs (label text/onAccentTint 9.90:1 / 6.16:1,
+     * outline step 500 5.19:1 / 3.25:1 against the page). The elevation is dropped because
      * nothing in this app is elevated; the design separates by fill.
      */
     actionTonal: {

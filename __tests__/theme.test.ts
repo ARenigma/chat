@@ -3776,6 +3776,21 @@ describe('every coral role is a step of the one ramp', () => {
     }
   });
 
+  it('puts the dark wash at step 900, where it can be seen, and moves the dot off 500', () => {
+    // Owner, 2026-09-27: 950 was 1.005:1 against the dark page. 900 is 1.13:1,
+    // and step 500 on it is 2.87:1, so the low-balance bar's live dot takes
+    // text/accent (300 in dark, 6.16:1) rather than bg/accent.
+    expect(spec.color.tokens['bg/accentTint']!.step).toEqual({
+      Light: 'primary_50',
+      Dark: 'primary_900',
+    });
+    const bar = read('src/chat-v2/ChatSessionBarV2.tsx');
+    const dot = bar.slice(bar.indexOf('talkDot: {'), bar.indexOf('}', bar.indexOf('talkDot: {')));
+    expect(dot).toContain('backgroundColor: t.color.text.accent');
+    expect(contrast(DARK.color.text.accent, DARK.color.bg.accentTint)).toBeGreaterThanOrEqual(3);
+    expect(contrast(DARK.color.bg.accent, DARK.color.bg.accentTint)).toBeLessThan(3);
+  });
+
   it('lets none of the retired corals survive', () => {
     const retired = [
       '#F26836',

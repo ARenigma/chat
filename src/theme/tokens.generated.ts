@@ -744,7 +744,7 @@ export const DARK = {
       accentStrong: '#C2401F',
       accentGradientFrom: '#C2401F',
       accentGradientTo: '#832B15',
-      accentTint: '#361108',
+      accentTint: '#49170A',
       navIndicator: '#49170A',
       listener: '#20507F',
       astrologer: '#452F70',

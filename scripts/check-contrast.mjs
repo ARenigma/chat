@@ -264,13 +264,16 @@ const PAIRS = [
    * those pairs are registered with the state colours below.
    */
   /*
-   * The coral WASH (step 50 light / 950 dark) and what sits on it.
+   * The coral WASH (step 50 light / 900 dark; dark was 950, 1.005:1 against
+   * the dark page, until 2026-09-27) and what sits on it.
    *
-   * text/accent is NOT registered here and must not be used here: step 500 on
-   * step 50 is 4.4986:1, a fraction under the 4.5 floor for the 12-14sp labels
-   * these pills carry. The wash has its own ink, text/onAccentTint (800 / 300).
-   * The tonal Notify button keeps its 1dp stroke because the wash against the
-   * page is 1.17:1 light / 1.01:1 dark, i.e. no boundary at all on its own.
+   * text/accent is NOT registered here as TEXT and must not be used for a
+   * label here: step 500 on step 50 is 4.46:1, under the 4.5 floor for the
+   * 12-14sp labels these pills carry. The wash has its own ink,
+   * text/onAccentTint (800 / 300). The tonal Notify button keeps its 1dp
+   * stroke because the wash against the page is 1.17:1 light / 1.13:1 dark,
+   * i.e. no boundary on its own. Every dark row below was re-measured when the
+   * dark wash moved from 950 to 900 and still clears its target.
    */
   {
     fg: 'text/onAccentTint',
@@ -294,15 +297,15 @@ const PAIRS = [
     fg: 'text/accent',
     bg: 'bg/accentTint',
     target: 3,
-    what: 'the active nav glyph on its tint indicator (non-text)',
+    what: "the active nav glyph on its tint indicator, and the low-balance bar's live dot (non-text)",
     exempt:
-      'a glyph, not a label: 3:1 is the non-text target. The destination label under it is text, and the indicator pill is a second signal',
+      'a glyph or dot, not a label: 3:1 is the non-text target. The nav label under the glyph is text and the pill a second signal; the dot sits beside the timer that states the balance. The dot was bg/accent, 2.87:1 on the dark wash at 900, so it takes this ink',
   },
   /*
    * The bottom bar's selected glyph on its own pill (src/shell/bottom-bar,
-   * nav-migration step 5). The pill is bg/navIndicator, not the wash, because
-   * the wash's dark step 950 is 1.005:1 against the dark bar; 900 is the step
-   * that separates from the bar as much as the light pill does (1.13 vs 1.16).
+   * nav-migration step 5). The pill is bg/navIndicator: step 900 in dark, the
+   * step that separates from the bar as much as the light pill does (1.13 vs
+   * 1.16). The wash moved to the same step on 2026-09-27.
    * The glyph is text/navSelected, its own role (owner, 2026-09-27): step 500
    * light, 400 dark. bg/accent (step 500) on 900 is 2.87:1, under the 3:1
    * non-text floor; 400 is the nearest step to the brand that clears it.
