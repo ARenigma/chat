@@ -695,8 +695,10 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
      * returns nothing but a title to a fetch.)
      */
     const indicatorHeight = Number(
-      /const TAB_INDICATOR_HEIGHT = (\d+)/.exec(tabsSource)?.[1],
+      /const TAB_INDICATOR_SLOT = (\d+)/.exec(tabsSource)?.[1],
     );
+    // The 2dp line Bluesky draws sits inside that 3dp slot.
+    expect(Number(/const TAB_INDICATOR_HEIGHT = (\d+)/.exec(tabsSource)?.[1])).toBe(2);
     const labelPadBottom = Number(
       /const TAB_LABEL_PAD_BOTTOM = (\d+)/.exec(tabsSource)?.[1],
     );
@@ -720,7 +722,7 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
     // The indicator's slot plus Bluesky's label padding, as padding, so the
     // shared animated indicator draws in the space below the label.
     expect(tab).toContain(
-      'paddingBottom: TAB_INDICATOR_HEIGHT + TAB_LABEL_PAD_BOTTOM',
+      'paddingBottom: TAB_INDICATOR_SLOT + TAB_LABEL_PAD_BOTTOM',
     );
     // The label is Bluesky's text_md SemiBold.
     const label = tabsSource.slice(tabsSource.indexOf('    tabLabel: {'), tabsSource.indexOf('    tabLabelOn: {'));
@@ -879,11 +881,13 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
      * easy mistake here — it would have been one line shorter to stretch the bar
      * across each half.
      *
-     * The floor is read as a value, so it cannot drift away from the
-     * reference's 24 without failing.
+     * The floor is read as a value. It was Material's 24; since ADR-0033
+     * (Amit, 2026-09-26: "just import from bluesky for everything") it is
+     * Bluesky's pager floor, `minIndicatorWidth = 45` (TabBar.tsx:256), and
+     * the label-width rule above is the same in both.
      */
-    expect(home).toContain('const TAB_INDICATOR_MIN_WIDTH = 24');
-    expect(Number(/const TAB_INDICATOR_MIN_WIDTH = (\d+)/.exec(home)?.[1])).toBe(24);
+    expect(home).toContain('const TAB_INDICATOR_MIN_WIDTH = 45');
+    expect(Number(/const TAB_INDICATOR_MIN_WIDTH = (\d+)/.exec(home)?.[1])).toBe(45);
     const style = home.slice(
       home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
       home.length,
@@ -903,24 +907,19 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
     expect(home).toContain('onTabStripLayout(e.nativeEvent.layout.width)');
 
     /*
-     * 3dp tall with the top corners rounded and the bottom square, which is the
-     * primary indicator's own drawable: `m3_tabs_rounded_line_indicator` is a
-     * rectangle with topLeft/topRight 3dp and bottomLeft/bottomRight 0dp, sized
-     * to `m3_comp_primary_navigation_tab_active_indicator_height` = 3dp
-     * (the tabs component's res/drawable and res/values/tokens.xml). It was a
-     * 2dp bar rounded on all four corners; the bottom radius rounded against an
-     * edge nothing can see.
+     * 2dp and square: Bluesky's pager indicator is a `borderBottomWidth: 2`
+     * line with no radius (TabBar.tsx:370), adopted wholesale under ADR-0033
+     * (Amit, 2026-09-26: "just import from bluesky for everything"). It was
+     * Material's 3dp top-rounded `m3_tabs_rounded_line_indicator`. It still
+     * draws inside the 3dp slot the label padding reserves.
      */
-    expect(Number(/const TAB_INDICATOR_HEIGHT = (\d+)/.exec(home)?.[1])).toBe(3);
+    expect(Number(/const TAB_INDICATOR_HEIGHT = (\d+)/.exec(home)?.[1])).toBe(2);
     const indicator = home.slice(
       home.indexOf('    tabIndicator: {'),
       home.length,
     );
     expect(indicator).toContain('height: TAB_INDICATOR_HEIGHT');
-    expect(indicator).toContain('borderTopLeftRadius: TAB_INDICATOR_HEIGHT');
-    expect(indicator).toContain('borderTopRightRadius: TAB_INDICATOR_HEIGHT');
-    expect(indicator).not.toMatch(/borderRadius:/);
-    expect(indicator).not.toMatch(/borderBottom\w*Radius/);
+    expect(indicator).not.toMatch(/Radius/);
   });
 
   it('takes the timing from tokens and the shape from the elastic interpolator', () => {

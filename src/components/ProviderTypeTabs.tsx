@@ -26,12 +26,19 @@ import { Pressable } from './Pressable';
  * built against; they are kept here rather than duplicated in two files.
  */
 
-const TAB_INDICATOR_HEIGHT = 3;
-const TAB_INDICATOR_MIN_WIDTH = 24;
+/**
+ * Bluesky's pager tab (src/view/com/pager/TabBar.tsx): each item reserves a 3dp
+ * transparent bottom border as the indicator's slot (`itemInner`, :489), and
+ * the shared indicator drawn in it is a 2dp line (:370), square, at least 45
+ * wide (:256) and otherwise the label's width.
+ */
+const TAB_INDICATOR_SLOT = 3;
+const TAB_INDICATOR_HEIGHT = 2;
+const TAB_INDICATOR_MIN_WIDTH = 45;
 /**
  * Space between the label's line box and the indicator slot: Bluesky's pager
  * tab `itemInner.paddingBottom: 10` (src/view/com/pager/TabBar.tsx:487). With
- * the 20dp `textMdSemiBold` line and the 3dp indicator that leaves 15 above the
+ * the 20dp `textMdSemiBold` line and the 3dp slot that leaves 15 above the
  * label in the 48dp box: 15 + 20 + 10 + 3 = 48 (ADR-0033).
  */
 const TAB_LABEL_PAD_BOTTOM = 10;
@@ -198,36 +205,45 @@ export function ProviderTypeTabs({ value, onChange, testID = 'provider-type-tabs
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
+    // Bluesky draws a full-width hairline under the strip (`outerBottomBorder`,
+    // TabBar.tsx:378, bg_contrast_100), so the tabs read as the top edge of
+    // the content below rather than floating over it.
     tabs: {
       flexDirection: 'row',
       marginBottom: TOKENS.space.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: t.color.border.hairline,
     },
     tab: {
       flex: 1,
       minHeight: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'flex-end',
-      paddingBottom: TAB_INDICATOR_HEIGHT + TAB_LABEL_PAD_BOTTOM,
+      paddingBottom: TAB_INDICATOR_SLOT + TAB_LABEL_PAD_BOTTOM,
     },
     // Bluesky pager tab label: text_md font_semi_bold on a 20 line
     // (TabBar.tsx:448, :492).
+    //
+    // Ink follows Bluesky too: every label is the text colour and only the
+    // selected one is at full strength (inactive items interpolate to 0.7
+    // opacity, TabBar.tsx:405-412); the underline is the one accent in the
+    // strip. Amit, 2026-09-26: inactive in the secondary grey, and do not paint
+    // the active label orange. That reverses the accent label from 09-06
+    // ("type title should highlight when selected"), which the underline and
+    // the weight of full-ink text now carry. text.secondary rather than a 0.7
+    // opacity keeps the pair a registered, measured one.
     tabLabel: {
       ...TOKENS.typography.textMdSemiBold,
-      color: t.color.text.tertiary,
+      color: t.color.text.secondary,
     },
-    // Accent, not `text.primary` — see HomeScreen's original note on this rule
-    // (Amit: "type title should highlight when selected on top otherwise hard
-    // to spot types are even there"). Already a checked pair against bg/base.
     tabLabelOn: {
-      color: t.color.text.accent,
+      color: t.color.text.primary,
     },
     tabIndicator: {
       position: 'absolute',
       left: 0,
       bottom: 0,
       height: TAB_INDICATOR_HEIGHT,
-      borderTopLeftRadius: TAB_INDICATOR_HEIGHT,
-      borderTopRightRadius: TAB_INDICATOR_HEIGHT,
       backgroundColor: t.color.bg.accent,
     },
   });
