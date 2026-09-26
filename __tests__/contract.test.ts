@@ -9041,3 +9041,22 @@ describe('navigation step 6: Home waits for focus', () => {
     expect(screen).not.toContain('useStore');
   });
 });
+
+describe('navigation step 6: the call screen ends through a state', () => {
+  const call = withoutComments(read('src/screens/CallScreen.tsx'));
+
+  it('makes every end path set ending, and tells the host once it has committed', () => {
+    expect(call).toContain('const onEnd = useCallback(() => setEnding(true), []);');
+    expect(call).toMatch(/useEffect\(\(\) => \{\s*if \(ending\) \{\s*onEndedRef\.current\(\);\s*\}\s*\}, \[ending\]\);/);
+    // The host never hears a bare onEnd any more.
+    expect(call).not.toMatch(/\bonEnd:\s*\(\)/);
+    const app = withoutComments(read('App.tsx'));
+    expect(app).not.toMatch(/<CallScreen[^>]*\bonEnd=/);
+    expect(app.match(/onEnded=\{/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it('publishes what a route needs to guard its removal', () => {
+    expect(call).toContain('export interface CallGuard');
+    expect(call).toMatch(/onGuard\?\.\(\{ ending, openLeave: \(\) => setLeaveDialogVisible\(true\) \}\)/);
+  });
+});

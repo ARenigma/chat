@@ -1999,7 +1999,7 @@ function SignedIn({
               medium={providerRoute.medium}
               // Symmetry with the member tree: hanging up returns to that peer's
               // chat, not the provider home (user 2026-08-31).
-              onEnd={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
+              onEnded={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
             />
           ) : providerRoute.name === 'chatV2' ? (
             /*
@@ -2255,7 +2255,7 @@ function SignedIn({
                 // conversation it belongs to (user 2026-08-31). Covers both the
                 // outgoing call (started from the chat) and an answered incoming
                 // ring, which should also drop the member into that SP's thread.
-                onEnd={() => openChat(route.providerId)}
+                onEnded={() => openChat(route.providerId)}
               />
             </AfterPaint>
           ) : route.name === 'providerDetail' ? (
