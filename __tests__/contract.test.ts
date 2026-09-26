@@ -5768,29 +5768,29 @@ describe('a tapped message notification is held until `role` is known, not route
     }
   });
 
-  it('holds the tapped peer id in state rather than routing it directly', () => {
+  it('enqueues the tapped peer id rather than routing it directly', () => {
+    // nav-migration §3: pendingPeer React state replaced by the intent queue.
     const app = withoutComments(read('App.tsx'));
-    expect(app).toContain('const [pendingPeer, setPendingPeer] = useState<string | null>(null);');
-    // The deep-link consumer sets it, it does not call setRoute itself.
-    // parsePeerUrl replaced the inline url.match (nav §9 step 2).
     const peerBranch = app.slice(
       app.indexOf('parsePeerUrl(url)'),
       app.indexOf('handleAuthDeepLink(url)'),
     );
-    expect(peerBranch).toContain('setPendingPeer(parsedPeer)');
+    expect(peerBranch).toContain("enqueueIntent({ type: 'openChat', peerId: parsedPeer })");
     expect(peerBranch).not.toContain('setRoute(');
+    expect(peerBranch).not.toContain('setPendingPeer(');
   });
 
-  it('applies pendingPeer inside SignedIn, choosing the tree by role', () => {
+  it('applies openChat inside SignedIn applier, choosing the tree by role', () => {
+    // nav-migration §3: the intent applier inside SignedIn replaces the three
+    // pending-state effects. It branches on role to reach the correct tree.
     const app = withoutComments(read('App.tsx'));
-    const effect = app.slice(
-      app.indexOf('if (pendingPeer === null || isPending)'),
-      app.indexOf('Foreground pushes. A call rings'),
+    const applier = app.slice(
+      app.indexOf("case 'openChat':"),
+      app.indexOf("case 'openChatV2':"),
     );
-    expect(effect).not.toBe('');
-    expect(effect).toContain("pushProvider({ name: 'chat', peerId: pendingPeer })");
-    expect(effect).toContain("pushRoute({ name: 'chat', providerId: pendingPeer, from: 'home' })");
-    expect(effect).toContain('onPeerHandled()');
+    expect(applier).not.toBe('');
+    expect(applier).toContain("pushProvider({ name: 'chat', peerId: intent.peerId })");
+    expect(applier).toContain("pushRoute({ name: 'chat', providerId: intent.peerId, from: 'home' })");
   });
 
   it('the boot effect no longer sets a competing route for a notification tap', () => {
@@ -6577,15 +6577,22 @@ describe('a simultaneous call in the same conversation is a dialog, not a silent
     // reaches us over realtime — which is typically FASTER than our own
     // start_call round-trip, so the ALREADY_RINGING dialog above would never
     // get the chance to show.
+    // nav-migration §3: glare logic moved to intents.ts glareDecision(). onIncoming
+    // now just enqueues; the queue applies busy-decline and own-dial-race rules.
     const onIncoming = appTsx.slice(
       appTsx.indexOf('const onIncoming = useCallback'),
       appTsx.indexOf('useIncomingCalls(selfId, onIncoming);'),
     );
-    expect(onIncoming).toContain('isOwnRaceAgainstSamePeer');
-    expect(onIncoming).toMatch(
-      /current\.direction === 'out' &&\s*current\.callId === null &&\s*currentPeerId === incoming\.callerId/,
+    expect(onIncoming).toContain("enqueueIntent({");
+    expect(onIncoming).toContain("type: 'incomingCall'");
+    const intents = withoutComments(read('src/lib/intents.ts'));
+    // glareDecision returns 'ownDialRace' for the simultaneous-dial case.
+    expect(intents).toContain("'ownDialRace'");
+    expect(intents).toMatch(/void _callHooks\.endCall\(intent\.callId\)/);
+    const actions = withoutComments(read('src/lib/routes/actions.ts'));
+    expect(actions).toMatch(
+      /direction === 'out' &&[\s\S]{0,80}callId === null &&[\s\S]{0,80}peerId === intent\.peerId/,
     );
-    expect(onIncoming).toMatch(/if \(!isOwnRaceAgainstSamePeer\) \{\s*void endCall\(incoming\.callId\);/);
   });
 
   it('database.types documents ALREADY_RINGING on CallError', () => {
@@ -7461,7 +7468,9 @@ describe('a chat request rings, and can be answered either way', () => {
     // Silence stops the RING, never the request: the row lives its 24 hours
     // and the thread is still waiting in their list.
     const timeout = ring.slice(ring.indexOf('if (remaining <= 0)'));
-    expect(timeout).toContain('clearIncoming()');
+    // owner-checked since nav-migration §3 (step 3a): pass the requestId so a
+    // stale timer cannot clear a different ring that arrived after this one.
+    expect(timeout).toMatch(/clearIncoming\(requestId\)/);
     expect(timeout.slice(0, 200)).not.toContain('decline');
   });
 

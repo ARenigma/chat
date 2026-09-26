@@ -32,14 +32,14 @@ describe('V2 development fast loop', () => {
     expect(app).toMatch(
       /parseChatV2Url\(\s*url,\s*__DEV__ \|\| allowBenchmarkRoutes,\s*\)/,
     );
-    expect(app).toContain('pendingV2Peer');
-    expect(app).toContain(
-      'pendingV2Peer === null || isPending || role === undefined',
-    );
-    expect(app).toMatch(
-      /if \(role === 'member'\)[\s\S]{0,180}name: 'chatV2'[\s\S]{0,80}providerId: pendingV2Peer/,
-    );
+    // nav-migration §3: V2 links are enqueued rather than held in React state.
+    // The queue applies the intent once SignedIn registers the applier (role resolved).
+    expect(app).toContain("enqueueIntent({\n            type: 'openChatV2'");
     expect(app).toContain('benchmarkReadOnly: benchmarkReadOnlyLaunch');
+    // The intent applier inside SignedIn branches on role for both trees.
+    expect(app).toMatch(
+      /case 'openChatV2':[\s\S]{0,300}if \(role === 'member'\)[\s\S]{0,180}name: 'chatV2'[\s\S]{0,80}providerId: intent\.peerId/,
+    );
     /*
      * The provider half, added 2026-09-19 with the parity sweep. The link used
      * to be dropped on that tree, which left the side with the DIFFERENT

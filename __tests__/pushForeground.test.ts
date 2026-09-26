@@ -748,7 +748,8 @@ describe('a push for another account is not shown in this one (143)', () => {
     const gate = consume.indexOf('if (isAccountLink(url) && !linkIsForAccount(url, storedAccountId())) {');
     expect(gate).toBeGreaterThan(-1);
     const gateEnd = consume.indexOf('return;', gate);
-    for (const hold of ['setPendingV2Peer(', 'setPendingIncoming(', 'setPendingPeer(', 'endCall(']) {
+    // nav-migration §3: all three setPending* calls replaced by enqueueIntent.
+    for (const hold of ['enqueueIntent(', 'endCall(']) {
       expect({ hold, after: consume.indexOf(hold) > gateEnd }).toEqual({ hold, after: true });
     }
   });
@@ -4041,9 +4042,8 @@ describe('every user-initiated sign-out takes the whole teardown', () => {
     );
     const gate = consume.indexOf('if (!signedInOnDevice() && isAccountLink(url)) {');
     const gateEnd = consume.indexOf('return;', gate);
-    for (const hold of ['setPendingV2Peer(', 'setPendingIncoming(', 'setPendingPeer(']) {
-      expect({ hold, after: consume.indexOf(hold) > gateEnd }).toEqual({ hold, after: true });
-    }
+    // nav-migration §3: all setPending* calls replaced by enqueueIntent.
+    expect(consume.indexOf('enqueueIntent(') > gateEnd).toBe(true);
     // Behind the gate, only a leftover call's notification is taken down.
     expect(consume.slice(gate, gateEnd)).not.toMatch(/setPending|endCall|handleAuthDeepLink|setBoot/);
     expect(consume.slice(gate, gateEnd)).toContain('void clearCall(leftoverCall);');
@@ -4067,9 +4067,12 @@ describe('every user-initiated sign-out takes the whole teardown', () => {
   });
 
   it('the root forgets a tap or a ring held for the account that left', () => {
+    // nav-migration §3: React state replaced by the intent queue.
+    // clearIntents() drops queued intents; setIntentOwner(null) drops any that
+    // arrive before the next sign-in.
     const app = withoutComments(read('App.tsx'));
     expect(app).toMatch(
-      /const toSignedOut = useCallback\(\(\) => \{\s*setPendingPeer\(null\);\s*setPendingV2Peer\(null\);\s*setPendingIncoming\(null\);\s*setBoot\(\{ phase: 'signedOut' \}\);/,
+      /const toSignedOut = useCallback\(\(\) => \{\s*clearIntents\(\);\s*setIntentOwner\(null\);\s*setBoot\(\{ phase: 'signedOut' \}\);/,
     );
     expect(app).toContain('onSignedOut={toSignedOut}');
   });
