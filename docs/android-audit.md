@@ -341,15 +341,15 @@ typography cycle. Decision: M3 hybrid (standard-scheme springs for spatial,
 emphasized timing for effects). Full detail in
 `design/references/motion-system.md` "Screen transitions".
 
-| Requirement                                                                              | Page                                                                       | State                                                                                                                                     | Where                                                                            |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Spatial motion uses springs, not duration curves                                         | m3.material.io/styles/motion/overview/how-it-works                         | Adopted: `motion.m3.spring` (standard scheme), `screenIn`/`sheetIn`/`menuIn`/`rowIn`                                                      | `src/theme/motion.ts`                                                            |
-| Forward/back = fade-through + short slide; top-level = fade, no slide; sheets don't fade | m3.material.io/styles/motion/transitions/transition-patterns               | Adopted: `screenIn/Out`, `topLevelIn/Out`, `sheetIn/Out`                                                                                  | `App.tsx`, `Sheet.tsx`, `SpotlightCard.tsx`                                      |
-| Menu expands along Y from its anchor edge                                                | m3.material.io/components/menus/guidelines                                 | Adopted: `menuIn` + `transformOrigin`                                                                                                     | `PaperMenu.tsx` — verify `transformOrigin` on the API 24 floor                   |
-| Nav indicator animates in, not a hard toggle                                             | m3.material.io/components/navigation-bar/guidelines                        | Adopted: animated `Indicator` (scaleX on spatialFast + fade)                                                                              | `FloatingToolbar.tsx`                                                            |
-| Nav indicator (step 5 bar, not mounted): width grows, no scaleX; badge per BadgedBox     | m3.material.io/components/navigation-bar/guidelines; androidx Badge.kt     | Adopted 2026-09-27: width on spatialFast + fade on effectsDefault (reduced: width fixed, fade only); badge start at icon centre, top -2dp | `src/shell/bottom-bar/BottomBar.tsx`                                             |
-| Reduced motion → subtle fades, not removal                                               | transition-patterns (reduced motion)                                       | Adopted by construction: opacity `Never`, spatial `System`                                                                                | `src/theme/motion.ts` — verify on device with "Remove animations" on             |
-| Predictive back is on by default at targetSdk 36; do not opt out                         | developer.android.com/guide/navigation/custom-back/predictive-back-gesture | No manifest change; RN's always-enabled callback stands; in-app preview not possible from JS                                              | `AndroidManifest.xml` (unchanged) — verify launcher preview suppressed on API 36 |
+| Requirement                                                                                    | Page                                                                       | State                                                                                                                                                                                         | Where                                                                            |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Spatial motion uses springs, not duration curves                                               | m3.material.io/styles/motion/overview/how-it-works                         | Adopted: `motion.m3.spring` (standard scheme), `screenIn`/`sheetIn`/`menuIn`/`rowIn`                                                                                                          | `src/theme/motion.ts`                                                            |
+| Forward/back = fade-through + short slide; top-level = fade, no slide; sheets don't fade       | m3.material.io/styles/motion/transitions/transition-patterns               | Adopted: pushes and pops are native-stack's own transitions (navigation step 7); `fadeSwap` for in-place swaps, `sheetIn/Out`; the JS `screenIn/Out`, `topLevelIn/Out` were deleted in step 8 | `src/lib/routes/`, `Sheet.tsx`, `SpotlightCard.tsx`                              |
+| Menu expands along Y from its anchor edge                                                      | m3.material.io/components/menus/guidelines                                 | Adopted: `menuIn` + `transformOrigin`                                                                                                                                                         | `PaperMenu.tsx` — verify `transformOrigin` on the API 24 floor                   |
+| Nav indicator animates in, not a hard toggle                                                   | m3.material.io/components/navigation-bar/guidelines                        | Superseded by the next row: `FloatingToolbar.tsx` (scaleX indicator) was deleted in navigation step 8                                                                                         | `src/shell/bottom-bar/BottomBar.tsx`                                             |
+| Nav indicator (the bottom bar, mounted in step 7): width grows, no scaleX; badge per BadgedBox | m3.material.io/components/navigation-bar/guidelines; androidx Badge.kt     | Adopted 2026-09-27: width on spatialFast + fade on effectsDefault (reduced: width fixed, fade only); badge start at icon centre, top -2dp                                                     | `src/shell/bottom-bar/BottomBar.tsx`                                             |
+| Reduced motion → subtle fades, not removal                                                     | transition-patterns (reduced motion)                                       | Adopted by construction: opacity `Never`, spatial `System`                                                                                                                                    | `src/theme/motion.ts` — verify on device with "Remove animations" on             |
+| Predictive back is on by default at targetSdk 36; do not opt out                               | developer.android.com/guide/navigation/custom-back/predictive-back-gesture | No manifest change; RN's always-enabled callback stands; in-app preview not possible from JS                                                                                                  | `AndroidManifest.xml` (unchanged) — verify launcher preview suppressed on API 36 |
 
 Device verification of the signed-in transitions (push from right, pop from left,
 no Home peek on tab↔tab, provider-tree exit playing, `transformOrigin` on API 24,
@@ -639,80 +639,71 @@ Key behaviours:
 
 ---
 
-## 2026-09-06 — W6 predictive back: deliberate non-adoption
+## 2026-09-06 — W6 predictive back: deliberate non-adoption (rewritten 2026-09-27, navigation step 8)
 
 **Pages read.**
 
 - `developer.android.com/guide/navigation/custom-back/predictive-back-gesture`
   (overview + callback guidelines)
+- `developer.android.com/guide/fragments/animate` (which fragment animation
+  types can follow the gesture)
+- `developer.android.com/about/versions/16/behavior-changes-16`
+- `reactnavigation.org/docs/preventing-going-back` (`usePreventRemove`)
+- `reactnavigation.org/docs/custom-android-back-button-handling`
 
 **What the docs require.**
 
-To receive in-app gesture progress (the W6 animation), an app must:
+To receive in-app gesture progress (the W6 animation), an app must opt in with
+`android:enableOnBackInvokedCallback="true"` and drive its transition from
+`OnBackPressedCallback` (AndroidX Activity 1.6+) or `OnBackAnimationCallback`
+progress. The callback guidelines say to "determine the UI state that enables
+and disables each callback" and to hold that state in an observable data
+holder, not to decide inside the handler after the event has fired. The page
+also states that an enabled callback at the root means "the predictive back
+animations don't run and you must handle the back event".
 
-1. Set `android:enableOnBackInvokedCallback="true"` in the manifest.
-2. Register `OnBackAnimationCallback` (API 34+), which fires
-   `onBackStarted()` / `onBackProgressed()` / `onBackInvoked()` /
-   `onBackCancelled()` as the gesture unfolds.
+**What the app does now (react-navigation, since navigation step 7).**
 
-The docs contain an explicit warning about the app's current pattern:
+The old conditional-at-event-time guard stack (`src/lib/backGuard.ts`, a
+single `hardwareBackPress` listener walking registered guards) is deleted.
+Back is handled in this order:
 
-> "If your app was previously associating back logic with **conditional
-> statements**, this might signify you are reacting to the back event after
-> it has already **occurred**. **Avoid this pattern** with newer callbacks.
-> If possible, move the callback outside of the conditional statement and
-> instead associate the callback to an observable data holder type."
+1. A visible RN `Modal` takes back through `onRequestClose`.
+2. Focus-scoped `BackHandler` listeners (`useSearchBack`) close search on the
+   tab roots, registered only while the screen is focused and searching.
+3. The NavigationContainer pops the native stack. A route that must not simply
+   leave says so with `usePreventRemove(condition, …)`: `ChatRoute` while a
+   paid session or a reply is live, `CallRoute` until the call is ending,
+   `ApplyRoute` outside the `verify` phase.
+4. The Root listener opens the "Leave Pappal?" confirm at a tab root.
 
-The doc's recommended pattern is: **register a callback when the UI state
-that needs interception is active; unregister it when that state ends.**
+`usePreventRemove(condition)` is the observable-state precondition this entry
+used to ask for: the guard is declared by state, not decided at event time.
 
-**Why this app's back-guard contract is incompatible — for now.**
+**Why W6 is still not adopted.**
 
-`App.tsx` holds a single `BackHandler.addEventListener('hardwareBackPress')`
-subscription. Inside it, `consumeBack()` (from `src/lib/backGuard.ts`)
-iterates a guard stack at the moment the event fires. When ChatScreen has a
-live paid session its guard returns `true`, the confirm dialog appears, and
-the pop is prevented.
+1. react-native-screens 4.28.0 animates stack transitions with View tween
+   animations. The fragment animation page supports gesture-driven predictive
+   back only for Animator and AndroidX Transition, so the in-app preview cannot
+   follow the finger. The upgrade path is react-native-screens' Stack v5 work
+   (software-mansion/react-native-screens #2540, #3629).
+2. React Native 0.86.2's `ReactActivity` registers an always-enabled
+   `OnBackPressedCallback`, which by the page above suppresses the system
+   animation and hands every back to JS.
+3. The Root exit confirm intercepts back at the root, which suppresses the
+   back-to-home preview (`behavior-changes-16`). That is a stated product
+   deviation: the exit confirm is Amit's call.
 
-That is precisely the "conditional at event time" pattern the docs warn
-against. Adopting `OnBackAnimationCallback` without resolving it causes:
+**Decision (RULE 1 point 6, stated departure).**
 
-1. `onBackStarted()` fires → the W6 animation begins (chat screen starts to
-   slide away).
-2. `onBackInvoked()` fires → `consumeBack()` runs → the guard intercepts →
-   a confirm dialog appears.
-3. But the animation already played. The screen must visually snap back, then
-   a dialog appears. That looks like a rendering bug, not a polish feature.
+No manifest change: `enableOnBackInvokedCallback` stays absent, and the
+`platform.test.ts` assertions that pin its absence stay. `MainActivity.kt` and
+the Root listener carry the citing comments.
 
-Preventing the animation from starting when a guard is active would require
-synchronous Kotlin-side knowledge of JS guard state — either a native mirror
-of `backGuardCount()` updated by `backGuard.ts`, or a per-guard
-`OnBackPressedCallback` registered and unregistered as sessions open and close.
-Both require refactoring `backGuard.ts` (and App.tsx's back handler) to the
-doc's recommended "enable/disable by observable state" model.
-
-**Decision (RULE 1 point 6 — stated departure).**
-
-W6 is **not implemented**. No manifest change, no `PredictiveBackModule.kt`,
-no `src/lib/predictiveBack.ts`. The existing `platform.test.ts` assertion
-that `enableOnBackInvokedCallback="true"` is absent remains correct and must
-not be deleted — its comment now records the pre-condition for W6 adoption.
-
-**Pre-condition before W6 can be re-attempted:**
-
-Refactor the back-guard system so that each guard registers an
-`OnBackPressedCallback` (via a native bridge or via RN's own
-`AndroidX OnBackPressedDispatcher`) for the duration of the state that needs
-interception, instead of using a single always-on subscription with a
-conditional. Once guards are expressed as registered/unregistered callbacks
-rather than a conditional at event time, `OnBackAnimationCallback` can be
-registered only when no guard is active and a route exists to pop — and the
-animation will only ever start when the back will actually commit.
-
-The `OnBackPressedCallback` note from the doc is the safety net either way:
-`BackHandler` continues to fire through `onBackPressed` regardless of the
-`enableOnBackInvokedCallback` flag, so the guard stack keeps working
-correctly in the current state.
+**Pre-condition before W6 can be re-attempted:** react-native-screens ships an
+Animator- or Transition-based stack (Stack v5), and React Native's activity
+callback is enabled only while JS has a back to handle. `usePreventRemove`
+already expresses the per-route guards in the shape the doc asks for.
 
 ## 2026-09-07 — RNGH: off the `Gesture.*` builder, onto the v3 hooks
 
