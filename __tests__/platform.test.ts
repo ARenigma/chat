@@ -3169,3 +3169,12 @@ describe('the category pager tracks the very first drag', () => {
     expect(pager).toMatch(/pageScrollState === 'dragging'\)\s*\{\s*didInit\.set\(true\)/);
   });
 });
+
+describe('the category pager never rests between pages', () => {
+  it('snaps to the nearest page when it goes idle off a page', () => {
+    // S22, 2026-09-27: a cancelled touch left ViewPager2 idle at offset 0.086.
+    const pager = readFileSync(join(ROOT, 'src/components/ProviderPager.tsx'), 'utf8');
+    expect(pager).toMatch(/pageScrollState === 'idle'\)\s*\{[\s\S]{0,200}Math\.round\(at\)/);
+    expect(pager).toMatch(/scheduleOnRN\(snapToPage, nearest\)/);
+  });
+});

@@ -175,6 +175,28 @@ export function ProviderPager({
    * us to fire onPageSelected as well", ScrollEventAdapter.java `onScrolled`).
    */
   const didInit = useSharedValue(false);
+
+  /*
+   * Snap back onto a page when a drag ends parked between two.
+   *
+   * ViewPager2 settles through its PagerSnapHelper after a normal release, but
+   * a CANCELLED touch (on the S22, 2026-09-27, an S Pen hover dispatched
+   * ACTION_CANCEL mid-swipe) left it idle at offset 0.086 with no snap, so the
+   * screen showed a sliver of the other page indefinitely. Reported IDLE with a
+   * fractional position is that state by definition: nothing else leaves the
+   * pager at rest off a page. Animated unless reduced motion asks otherwise,
+   * matching a tap.
+   */
+  const snapToPage = useCallback(
+    (index: number) => {
+      if (reducedMotion) {
+        pagerView.current?.setPageWithoutAnimation(index);
+      } else {
+        pagerView.current?.setPage(index);
+      }
+    },
+    [reducedMotion],
+  );
   const handler = useEvent<PagerEvent>(
     event => {
       'worklet';
@@ -194,6 +216,12 @@ export function ProviderPager({
         // moved the page while the tab indicator stayed put.
         if (event.pageScrollState === 'dragging') {
           didInit.set(true);
+        } else if (event.pageScrollState === 'idle') {
+          const at = dragProgress.get();
+          const nearest = Math.round(at);
+          if (Math.abs(at - nearest) > 0.001) {
+            scheduleOnRN(snapToPage, nearest);
+          }
         }
       }
     },
