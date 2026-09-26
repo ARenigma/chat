@@ -165,7 +165,7 @@ describe('recharge chips present GST exclusive — charged on top of the base (A
     expect(payMatches).toBeGreaterThanOrEqual(2);
     const footer = recharge.slice(
       recharge.indexOf('function RechargeSheetFooter'),
-      recharge.indexOf('export function RechargeWalletPage'),
+      recharge.indexOf('export function WalletScreen'),
     );
     expect(footer).toContain('accessibilityLabel={`Pay ${formatRupees(discountedTotalInr(');
   });

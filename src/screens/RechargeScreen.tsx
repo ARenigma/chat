@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -27,7 +27,7 @@ import { PaymentSheet } from './PaymentSheet';
 /**
  * Recharge packs — v10 layout, two hosts:
  *
- *   - Wallet pill → full page (`RechargeWalletPage`).
+ *   - Wallet pill → full page (`WalletScreen`, hosted by `RechargeWalletPage`).
  *   - Chat/home paywall, talk-bar, first send → M3 Paper sheet (`RechargeScreen`).
  */
 function useRechargePacks() {
@@ -377,38 +377,26 @@ function RechargeSheetFooter({ amount, gstRateBps, discountBps, onPay }: { amoun
   );
 }
 
-/** Full-page Recharge — wallet pill only. Same packs as the sheet. */
-export function RechargeWalletPage() {
+/**
+ * Full-page Recharge — wallet pill only. Same packs as the sheet.
+ *
+ * A props-driven screen since navigation step 6: it knows nothing about how it
+ * was opened or how it leaves, only that `onBack` leaves. That is the shape the
+ * `Wallet` route registers in step 7; until then RechargeWalletPage below hosts
+ * it on the store flag with the pushed-layer motion. `recharge-wallet` is on
+ * this root so the id survives the host being deleted.
+ */
+export function WalletScreen({ onBack }: { onBack: () => void }) {
   const styles = useStyles(makePageStyles);
   const insets = useSafeAreaInsets();
-  const visible = useStore(s => s.walletVisible);
-  const close = useStore(s => s.closeWallet);
   const { livePacks, gstRateBps, discountBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
 
-  // A pushed page: it always enters from the right (a forward push) and its back
-  // leaves to the right, so it uses the shared screen builders. The direction is
-  // set on the not-visible → visible transition, in render and thus before the
-  // mount commits and `screenIn` reads it, so a preceding pop cannot leave the
-  // page entering from the wrong side. The ref keeps it to that one transition.
-  const wasVisible = useRef(false);
-  if (visible && !wasVisible.current) {
-    setNavDirection('forward');
-  }
-  wasVisible.current = visible;
-
-  if (!visible) return null;
-
-  const closeBack = () => {
-    setNavDirection('back');
-    close();
-  };
-
   return (
-    <WalletLayer style={[styles.page, { paddingTop: insets.top }]}>
+    <View testID="recharge-wallet" style={[styles.page, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
-        <BackButton onPress={closeBack} testID="recharge-wallet-back" style={styles.barIcon} />
+        <BackButton onPress={onBack} testID="recharge-wallet-back" style={styles.barIcon} />
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.barTitle}>
           Recharge
         </Text>
@@ -442,17 +430,54 @@ export function RechargeWalletPage() {
         />
       </View>
       <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
+    </View>
+  );
+}
+
+/**
+ * The old tree's wallet host: the store flag, the navigation direction and the
+ * pushed-layer motion. Deleted with WalletLayer when `Wallet` becomes a route
+ * (step 7).
+ */
+export function RechargeWalletPage() {
+  const visible = useStore(s => s.walletVisible);
+  const close = useStore(s => s.closeWallet);
+
+  // A pushed page: it always enters from the right (a forward push) and its back
+  // leaves to the right, so it uses the shared screen builders. The direction is
+  // set on the not-visible → visible transition, in render and thus before the
+  // mount commits and `screenIn` reads it, so a preceding pop cannot leave the
+  // page entering from the wrong side. The ref keeps it to that one transition.
+  const wasVisible = useRef(false);
+  if (visible && !wasVisible.current) {
+    setNavDirection('forward');
+  }
+  wasVisible.current = visible;
+
+  if (!visible) return null;
+
+  const closeBack = () => {
+    setNavDirection('back');
+    close();
+  };
+
+  return (
+    <WalletLayer>
+      <WalletScreen onBack={closeBack} />
     </WalletLayer>
   );
 }
 
-/** The wallet page's pushed layer: effect-driven entrance, layout-animation exit (motion.ts). */
-function WalletLayer({ style, children }: { style: StyleProp<ViewStyle>; children: React.ReactNode }) {
+/**
+ * The wallet page's pushed layer: effect-driven entrance, layout-animation exit
+ * (motion.ts). It positions and moves; WalletScreen inside paints the page.
+ */
+function WalletLayer({ children }: { children: React.ReactNode }) {
+  const styles = useStyles(makePageStyles);
   const enter = useScreenEnter();
   return (
     <Animated.View
-      testID="recharge-wallet"
-      style={[style, enter.style]}
+      style={[styles.layer, enter.style]}
       onLayout={enter.onLayout}
       exiting={screenOut}>
       {children}
@@ -668,14 +693,19 @@ function RechargeForm({
 
 const makePageStyles = (t: Theme) =>
   StyleSheet.create({
-    page: {
+    // The old tree's overlay position, on WalletLayer only: a route screen is
+    // placed by its navigator, so the page itself just fills and paints.
+    layer: {
       position: 'absolute',
       top: 0,
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: t.color.bg.base,
       zIndex: 20,
+    },
+    page: {
+      flex: 1,
+      backgroundColor: t.color.bg.base,
     },
     bar: {
       flexDirection: 'row',

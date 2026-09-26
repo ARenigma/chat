@@ -6164,7 +6164,7 @@ describe('post-release UI regressions', () => {
   it('keeps the interrupting recharge sheet compact and non-scrolling', () => {
     const recharge = read('src/screens/RechargeScreen.tsx');
     const sheetStart = recharge.indexOf('export function RechargeScreen');
-    const walletStart = recharge.indexOf('export function RechargeWalletPage');
+    const walletStart = recharge.indexOf('export function WalletScreen');
     const sheet = recharge.slice(sheetStart, walletStart);
     expect(sheet).toContain('<RechargeSheetForm');
     expect(sheet).not.toContain('<ScrollView');
