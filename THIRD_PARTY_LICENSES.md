@@ -106,3 +106,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+---
+
+## Unicode Character Database (contact guard tables)
+
+`design/contact-guard.tables.json` is derived from Unicode character data (the
+decimal-digit, combining-mark and format-character properties and the
+compatibility decompositions) as exposed by Node's ICU, by
+`scripts/gen-contact-guard.mjs --tables`. The tables ship in the APK inside
+`src/lib/contactGuard.generated.ts` and in migration 156. Unicode data is
+distributed under the Unicode License v3; its text is at
+https://www.unicode.org/license.txt and must be reproduced here before the
+tables ship in a release build.
