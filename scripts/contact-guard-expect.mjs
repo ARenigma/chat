@@ -92,7 +92,7 @@ if (DATABASE_URL !== '') {
     {
       input: `select json_agg(private.contact_guard_signals(x) order by o) from json_array_elements_text('${payload}'::json) with ordinality as a(x, o);`,
       encoding: 'utf8',
-      maxBuffer: 1 << 28,
+      maxBuffer: 256 * 1024 * 1024,
     },
   );
   if (result.status !== 0) {
