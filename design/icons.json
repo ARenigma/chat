@@ -19,7 +19,7 @@
     "chat": "chat-circle",
     "call": "phone",
     "$callEndNote": "Lucide's `phone-off` was the handset with a slash through it, and `phone-slash` is that same drawing. Phosphor also has `phone-disconnect` (the horizontal hang-up handset); it was NOT chosen because the decline/end controls were designed against the slashed mark and swapping the metaphor is a design decision, not a migration.",
-    "callEnd": "phone-slash",
+    "callEnd": "phone-disconnect",
     "video": "video-camera",
     "videoOff": "video-camera-slash",
     "speaker": "speaker-high",

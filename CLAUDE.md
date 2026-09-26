@@ -147,7 +147,9 @@ thing. See `docs/adr/0016-onboarding-is-one-screen.md` for what guessing cost.
 
 `src/theme/tokens.generated.ts` and `web/tokens.css` come from
 `design/tokens.json` via `npm run tokens`. `src/theme/icons.generated.ts` and
-`assets/fonts/Lucide.ttf` come from `design/icons.json` via `npm run icons`.
+`assets/fonts/Phosphor.ttf` come from `design/icons.json` via `npm run icons:font`
+(glyphs from the `@phosphor-icons/core` devDependency; Phosphor is the only icon
+set, in the app and the admin console).
 `src/lib/emoji.generated.ts` comes from the `@emoji-mart/data` devDependency via
 `npm run emoji`. Drift is a build gate in every case.
 
