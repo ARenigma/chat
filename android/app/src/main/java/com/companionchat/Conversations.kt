@@ -1496,6 +1496,16 @@ object Conversations {
      * `removeLongLivedShortcuts`. Pinned shortcuts are the person's own and
      * are left where they put them.
      * https://developer.android.com/reference/androidx/core/content/pm/ShortcutManagerCompat#removeLongLivedShortcuts(android.content.Context,java.util.List%3Cjava.lang.String%3E)
+     *
+     * The shortcuts go under [postLock] too, in the same hold as the cancel.
+     * Every `pushDynamicShortcut` runs inside a post, and every post holds the
+     * lock. With the removal after the release, a post that took the lock in
+     * between (the next account's first message) pushed its shortcut and
+     * posted, and the removal then deleted that shortcut under a live
+     * notification whose `shortcutId` now names nothing, which Android demotes
+     * out of the conversation section. Inside the lock a post lands either
+     * wholly before the sign-out, and is cleared with it, or wholly after.
+     * The removal is three Binder calls, the same size as a post's own hold.
      */
     fun clearAll(context: Context) {
         synchronized(postLock) {
@@ -1504,15 +1514,15 @@ object Conversations {
             requestPosts.clear()
             cleared.clear()
             clearedAll = true
+            val ids = ShortcutManagerCompat.getShortcuts(
+                context,
+                ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED,
+            ).map { it.id }
+            if (ids.isNotEmpty()) {
+                ShortcutManagerCompat.removeLongLivedShortcuts(context, ids)
+            }
+            ShortcutManagerCompat.removeAllDynamicShortcuts(context)
         }
-        val ids = ShortcutManagerCompat.getShortcuts(
-            context,
-            ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED,
-        ).map { it.id }
-        if (ids.isNotEmpty()) {
-            ShortcutManagerCompat.removeLongLivedShortcuts(context, ids)
-        }
-        ShortcutManagerCompat.removeAllDynamicShortcuts(context)
     }
 
     private fun openConversation(context: Context, peerId: String, recipientId: String? = null) =

@@ -2182,12 +2182,24 @@ describe('the in-app flag reaches its own Android channel', () => {
   it('clears everything the account left, notifications and shortcuts, under the post lock', () => {
     const all = slice('fun clearAll(context: Context) {', '\n    }\n');
     expect(all).toMatch(
-      /synchronized\(postLock\) \{\s*NotificationManagerCompat\.from\(context\)\.cancelAll\(\)\s*posted\.clear\(\)\s*requestPosts\.clear\(\)\s*cleared\.clear\(\)\s*clearedAll = true\s*\}/,
+      /synchronized\(postLock\) \{\s*NotificationManagerCompat\.from\(context\)\.cancelAll\(\)\s*posted\.clear\(\)\s*requestPosts\.clear\(\)\s*cleared\.clear\(\)\s*clearedAll = true\s*val ids = /,
     );
     // Cached long-lived copies, not only the dynamic list, which keeps them.
     expect(all).toContain('ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED');
     expect(all).toContain('ShortcutManagerCompat.removeLongLivedShortcuts(context, ids)');
     expect(all).toContain('ShortcutManagerCompat.removeAllDynamicShortcuts(context)');
+    // Review follow-up (2026-09-25): the shortcut removal is inside the same
+    // hold as the cancel. After the release, a post for the next account could
+    // push its shortcut in between and have it removed from under its live
+    // notification. The whole body is the one locked block, so nothing of the
+    // sign-out runs outside it.
+    expect(all).toMatch(
+      /^fun clearAll\(context: Context\) \{\s*synchronized\(postLock\) \{[\s\S]*ShortcutManagerCompat\.removeAllDynamicShortcuts\(context\)\s*\}$/,
+    );
+    // And every shortcut push is a post's, which only ever runs under the lock.
+    const pushes = kt.split('ShortcutManagerCompat.pushDynamicShortcut(').length - 1;
+    expect(pushes).toBe(2);
+    expect(count(kt, '        fun post(\n')).toBe(pushes);
     expect(module).toMatch(/fun clearAll\(promise: Promise\) \{\s*try \{\s*Conversations\.clearAll\(reactContext\)\s*promise\.resolve\(null\)/);
     expect(bridge).toMatch(/export async function clearAllConversations\(\): Promise<void> \{\s*if \(native === undefined\) \{\s*return;\s*\}\s*await native\.clearAll\(\);/);
     for (const page of [
