@@ -39,6 +39,7 @@ import { precheckContactGuard, contactGuardNotice } from '../../lib/contactGuard
 import type { ReportReason, Story, StoryCommentFeedItem } from '../../lib/database.types';
 import { newUuid } from '../../lib/ids';
 import { REACTION_CHOICES } from '../../lib/reactions';
+import { SCROLL_PHYSICS } from '../../lib/scroll';
 import { MAX_COMMENT_CHARS, canComment, isOwnStory, storyAge } from '../../lib/stories';
 import { useStore } from '../../store/useStore';
 import { TOKENS, type Theme } from '../../theme/tokens';
@@ -211,7 +212,7 @@ function StoryReplySheetView({ visible, story, selfId, onClose }: Props) {
 
   return (
     <Sheet visible={visible} title="Comments" onClose={onClose} detents="large" footer={footer} testID="story-reply-sheet">
-      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={styles.scroll}>
+      <ScrollView {...SCROLL_PHYSICS} nestedScrollEnabled keyboardShouldPersistTaps="handled" style={styles.scroll}>
         {story.caption !== null ? (
           <Text allowFontScaling style={styles.caption} testID="story-caption">
             {story.caption}
@@ -385,8 +386,8 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space['2xs'],
-      minHeight: 40,
-      minWidth: 48,
+      minHeight: TOKENS.interaction.minTarget,
+      minWidth: TOKENS.interaction.minTarget,
       paddingHorizontal: TOKENS.space.sm,
       borderRadius: TOKENS.radius.pill,
       backgroundColor: t.color.bg.sunken,
@@ -466,8 +467,8 @@ const makeStyles = (t: Theme) =>
       borderRadius: TOKENS.radius.lg,
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.xs,
-      minHeight: 48,
-      maxHeight: 120,
+      minHeight: TOKENS.interaction.minTarget,
+      maxHeight: TOKENS.layout.field * 2,
     },
     publicNote: {
       ...TOKENS.typography.bodySmall,
@@ -480,7 +481,7 @@ const makeStyles = (t: Theme) =>
       marginBottom: TOKENS.space.xs,
     },
     actionRow: {
-      minHeight: 52,
+      minHeight: TOKENS.layout.rowOneLine,
       justifyContent: 'center',
     },
     actionLabel: {

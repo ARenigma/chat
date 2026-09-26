@@ -49,6 +49,7 @@ import {
   storyNotice,
   type StoryDraft,
 } from '../lib/stories';
+import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -161,11 +162,15 @@ export function StoryCreateScreen({ onBack, onPosted }: Props) {
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.bar}>
         <BackButton onPress={onBack} />
-        <Text allowFontScaling accessibilityRole="header" style={styles.title}>
+        <Text
+          allowFontScaling
+          maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLarge}
+          accessibilityRole="header"
+          style={styles.title}>
           New story
         </Text>
       </View>
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+      <ScrollView {...SCROLL_PHYSICS} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         <View style={styles.preview} testID="story-create-preview">
           {draft?.mediaType === 'image' ? (
             <Image source={{ uri: draft.uri }} style={styles.media} resizeMode="contain" />
@@ -235,7 +240,7 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       gap: TOKENS.space.xs,
       paddingHorizontal: TOKENS.space.xs,
-      minHeight: 56,
+      minHeight: TOKENS.layout.appBarSmall,
     },
     title: {
       ...TOKENS.typography.titleLarge,
@@ -266,8 +271,8 @@ const makeStyles = (t: Theme) =>
       borderRadius: TOKENS.radius.md,
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.sm,
-      minHeight: 56,
-      maxHeight: 140,
+      minHeight: TOKENS.layout.field,
+      maxHeight: TOKENS.layout.field * 2.5,
     },
     hint: {
       ...TOKENS.typography.bodySmall,

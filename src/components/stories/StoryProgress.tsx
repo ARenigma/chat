@@ -20,7 +20,7 @@
 import React, { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
-  Easing,
+
   cancelAnimation,
   useAnimatedStyle,
   useReducedMotion,
@@ -28,6 +28,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+
+import { EASE_CONSTANT } from '../../theme/motion';
 
 import { TOKENS } from '../../theme/tokens';
 
@@ -62,7 +64,7 @@ function StoryProgressView({ count, index, durationMs, running, storyKey, onDone
     }
     const remaining = Math.max(0, 1 - progress.get());
     progress.set(
-      withTiming(1, { duration: Math.max(1, remaining * durationMs), easing: Easing.linear }, finished => {
+      withTiming(1, { duration: Math.max(1, remaining * durationMs), easing: EASE_CONSTANT }, finished => {
         if (finished) {
           scheduleOnRN(onDone);
         }

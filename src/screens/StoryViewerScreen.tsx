@@ -22,7 +22,7 @@
  * MOTION (animate-expo, in its order):
  *   - Story to story within a provider: NO animation. Tens a session, a cut is
  *     the feedback (step 1).
- *   - Provider to provider: a simple slide, 220ms strong ease-out, direction
+ *   - Provider to provider: a simple slide, 240ms (duration.base) strong ease-out (quint), direction
  *     from the tap (spatial consistency). Chosen over the cube: the cube is a
  *     3D rotation of two live media surfaces, twice the decode and a
  *     perspective transform on Android for a transition seen tens of times a
@@ -42,7 +42,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, useCompetingGestures, useLongPressGesture, usePanGesture, useTapGesture } from 'react-native-gesture-handler';
 import Animated, {
-  Easing,
+
   SlideInLeft,
   SlideInRight,
   interpolate,
@@ -90,7 +90,7 @@ import {
   type ViewerState,
 } from '../lib/stories';
 import { useStore } from '../store/useStore';
-import { GESTURE, sheetIn, sheetOut } from '../theme/motion';
+import { DURATION, EASE_OUT_QUINT, GESTURE, sheetIn, sheetOut } from '../theme/motion';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 
@@ -102,8 +102,6 @@ const PILL = 'rgba(255,255,255,0.16)';
 
 const HOLD_MS = 200;
 const DISMISS_FRACTION = 0.25;
-const SLIDE_MS = 220;
-const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 interface Props {
   providerIds: string[];
@@ -115,6 +113,7 @@ interface Props {
 type MenuStep = 'menu' | 'reasons' | 'insights' | 'confirmDelete';
 
 export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpenChat }: Props) {
+  const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const reduced = useReducedMotion();
@@ -236,11 +235,11 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
       const far = dragY.get() > height * DISMISS_FRACTION;
       const fast = e.velocityY > GESTURE.dismissVelocity;
       if (far || fast) {
-        dragY.set(reduced ? withTiming(height, { duration: 150 }) : sheetOut(height, e.velocityY));
+        dragY.set(reduced ? withTiming(height, { duration: DURATION.fast }) : sheetOut(height, e.velocityY));
         scheduleOnRN(close);
         return;
       }
-      dragY.set(reduced ? withTiming(0, { duration: 150 }) : sheetIn(e.velocityY));
+      dragY.set(reduced ? withTiming(0, { duration: DURATION.fast }) : sheetIn(e.velocityY));
     },
   });
   const hold = useLongPressGesture({
@@ -300,7 +299,7 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
 
   const entering = reduced
     ? undefined
-    : (slideFrom.current === 'right' ? SlideInRight : SlideInLeft).duration(SLIDE_MS).easing(EASE_OUT);
+    : (slideFrom.current === 'right' ? SlideInRight : SlideInLeft).duration(DURATION.base).easing(EASE_OUT_QUINT);
   const insight = insights.data?.find(i => i.story_id === story.id);
 
   return (
@@ -495,7 +494,7 @@ function Stat({ label, value }: { label: string; value: number | undefined }) {
   const sheet = useStyles(makeSheetStyles);
   return (
     <View style={sheet.stat}>
-      <Text allowFontScaling style={sheet.statValue}>
+      <Text allowFontScaling maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLarge} style={sheet.statValue}>
         {value ?? 0}
       </Text>
       <Text allowFontScaling style={sheet.statLabel}>
@@ -526,7 +525,7 @@ function ViewerRow({ name, avatar, reaction }: { name: string; avatar: string | 
 const makeSheetStyles = (t: Theme) =>
   StyleSheet.create({
     menuRow: {
-      minHeight: 52,
+      minHeight: TOKENS.layout.rowOneLine,
       justifyContent: 'center',
     },
     menuLabel: {
@@ -551,7 +550,7 @@ const makeSheetStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.sm,
-      minHeight: 52,
+      minHeight: TOKENS.layout.rowOneLine,
     },
     viewerName: {
       ...TOKENS.typography.bodyLarge,
@@ -567,7 +566,8 @@ const makeSheetStyles = (t: Theme) =>
  * The chrome is white on black in both themes, like the call screen: it sits
  * on media, not on a theme surface. The sheets it opens are themed.
  */
-const styles = StyleSheet.create({
+const makeStyles = (_t: Theme) =>
+  StyleSheet.create({
   base: {
     flex: 1,
     backgroundColor: 'transparent',
@@ -629,7 +629,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space.xs,
-    minHeight: 48,
+    minHeight: TOKENS.interaction.minTarget,
     paddingHorizontal: TOKENS.space.lg,
     borderRadius: TOKENS.radius.pill,
     borderWidth: 1,

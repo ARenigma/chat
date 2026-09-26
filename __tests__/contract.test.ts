@@ -1136,12 +1136,16 @@ describe('gesture handling reaches every root', () => {
     // so its gestures cannot collide with the transcript's.
     // CallScreen.tsx owns the draggable self-view. It lives inside the app's
     // root GestureHandlerRootView and clamps above the call controls.
+    // StoryViewerScreen.tsx is the stories viewer: tap for next/previous, hold
+    // to pause, drag down to close, on the media layer only (its controls are
+    // siblings above it, so a press on them is never also a tap).
     expect(users).toEqual([
       'src/chat-v2/ChatMessageCellV2.tsx',
       'src/components/MediaViewer.tsx',
       'src/components/Sheet.tsx',
       'src/components/SpotlightCard.tsx',
       'src/screens/CallScreen.tsx',
+      'src/screens/StoryViewerScreen.tsx',
     ]);
   });
 
@@ -9348,6 +9352,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'Invoices',
       'Transactions',
       'HomeSuggestion',
+      'StoryViewer',
     ]);
     for (const stack of ['HomeStack', 'FavouritesStack', 'CallsStack', 'YouStack']) {
       expect(nav).toContain(`{memberScreens(${stack}, background)}`);
@@ -9363,6 +9368,8 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'Payout',
       'Blocked',
       'Usage',
+      'StoryViewer',
+      'StoryCreate',
     ]);
     for (const stack of ['ChatsStack', 'SavedStack', 'ProviderYouStack']) {
       expect(nav).toContain(`{providerScreens(${stack})}`);
@@ -9398,7 +9405,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
 
   it('renders Layout.Screen in every route adapter', () => {
     const files = readdirSync(join(ROOT, 'src/screens/routes')).filter(f => f.endsWith('Route.tsx') || f.endsWith('Routes.tsx'));
-    expect(files.sort()).toEqual(['CallRoute.tsx', 'ChatRoute.tsx', 'MemberRoutes.tsx', 'ProviderRoutes.tsx']);
+    expect(files.sort()).toEqual(['CallRoute.tsx', 'ChatRoute.tsx', 'MemberRoutes.tsx', 'ProviderRoutes.tsx', 'StoryRoutes.tsx']);
     for (const file of files) {
       const source = withoutComments(read(`src/screens/routes/${file}`));
       const adapters = source.split('export function ').slice(1);
@@ -9448,7 +9455,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
     const deduped = withoutComments(read('src/hooks/useNavigationDeduped.ts'));
     // Forward navigation only: no pop, goBack, replace or dispatch through dedupe.
     expect(deduped).not.toMatch(/\b(pop|popTo|popToTop|goBack|replace|dispatch):/);
-    for (const file of ['src/screens/routes/ChatRoute.tsx', 'src/screens/routes/CallRoute.tsx', 'src/screens/routes/MemberRoutes.tsx', 'src/screens/routes/ProviderRoutes.tsx']) {
+    for (const file of ['src/screens/routes/ChatRoute.tsx', 'src/screens/routes/CallRoute.tsx', 'src/screens/routes/MemberRoutes.tsx', 'src/screens/routes/ProviderRoutes.tsx', 'src/screens/routes/StoryRoutes.tsx']) {
       const source = withoutComments(read(file));
       expect(source).not.toMatch(/\bnav\.(pop|goBack|replace|dispatch)\(/);
     }
@@ -9480,7 +9487,9 @@ describe('navigation step 7: the graph is the §2 table', () => {
     // The route-enforcing effect and the boot setRoute are gone (A16, B12).
     expect(app).not.toContain('setRoute(');
     // Moments are never restored: a call, a ring, a prompt.
-    expect(nav).toContain("const NEVER_RESTORED: ReadonlySet<string> = new Set(['Call', 'ChatRequest', 'HomeSuggestion']);");
+    expect(nav).toContain(
+      "const NEVER_RESTORED: ReadonlySet<string> = new Set(['Call', 'ChatRequest', 'HomeSuggestion', 'StoryViewer', 'StoryCreate']);",
+    );
     expect(app).toMatch(/if \(!regateRestore\.current\) \{\s*lastNavState\.current = null;\s*\}\s*\}, \[attempt\]\);/);
   });
 

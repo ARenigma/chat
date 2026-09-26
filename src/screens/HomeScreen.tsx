@@ -66,6 +66,7 @@ import {
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
 import { TabTopBar } from '../components/TabTopBar';
+import { StoryRail } from '../components/stories/StoryRail';
 import { SpotlightCard } from '../components/SpotlightCard';
 import { ChatStartHint } from '../components/ChatStartHint';
 import { ConversationMenu } from '../components/ConversationMenu';
@@ -1193,9 +1194,21 @@ const DirectoryPage = memo(function ({
   // ListHeaderComponent: chats rail + section head + the week's picks. Kept
   // outside the FlashList data so only the provider rows are virtualised; the
   // chrome above them is always rendered.
+  // The page's providers, for its stories rail: a page shows the stories of
+  // the people it lists, so swiping categories swaps the rail with the rows.
+  const pageProviderIds = useMemo(
+    () => new Set([...rows, ...topPicks].map(p => p.id)),
+    [rows, topPicks],
+  );
+
   const exploreHeader = useMemo(
     () => (
       <>
+        {/* Stories (owner, 2026-09-26): above the Chats rail, inside the
+            page's list header, so the pager's pages keep their layout and a
+            page with no live stories renders exactly as before (the rail
+            returns nothing). */}
+        <StoryRail providerIds={pageProviderIds} />
         <TourAnchor id="chats" active={focused}>
         <View style={styles.rail}>
           <View style={styles.railHeader}>
@@ -1321,6 +1334,7 @@ const DirectoryPage = memo(function ({
       onOpenConversation,
       onRailLongPress,
       onSeeAllChats,
+      pageProviderIds,
     ],
   );
 
