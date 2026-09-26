@@ -84,15 +84,20 @@ function ProviderCardView({
   const initial = initialOf(provider.display_name);
   const latency = replyLatency(provider.median_reply_seconds);
 
-  // Derives presence the same way ProviderRow and the chat header do — one reading
-  // of the master switch, so the dot and the availability label cannot disagree.
-  const presence = readPresence(provider.is_available);
+  // The dot and its spoken line: the server's `online` or last seen (migration
+  // 155), through the one reading ProviderRow and the chat header use.
+  const presence = readPresence({
+    online: provider.online,
+    lastSeenAt: provider.last_seen_at,
+    now: new Date(),
+  });
 
   /*
    * AWAY, AND THE ONE THING THIS CARD OFFERS.
    *
-   * `!presence.here`, the same test the directory row applies
-   * (ProviderRow.tsx:431).
+   * `!provider.is_available`, the same test the directory row applies
+   * (ProviderRow.tsx). The switch, not the dot: open but not active in the
+   * last 75 s is still reachable, so only a closed switch is away.
    *
    * This card has never had a Call or a Video on it, so there is nothing here
    * to withdraw; what it was missing is the other half of the rule. Its body
@@ -102,7 +107,7 @@ function ProviderCardView({
    * below says it, in the same bell + verb the row uses, and the spoken label
    * stops promising a message to someone who is not there to read it.
    */
-  const away = !presence.here;
+  const away = !provider.is_available;
   /*
    * What they are open to, when it is not everything. Suppressed while away
    * because closed outranks the channel set: there is nothing to do with any of
@@ -367,13 +372,18 @@ function SquareProviderCardView({
 
   const initial = initialOf(provider.display_name);
   const coverSource = avatarImageSource(provider.avatar_url, 300, 300, 85);
-  const presence = readPresence(provider.is_available);
-  // Same reading, same test as the portrait card above and as ProviderRow: the
-  // badge slot on the cover carries "here now" one way and the one action that
-  // works the other. This card opens the PROFILE, where an away provider's only
-  // action is Notify — so the marker names where the tap goes rather than
-  // promising a call the profile no longer offers either.
-  const away = !presence.here;
+  const presence = readPresence({
+    online: provider.online,
+    lastSeenAt: provider.last_seen_at,
+    now: new Date(),
+  });
+  // Same readings, same tests as the portrait card above and as ProviderRow:
+  // the badge slot on the cover carries the dot when they are online (the
+  // server's `online`), the one action that works when the switch is closed,
+  // and nothing when they are open but idle. This card opens the PROFILE,
+  // where an away provider's only action is Notify, so the marker names where
+  // the tap goes rather than promising a call the profile no longer offers.
+  const away = !provider.is_available;
 
   /*
    * The footer's one line, and the limit takes it when there is one.
@@ -435,11 +445,11 @@ function SquareProviderCardView({
                   Notify
                 </Text>
               </View>
-            ) : (
+            ) : presence.here ? (
               <View style={styles.presenceRing}>
                 <View style={styles.presenceDot} />
               </View>
-            )}
+            ) : null}
           </View>
           {/* Footer */}
           <View style={styles.footer}>

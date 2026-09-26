@@ -4297,6 +4297,14 @@ describe('no screen reads a listing switch as a presence dot', () => {
    * honestly have been: `touch_presence()` was never once called from the
    * client, so every "Last seen" this app rendered was formatting a column
    * nobody had written.
+   *
+   * 2026-09-27, MIGRATION 155: THE DOT LEFT THE SWITCH. The provider app
+   * heartbeats; the server derives `online` (the switch open, a heartbeat
+   * within 75 s, no offline since, no block) and `last_seen_at`, and every
+   * dot below reads those through `readPresence({ online, lastSeenAt, now })`.
+   * The boolean form is deleted. The switch still decides the ACTION (Call
+   * versus Notify), because open but idle is still callable; the pins for
+   * that are in the block after this one.
    */
   const sites = [
     'src/components/ProviderRow.tsx',
@@ -4312,7 +4320,87 @@ describe('no screen reads a listing switch as a presence dot', () => {
     // The provider inbox, split in navigation step 6: both lists draw the dot.
     'src/screens/ProviderChatsScreen.tsx',
     'src/screens/ProviderSavedScreen.tsx',
+    // The member's inbox rows and the profile hero, both on the server
+    // reading since 155.
+    'src/screens/ChatsListScreen.tsx',
+    'src/screens/ProviderDetailScreen.tsx',
   ];
+
+  /** The argument of every `readPresence(` call, balanced on parentheses. */
+  const presenceArgs = (source: string): string[] => {
+    const out: string[] = [];
+    let at = source.indexOf('readPresence(');
+    while (at !== -1) {
+      let depth = 0;
+      let i = at + 'readPresence'.length;
+      const start = i + 1;
+      for (; i < source.length; i += 1) {
+        if (source[i] === '(') depth += 1;
+        if (source[i] === ')') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      out.push(source.slice(start, i));
+      at = source.indexOf('readPresence(', i);
+    }
+    return out;
+  };
+
+  it.each(sites)('reads the server fields, and only them, in %s', file => {
+    const source = withoutComments(read(file));
+    const calls = presenceArgs(source).filter(arg => arg.trim() !== 'input: PresenceInput');
+    expect(calls.length).toBeGreaterThan(0);
+    for (const arg of calls) {
+      // The object form: the server's online and last seen, and a clock.
+      expect(arg.trim().startsWith('{')).toBe(true);
+      if (arg.includes('...presenceSource')) {
+        // The chat header picks one whole source (the polled row, the thread
+        // row, the directory row); each branch is the server's two fields.
+        expect(source).toContain(
+          '{ online: peerRow.peer_online, lastSeenAt: peerRow.peer_last_seen_at }',
+        );
+        expect(source).toContain(
+          '{ online: knownThread.peer_online, lastSeenAt: knownThread.peer_last_seen_at }',
+        );
+        expect(source).toContain(
+          '{ online: provider?.online, lastSeenAt: provider?.last_seen_at }',
+        );
+        expect(source).not.toMatch(/is_available|peer_available/);
+        continue;
+      }
+      expect(arg).toMatch(/online: [\w?.]*\b(peer_)?online\b/);
+      expect(arg).toMatch(/lastSeenAt: [\w?.]*\b(peer_)?last_seen_at\b/);
+      expect(arg).toMatch(/\bnow\b/);
+      // Never the switch: that is the CTA's question, not the dot's.
+      expect(arg).not.toMatch(/is_available|peer_available/);
+    }
+  });
+
+  it('draws every one of those dots from `here`, the server\'s online', () => {
+    // The dot is `online` and nothing else: available but idle draws unlit.
+    for (const file of [
+      'src/components/ProviderRow.tsx',
+      'src/components/ProviderCard.tsx',
+      'src/screens/HomeScreen.tsx',
+      'src/screens/ChatsListScreen.tsx',
+      'src/chat-v2/ChatHeaderV2.tsx',
+    ]) {
+      expect(withoutComments(read(file))).toContain('online={presence.here}');
+    }
+    // The hero, the square card and the profile draw their own dot in the
+    // same slot, gated on the same reading.
+    expect(withoutComments(read('src/screens/HomeScreen.tsx'))).toMatch(
+      /\) : presence\.here \? \(\s*<View style=\{styles\.featuredOnline\} \/>/,
+    );
+    expect(withoutComments(read('src/components/ProviderCard.tsx'))).toMatch(
+      /\) : presence\.here \? \(\s*<View style=\{styles\.presenceRing\}>/,
+    );
+    expect(withoutComments(read('src/screens/ProviderDetailScreen.tsx'))).toContain(
+      '{presence.here ? <View style={styles.heroDot} /> : null}',
+    );
+  });
+
 
   it.each(sites)('derives the dot in %s from readPresence', file => {
     const source = withoutComments(read(file));
@@ -4376,8 +4464,10 @@ describe('no screen reads a listing switch as a presence dot', () => {
     );
     // One input now: the provider's master switch. See the block header above
     // for why 012's separation was collapsed deliberately.
-    expect(detail).toMatch(
-      /const away = provider !== null && !readPresence\(provider\.is_available\)\.here/,
+    // The switch, not the heartbeat (155): open but idle is still callable.
+    expect(detail).toContain('const away = provider !== null && !provider.is_available;');
+    expect(detail).toContain(
+      'const channelLine = provider.is_available ? offeredChannelsLine(provider) : null;',
     );
     const actions = detail.slice(
       detail.indexOf('<View style={styles.actions}>'),
@@ -4435,8 +4525,10 @@ describe('no screen reads a listing switch as a presence dot', () => {
     ]) {
       const body = withoutComments(read(file));
       // The identical expression ProviderRow uses, so "away" cannot come to mean
-      // something else on a surface that renders the same person.
-      expect(body).toContain('const away = !presence.here');
+      // something else on a surface that renders the same person. The switch,
+      // not the dot (155): the heartbeat never takes a Call away.
+      expect(body).toContain('const away = !provider.is_available;');
+      expect(body).not.toContain('const away = !presence.here');
       // Gated, and on the away side of the gate.
       expect(body).toMatch(/away \?[\s\S]{0,600}name="bell"/);
     }
@@ -4498,7 +4590,23 @@ describe('no screen reads a listing switch as a presence dot', () => {
   it('keeps availability and presence separate on the surface that has both', () => {
     // Explore reads `readPresence` for the dot and never dots a stored listing
     // switch, which is the substance of the old rail assertion.
-    expect(read('src/screens/HomeScreen.tsx')).toContain('readPresence');
+    const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+    expect(home).toContain('readPresence');
+    /*
+     * The rail reads the SAME derivation as the card below it (migration 155:
+     * conversation_peers.peer_online and provider_directory.online), which is
+     * the reported rail-versus-card mismatch closed. Before 155 the rail read
+     * `peer_available` behind `peer_is_provider`, and conversation_summaries
+     * carried neither, so the rail drew an unlit dot the card drew lit.
+     */
+    const rail = home.slice(home.indexOf('const RailItem = memo('), home.indexOf('const DirectoryPage = memo('));
+    expect(rail).toContain('online: chat.peer_online');
+    expect(rail).toContain('lastSeenAt: chat.peer_last_seen_at');
+    expect(rail).not.toContain('peer_available');
+    // The week's picks rank online, then open, then closed, then rating.
+    expect(home).toContain(
+      "return (here ? 2000 : 0) + (p.is_available ? 1000 : 0) + (p.rating_avg ?? 0);",
+    );
   });
 });
 

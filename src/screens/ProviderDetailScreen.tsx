@@ -172,9 +172,12 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
    * AWAY OFFERS ONE ACTION, AND IT IS NOT A CALL.
    *
    * The same rule the directory row got on 2026-09-13 (ProviderRow.tsx:413),
-   * from the same reading: `readPresence` is the one interpretation of
-   * `is_available`, so this screen and the card the member tapped to reach it
-   * cannot disagree about who is here. A row that said "Notify" must not open a
+   * from the same column: the master switch, `is_available`, so this screen
+   * and the card the member tapped to reach it cannot disagree about who can
+   * be reached. The switch and NOT the presence dot (2026-09-27, migration
+   * 155): the dot is the server's `online`, a heartbeat in the last 75 s, and
+   * a provider who is open but idle still takes a call, so offering them only
+   * a bell would withhold an action that works. A row that said "Notify" must not open a
    * profile offering Call and Video — that is the false-affordance class twice
    * over, since the tap would ring a phone nobody is holding and `start_call`
    * would refuse it anyway.
@@ -189,7 +192,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
    * pushes to the peer precisely when they are away, the member has a minute,
    * and no session is running.
    */
-  const away = provider !== null && !readPresence(provider.is_available).here;
+  const away = provider !== null && !provider.is_available;
   /*
    * `peer_present` came back from the doorbell: they are here NOW, between the
    * directory read this screen is drawn from and the tap. Offering to fetch
@@ -517,10 +520,18 @@ function Hero({
   // white straight off it, and on 400 -> 600 the 82% meta line measures 3.89:1
   // (3.65:1 at the 600dp column), under 4.5 (check-contrast.mjs GRADIENT_TEXT).
   const gradient = `linear-gradient(150deg, ${theme.color.bg.accentGradientFrom} 0%, ${theme.color.bg.accentGradientTo} 100%)`;
-  const presence = readPresence(provider.is_available);
+  // The hero's dot and its spoken line: the server's `online` or last seen
+  // (migration 155), the reading every other dot uses.
+  const presence = readPresence({
+    online: provider.online,
+    lastSeenAt: provider.last_seen_at,
+    now: new Date(),
+  });
   // Suppressed while they are closed, because the actions below have already
   // collapsed to Notify and a limit on a set nobody can reach says nothing.
-  const channelLine = presence.here ? offeredChannelsLine(provider) : null;
+  // The switch, as `away` is, and not the dot: an open, idle provider's
+  // actions are all still there, and so is the limit on them.
+  const channelLine = provider.is_available ? offeredChannelsLine(provider) : null;
   // "F-28" here too, so the hero, the card and this header agree on how a
   // person is labelled. See `genderLetter`.
   const letter = genderLetter(provider.gender);

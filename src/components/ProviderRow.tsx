@@ -630,16 +630,25 @@ function ProviderRowView({
   const letter = genderLetter(provider.gender);
 
   /**
-   * The dot and the trailing line both come from `is_available` again, as of
-   * 2026-09-17. They came from it before migration 012 as well, and that was
-   * wrong then for a reason that has since been removed rather than forgotten:
-   * `presence` was a second, separate declaration, so reading the listing switch
-   * as the dot said somebody was there when it only meant they wanted work.
-   * There is no second declaration now — see src/lib/presence.ts — and
-   * `readPresence` is still the one reading, so this row, the inbox and the chat
-   * header cannot disagree.
+   * TWO QUESTIONS, TWO COLUMNS (2026-09-27, migration 155).
+   *
+   * The DOT (and its spoken line) is "are they here right now": the server's
+   * `online`, which is the switch open AND a heartbeat within 75 s AND no
+   * offline since, or else their last seen. `readPresence` is the one reading
+   * of it, so this row, the rail, the inbox and the chat header cannot
+   * disagree.
+   *
+   * The CTA (`away` below) is "can I reach them": the master switch,
+   * `is_available`, as it has been since 2026-09-17. A provider with the
+   * switch on who has not opened the app in the last 75 s is still callable,
+   * and the call rings their phone; reading the heartbeat there would put a
+   * Notify on somebody who would pick up.
    */
-  const presence = readPresence(provider.is_available);
+  const presence = readPresence({
+    online: provider.online,
+    lastSeenAt: provider.last_seen_at,
+    now: new Date(),
+  });
 
   /*
    * The CTA calls, unless this provider does not take calls.
@@ -668,8 +677,10 @@ function ProviderRowView({
    * the label" rule was reversed on 2026-09-26 (see the CTA below). The bell
    * still says something the others do not, that this is a different KIND of
    * action from the one the other rows offer.
+   *
+   * The switch, not the dot: see `presence` above.
    */
-  const away = !presence.here;
+  const away = !provider.is_available;
   const canCall = provider.audio_enabled && onCall !== undefined && !away;
   /*
    * BUSY: here, but in a session with someone else (Amit, 2026-09-27). Away
@@ -726,9 +737,9 @@ function ProviderRowView({
    * which this control can have a state to show.
    *
    * WHEN THE PEER TURNS OUT TO BE HERE, this row does NOT keep a local override.
-   * The hook invalidates the directory query, `presence` comes back 'here', and
+   * The hook invalidates the directory query, `is_available` comes back on, and
    * `away` above goes false on the next render — so the row swaps to Call
-   * through the single reading of presence it already has, rather than growing a
+   * through the single reading of availability it already has, rather than growing a
    * second answer to the same question beside it.
    *
    * AND IT SURVIVES A COLD START. The state is restored from the server's own

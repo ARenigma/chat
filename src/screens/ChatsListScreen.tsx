@@ -202,10 +202,16 @@ function ChatListRow({
     ? Number(c.unread_count_member)
     : Number(c.unread_count_provider);
   const unread = unreadCount > 0;
-  // A member has no availability switch, so `peer_available` is false for one by
-  // construction and passing it through would dot every member's face as away.
-  // Null is the honest argument: nothing published, so nothing rendered.
-  const presence = readPresence(c.peer_is_provider ? c.peer_available : null);
+  // The server's reading (migration 155): a provider peer's `peer_online`, the
+  // same derivation as the directory's `online`, so this dot agrees with the
+  // rail and the card. A member peer's presence is never published (false and
+  // null), and neither is anyone's across a block, so those light nothing.
+  // Only the dot is drawn, and it refreshes with the inbox query's cadence.
+  const presence = readPresence({
+    online: c.peer_online,
+    lastSeenAt: c.peer_last_seen_at,
+    now: new Date(),
+  });
   return (
     <View ref={hostRef} collapsable={false}>
       <Pressable

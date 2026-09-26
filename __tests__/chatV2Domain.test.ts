@@ -147,6 +147,8 @@ function thread(
     peer_is_provider: true,
     peer_presence: null,
     peer_last_active_at: null,
+    peer_online: true,
+    peer_last_seen_at: null,
     last_session_at: null,
     last_session_channel: null,
     last_session_duration_seconds: null,

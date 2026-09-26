@@ -377,8 +377,19 @@ export function HomeScreen({
          * names for "spotlighting content that you want to emphasize" while
          * showing a peek of what is next.
          */
-        const score = (p: ProviderSummary) =>
-          (readPresence(p.is_available).here ? 1000 : 0) + (p.rating_avg ?? 0);
+        /*
+         * Three tiers, then rating (2026-09-27, migration 155): online now
+         * (the server's `online`, the same reading as the dot), then open but
+         * not active in the last 75 s (still callable: the CTA follows
+         * `is_available`), then closed (Notify only). `online` implies the
+         * switch, so an online provider scores 2000 + 1000. Before 155 the
+         * switch was the dot, and the first two tiers were one.
+         */
+        const now = new Date();
+        const score = (p: ProviderSummary) => {
+          const here = readPresence({ online: p.online, lastSeenAt: p.last_seen_at, now }).here;
+          return (here ? 2000 : 0) + (p.is_available ? 1000 : 0) + (p.rating_avg ?? 0);
+        };
         const topPicks = [...directory].sort((a, b) => score(b) - score(a)).slice(0, TOP_PICKS);
         // The picks are lifted out of the list below so nobody is shown twice.
         const shown = new Set(topPicks.map(p => p.id));
@@ -951,12 +962,20 @@ export function HomeScreen({
           omission: its only action is `onChat` → `chatFromPotd` → the
           conversation, which IS the notify action (`announce_chat_open`,
           migration 068). There is no call on it to withdraw, and `online` is
-          the same `readPresence` reading as everywhere else. */}
+          the same `readPresence` reading of the server's `online` (155) as
+          every other dot. */}
       <SpotlightCard
         visible={potdVisible && featured !== null}
         name={featured?.display_name ?? 'Someone for you'}
         avatarUri={featured?.avatar_url ?? null}
-        online={featured !== null && readPresence(featured.is_available).here}
+        online={
+          featured !== null &&
+          readPresence({
+            online: featured.online,
+            lastSeenAt: featured.last_seen_at,
+            now: new Date(),
+          }).here
+        }
         onClose={dismissPotd}
         onChat={chatFromPotd}
         testID="potd-sheet"
@@ -1013,10 +1032,25 @@ const RailItem = memo(function ({
     ? Number(chat.unread_count_member)
     : Number(chat.unread_count_provider);
   const unread = unreadCount > 0;
-  // A member has no availability switch, so `peer_available` is false for one by
-  // construction and passing it through would dot every member's face as away.
-  // Null is the honest argument: nothing published, so nothing rendered.
-  const presence = readPresence(chat.peer_is_provider ? chat.peer_available : null);
+  /*
+   * The server's `peer_online` (migration 155), the same derivation the
+   * directory card's `online` is (conversation_peers and provider_directory
+   * share it), so this dot and the card's agree about the same provider. It
+   * used to read `peer_available` behind `peer_is_provider`, and
+   * `conversation_summaries` carried neither until 155: both were undefined,
+   * the reading was "nothing", and the rail drew an unlit dot for a provider
+   * the card below showed lit. That was the reported rail-versus-card
+   * mismatch. A member peer, a blocked pair and a provider never seen all come
+   * back false and null, which lights nothing.
+   *
+   * Only the dot is drawn here, so `now` only has to be a valid clock; the
+   * reading refreshes with the inbox query's own cadence.
+   */
+  const presence = readPresence({
+    online: chat.peer_online,
+    lastSeenAt: chat.peer_last_seen_at,
+    now: new Date(),
+  });
   const handlePress = useCallback(() => onPress(chat.peer_id), [onPress, chat.peer_id]);
   const handleLongPress = useCallback(() => {
     hostRef.current?.measureInWindow((x, y, width, height) => {
@@ -1116,7 +1150,7 @@ const DirectoryPage = memo(function ({
   /*
    * `onCall` is passed for EVERY row, including a row for somebody who is away,
    * and that is correct rather than an oversight: the row decides. Since
-   * 2026-09-13 `ProviderRow` computes `away` from the same `readPresence` and
+   * 2026-09-13 `ProviderRow` computes `away` from the availability switch and
    * drops its Call for a bell (ProviderRow.tsx:413), so no away row on this
    * screen can ring anyone — the CTA falls through to `onPress`.
    *
@@ -1360,7 +1394,16 @@ function FeaturedCard({
     provider.age !== null
       ? ` ${letter === null ? '' : `${letter}-`}${provider.age}`
       : '';
-  const presence = readPresence(provider.is_available);
+  /*
+   * The DOT and the spoken line are the server's reading (migration 155):
+   * `online` is open AND a heartbeat in the last 75 s, and otherwise a last
+   * seen. The Notify marker below is NOT: see `away`.
+   */
+  const presence = readPresence({
+    online: provider.online,
+    lastSeenAt: provider.last_seen_at,
+    now: new Date(),
+  });
   /*
    * SPOKEN, NO LONGER DRAWN (2026-09-26). The card is 150dp wide now, 126 inside
    * its padding, and a one-line tagline there holds about 18 characters of
@@ -1399,8 +1442,11 @@ function FeaturedCard({
   /*
    * AWAY, AND WHAT THE CARD OFFERS BECAUSE OF IT.
    *
-   * The same `!presence.here` reading the directory row uses
-   * (ProviderRow.tsx:431). This hero has never carried a Call, so there is nothing to take
+   * The same `!provider.is_available` test the directory row uses
+   * (ProviderRow.tsx). The switch, NOT the dot (2026-09-27, migration 155):
+   * a provider who is open but has not been active in the last 75 s is still
+   * callable, so the card offers what it offers anyone open and simply draws
+   * no dot. Only a closed switch is away. This hero has never carried a Call, so there is nothing to take
    * away; what it was missing is the other half of the rule, which is that an
    * away provider should be OFFERED the one action that works. The dot slot
    * says "here now" when they are; when they are not, it names what a tap leads
@@ -1412,7 +1458,7 @@ function FeaturedCard({
    * this is `accessible={false}` inside it, exactly as the presence dot it
    * replaces and the rating pill beside it are.
    */
-  const away = !presence.here;
+  const away = !provider.is_available;
   /*
    * The card IS 3:4 now, the crop migration 087 stores every avatar at, so the
    * server is asked for exactly the frame: a resize, not a crop. The old
@@ -1475,9 +1521,11 @@ function FeaturedCard({
             Notify
           </Text>
         </View>
-      ) : (
+      ) : presence.here ? (
+        // Open and active: the dot. Open and idle: nothing in the slot, since
+        // the card offers the same thing either way and a last seen is spoken.
         <View style={styles.featuredOnline} />
-      )}
+      ) : null}
       <View style={styles.featuredBody}>
         <View style={styles.featuredNameRow}>
           {/* The row's name role (titleMediumEmphasized over a nested bodySmall

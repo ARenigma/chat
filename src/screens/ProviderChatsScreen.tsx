@@ -168,7 +168,17 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
             uri={item.peer_avatar_url ?? undefined}
             initial={initialOf(label)}
             size={THREAD_AVATAR}
-            online={readPresence(item.peer_available).here}
+            online={
+              // The server's `peer_online` (migration 155). The peer here is a
+              // member, whose presence is never published, so this is false by
+              // construction and the dot stays unlit; a provider peer (a member
+              // admitted as a provider keeps their threads) lights as everywhere.
+              readPresence({
+                online: item.peer_online,
+                lastSeenAt: item.peer_last_seen_at,
+                now: new Date(),
+              }).here
+            }
           />
           <View style={styles.rowBody}>
             <View style={styles.rowTop}>
