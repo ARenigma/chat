@@ -851,7 +851,7 @@ function ProviderRowView({
                 filled glyph, the "trophy + Wellness Guide" idiom, so the line
                 carries the type without a box competing with the CTA beside it.
                 Hue still tells the two apart down a scrolling column, and the
-                glyph now says it a second way (headset, moon-stars) for anyone
+                glyph now says it a second way (lotus, moon-stars) for anyone
                 who does not separate the hues. The ink is `text/onListener` /
                 `text/onAstrologer`, the text-safe member of each category pair
                 on the card: 8.79 / 8.98:1 light, 11.65 / 10.93:1 dark, both

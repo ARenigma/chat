@@ -233,9 +233,13 @@ describe('every icon name resolves to a glyph the font draws', () => {
   });
 
   it('draws the provider-type marks as filled Phosphor glyphs', () => {
-    // Owner decision 2026-09-26: Listener = filled headset (or ear),
-    // Astrologer = filled moon-stars (or sparkle).
-    expect(config.glyphs.listener).toBe('headset-fill');
+    // Astrologer = filled moon-stars (owner decision 2026-09-26). Listener =
+    // filled lotus since 2026-09-27 (Amit: "we are not sales support, find
+    // something therapy vibe"): the headset read as a call-centre agent. Not
+    // the ear or the sparkle, which `listen` and `unwind` already draw.
+    expect(config.glyphs.listener).toBe('flower-lotus-fill');
+    expect(config.glyphs.listener).not.toBe(config.glyphs.listen);
+    expect(config.glyphs.listener).not.toBe(config.glyphs.unwind);
     expect(config.glyphs.astrologer).toBe('moon-stars-fill');
   });
 });

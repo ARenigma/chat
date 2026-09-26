@@ -648,12 +648,12 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     /*
      * Amit, 2026-09-26: "like trophy + Wellness Guide". The glyph names are the
      * category keys, which design/icons.json maps to FILLED Phosphor glyphs
-     * (headset-fill, moon-stars-fill); the ink is each category's text-safe
+     * (flower-lotus-fill, moon-stars-fill); the ink is each category's text-safe
      * tone on the card, registered in scripts/check-contrast.mjs.
      */
     const body = code(ROW);
     expect(body).not.toContain('<MetaChip');
-    expect(read('design/icons.json')).toContain('"listener": "headset-fill"');
+    expect(read('design/icons.json')).toContain('"listener": "flower-lotus-fill"');
     expect(read('design/icons.json')).toContain('"astrologer": "moon-stars-fill"');
     const category = between(body, 'testID="provider-category"', '<View style={styles.priceSpacer} />');
     expect(category).toContain('name={categoryKey}');
