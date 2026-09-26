@@ -205,13 +205,23 @@ export const ROW_CTA_VISUAL_HEIGHT =
   TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
 
 /**
- * The outline, drawn INSIDE the 33 rather than around it. RN borders take space
- * inside the box, so a 1dp stroke over Bluesky's 8/12 padding would draw a 35dp
- * button; the stroke comes out of the padding instead, 1 + 7 + 17 + 7 + 1 = 33.
+ * The outline, drawn INSIDE the 33 rather than around it, and drawn by its own
+ * layer (`ctaOutline`) rather than by the button's `borderWidth`.
+ *
+ * A layer because the press has to be able to take it away (Amit, on the S22,
+ * 2026-09-27): a border on the button itself stays painted while the fill fades
+ * in over it, and in dark that left a peach step-300 rim round the solid coral.
+ * As its own view it can fade out in step with the fill; see `ctaOutline`.
+ *
+ * The geometry is unchanged. The layer sits absolutely over the button's
+ * padding box, so the 1dp stroke draws over the outermost dp of Bluesky's 8/12
+ * padding: 1 + 7 + 17 + 7 + 1 = 33, the same pixels the in-box border drew.
+ * The padding is the full 8/12 now because nothing in the layout takes the
+ * stroke's width any more.
  */
 const CTA_STROKE = 1;
-const CTA_PAD_Y = TOKENS.space.xs - CTA_STROKE;
-const CTA_PAD_X = TOKENS.space.sm - CTA_STROKE;
+const CTA_PAD_Y = TOKENS.space.xs;
+const CTA_PAD_X = TOKENS.space.sm;
 
 /**
  * The CTA glyph's `size`, chosen so its box IS the label's line box: 17 / 1.2,
@@ -670,6 +680,12 @@ function ProviderRowView({
    */
   const fill = useSharedValue(0);
   const fillStyle = useAnimatedStyle(() => ({ opacity: fill.get() }));
+  /*
+   * The resting outline, going the other way on the same value, so the pressed
+   * button is ONE solid shape with no rim (see `ctaOutline`). Still opacity
+   * only, still one shared value: the two faces cannot drift out of step.
+   */
+  const outlineStyle = useAnimatedStyle(() => ({ opacity: 1 - fill.get() }));
 
   /*
    * The category's ink, keyed by the category so a third one added to
@@ -932,6 +948,13 @@ function ProviderRowView({
                 // without inflating the visual (Pressable.tsx, `slop`).
                 size={ROW_CTA_VISUAL_HEIGHT}
                 style={[styles.cta, away && styles.ctaAway]}>
+                {/* The resting outline, as a layer so the press can fade it
+                    out. First, so it paints under the glyph and the word. */}
+                <Animated.View
+                  pointerEvents="none"
+                  importantForAccessibility="no-hide-descendants"
+                  style={[styles.ctaOutline, away && styles.ctaOutlineAway, outlineStyle]}
+                />
                 {/* Glyph + verb, and the glyph is BACK. REVERSED 2026-09-26,
                     citing Amit's approved mockup: every state leads with its
                     glyph (phone for Call, camera for Video, bubble for Chat,
@@ -1191,8 +1214,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * It goes solid only UNDER THE FINGER (`ctaFill`), which is feedback, not a
    * resting emphasis.
    *
-   * Bluesky's small button: 12/8 padding around a 17dp line, with the 1dp
-   * stroke taken out of the padding (CTA_PAD_X / CTA_PAD_Y) so it draws 33.
+   * Bluesky's small button: 12/8 padding around a 17dp line, 33 tall, with
+   * the 1dp outline drawn over the padding's outer edge by `ctaOutline` rather
+   * than by a border here (see CTA_STROKE).
    * `minHeight`, not `height`: at a large font scale the label grows, and a
    * fixed height would clip it rather than let the button grow inside its 48dp
    * row. No width at all: it hugs its content.
@@ -1214,20 +1238,45 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: CTA_PAD_X,
     paddingVertical: CTA_PAD_Y,
+    // The radius stays HERE as well as on the two layers: Pressable's inner
+    // view clips its children (`overflow: 'hidden'`) to this shape, and its
+    // state layer takes the shape from it.
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
-    borderWidth: CTA_STROKE,
-    // The accent INK, not the fill: this outline is the control's only
-    // boundary and it sits on the card. bg/accent (step 500) there is 2.91:1
-    // in dark, under the 3:1 non-text floor; text/accent (step 300) is 6.22:1.
-    borderColor: t.color.text.accent,
     backgroundColor: t.color.bg.raised,
+  },
+  /*
+   * THE RESTING OUTLINE. Unchanged at rest: 1dp of `text/accent` on the
+   * button's own radius. The accent INK, not the fill, because at rest this
+   * outline is the control's only boundary and it sits on the card: bg/accent
+   * (step 500) there is 2.91:1 in dark, under the 3:1 non-text floor;
+   * text/accent (step 300) is 6.25:1.
+   *
+   * It FADES OUT as the fill fades in (`outlineStyle`, 1 - fill), and that is
+   * the fix for the rim. Amit, on the S22 (2026-09-27): while pressed the
+   * button must read as one solid coral shape. With the outline as the
+   * button's own border it stayed painted round the fill, a lighter step-300
+   * edge in dark. Letting the fill cover the border instead (inset -1) was the
+   * other option and the weaker one: the Pressable's inner view clips to its
+   * box, and even unclipped, two anti-aliased edges laid on each other leave a
+   * fringe of the lower colour on the partly covered pixels.
+   */
+  ctaOutline: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderWidth: CTA_STROKE,
+    borderRadius: TOKENS.radius.xs,
+    borderCurve: 'continuous',
+    borderColor: t.color.text.accent,
   },
   /*
    * `text/accent`, NOT `bg/accent`. `bg/accent` is a FILL colour, what a button
    * is painted, with `text/onAccent` on top; `text/accent` is the ink for coral
    * text on a surface. In light both are ramp step 500 (5.19:1 on the card); in
-   * dark the ink is step 300, 6.22:1 on this card, where step 500 as text would
+   * dark the ink is step 300, 6.25:1 on this card, where step 500 as text would
    * be 2.91:1. Registered on bg/raised in scripts/check-contrast.mjs, as the
    * label and as the outline above.
    *
@@ -1253,12 +1302,21 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * one (animate-expo §4: transform and opacity are free, everything else is
    * a pass).
    *
-   * INSIDE THE STROKE, not over it. Yoga places an absolute child inside its
-   * parent's border, so the 1dp outline stays drawn around the fill: in light it
-   * is the same step 500 and vanishes into it, in dark it is a step-300 rim that
-   * keeps the pressed button's edge at 6.22:1 against the card, where the fill
-   * alone would be 2.91:1. The radius is the outline's inner radius, so the
-   * fill's corners meet the stroke's curve instead of poking through it.
+   * EDGE TO EDGE, NO RIM (Amit, on the S22, 2026-09-27). The fill covers the
+   * whole button on the button's own outer radius, and the outline fades out
+   * under it (`ctaOutline`), so fully pressed it is one solid `bg/accent`
+   * shape. It used to sit inside a stroke that stayed drawn, and in dark that
+   * stroke was a step-300 rim round the step-500 fill.
+   *
+   * THE CONTRAST THAT COSTS, stated rather than hidden: in dark the solid fill
+   * is 2.91:1 against the card, under the 3:1 non-text floor the rim used to
+   * meet at 6.25:1 (light is 5.19:1). Amit accepts it, and the reason holds: the
+   * pressed state is transient feedback under the finger, for the 100-150ms of
+   * a press, not the boundary a member has to find the control by. That
+   * boundary is the RESTING outline, which is unchanged and still 6.25:1. The
+   * word on the fill is text/onAccent at 5.19:1, so what the button says stays
+   * fully legible throughout. Registered as a named exemption in
+   * scripts/check-contrast.mjs.
    */
   ctaFill: {
     position: 'absolute',
@@ -1270,7 +1328,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     gap: TOKENS.space.xs,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: TOKENS.radius.xs - CTA_STROKE,
+    borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
     backgroundColor: t.color.bg.accent,
   },
@@ -1296,6 +1354,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * The 1dp stroke carries the edge, because the fill alone cannot: `bg/pressed`
    * is 1.47:1 against this card in dark. `text/secondary` as the stroke measures
    * 5.00:1 dark and 7.41:1 light against the card, past the 3:1 non-text floor.
+   * It is the `ctaOutline` layer's colour (`ctaOutlineAway`), so it fades out
+   * under the pressed face the same way the coral one does.
    *
    * The fill does NOT change between idle, pending and notified. Only the glyph
    * and the word do. A control that recolours itself on every state change draws
@@ -1304,6 +1364,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    */
   ctaAway: {
     backgroundColor: t.color.bg.pressed,
+  },
+  ctaOutlineAway: {
     borderColor: t.color.text.secondary,
   },
   ctaAwayLabel: {
@@ -1315,6 +1377,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * button's pair, 17.01:1 light / 14.44:1 dark). Solid-while-pressed is the
    * same gesture on both variants; the hue is not, because a coral flash on
    * the secondary action is the hierarchy break the 2026-09-17 note forbids.
+   * No rim here either: `bg/inverse` is 17.01:1 light / 12.95:1 dark on the
+   * card, so the fill is its own edge once the grey outline fades.
    */
   ctaFillAway: {
     backgroundColor: t.color.bg.inverse,

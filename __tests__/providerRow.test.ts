@@ -447,17 +447,15 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     );
 
     /*
-     * The stroke comes OUT of the padding: RN borders take space inside the
-     * box, so 1 + 7 + 17 + 7 + 1 = 33, where a 1dp outline around Bluesky's
-     * 8/12 would draw 35.
+     * The stroke is drawn OVER the padding by its own absolute layer, not by a
+     * border that takes layout: 8 + 17 + 8 = 33, and the 1dp outline covers
+     * the outermost dp of each 8, so the glyph still sits 7dp inside the ink,
+     * the same pixels the old in-box border (1 + 7 + 17 + 7 + 1) drew.
      */
     expect(src).toContain('const CTA_STROKE = 1;');
-    expect(src).toContain('const CTA_PAD_Y = TOKENS.space.xs - CTA_STROKE;');
-    expect(src).toContain('const CTA_PAD_X = TOKENS.space.sm - CTA_STROKE;');
-    const stroke = 1;
-    expect(
-      stroke * 2 + (TOKENS.space.xs - stroke) * 2 + TOKENS.typography.textSmSemiBold.lineHeight,
-    ).toBe(visual);
+    expect(src).toContain('const CTA_PAD_Y = TOKENS.space.xs;');
+    expect(src).toContain('const CTA_PAD_X = TOKENS.space.sm;');
+    expect(TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight).toBe(visual);
 
     /*
      * The glyph's box is the label's line box, so it cannot be the tallest thing
@@ -479,7 +477,17 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(cta).not.toMatch(/\bwidth:/);
     expect(cta).toContain('paddingHorizontal: CTA_PAD_X');
     expect(cta).toContain('paddingVertical: CTA_PAD_Y');
-    expect(cta).toContain('borderWidth: CTA_STROKE');
+    // The outline is a layer, so nothing on the button itself draws an edge
+    // that the press could not take away.
+    expect(cta).not.toContain('borderWidth');
+    expect(cta).not.toContain('borderColor');
+    const outline = style('ctaOutline');
+    expect(outline).toContain("position: 'absolute'");
+    expect(outline).toContain('borderWidth: CTA_STROKE');
+    expect(outline).toContain('borderRadius: TOKENS.radius.xs');
+    expect(outline).toContain('borderColor: t.color.text.accent');
+    expect(style('ctaOutlineAway')).toContain('borderColor: t.color.text.secondary');
+    expect(style('ctaAway')).not.toContain('borderColor');
     expect(src).not.toContain('ROW_CTA_WIDTH');
     expect(style('ctaLabel')).toContain('...TOKENS.typography.textSmSemiBold');
   });
@@ -520,7 +528,36 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     const fill = style('ctaFill');
     expect(fill).toContain("position: 'absolute'");
     expect(fill).toContain('backgroundColor: t.color.bg.accent');
-    expect(fill).toContain('borderRadius: TOKENS.radius.xs - CTA_STROKE');
+    const outline = style('ctaOutline');
+
+    /*
+     * NO RIM WHILE PRESSED (Amit, on the S22, 2026-09-27). This used to pin the
+     * opposite: the fill on the outline's INNER radius, inside a 1dp stroke
+     * that stayed drawn, which in dark was a peach step-300 rim round the solid
+     * coral. Now the fill runs edge to edge on the button's own radius and the
+     * outline fades out on the same shared value, so fully pressed there is
+     * one bg/accent shape and nothing lighter round it.
+     */
+    for (const edge of ['top: 0', 'right: 0', 'bottom: 0', 'left: 0']) {
+      expect(fill).toContain(edge);
+      expect(outline).toContain(edge);
+    }
+    expect(fill).toContain('borderRadius: TOKENS.radius.xs,');
+    expect(fill).not.toContain('CTA_STROKE');
+    expect(style('cta')).toContain('borderRadius: TOKENS.radius.xs,');
+    expect(body).toContain(
+      'const outlineStyle = useAnimatedStyle(() => ({ opacity: 1 - fill.get() }))',
+    );
+    // The outline layer paints FIRST (under the glyph and word), the fill last.
+    const layers = between(body, 'style={[styles.cta, away && styles.ctaAway]}>', '</Pressable>');
+    const outlineAt = layers.indexOf('styles.ctaOutline, away && styles.ctaOutlineAway, outlineStyle');
+    expect(outlineAt).toBeGreaterThan(-1);
+    expect(outlineAt).toBeLessThan(layers.indexOf('<Icon'));
+    expect(layers.indexOf('styles.ctaFill')).toBeGreaterThan(layers.indexOf('<Icon'));
+    // And the cost of it, 2.91:1 in dark, is a named exemption, not a silence.
+    expect(read('scripts/check-contrast.mjs')).toMatch(
+      /fg: 'bg\/accent',\s+bg: 'bg\/raised',\s+target: 2\.8,[\s\S]{0,200}exempt:/,
+    );
     expect(style('ctaFillLabel')).toContain('color: t.color.text.onAccent');
     expect(cta).toContain('pointerEvents="none"');
     expect(cta).toContain('importantForAccessibility="no-hide-descendants"');

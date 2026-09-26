@@ -258,15 +258,34 @@ const PAIRS = [
       'non-text, 3:1. The primary photo also carries a check badge, a suggestion also fills the field, an avatar choice also changes the preview',
   },
   /*
-   * The outline of ProviderRow's CTA, which sits on the card fill and is that
-   * control's only boundary. bg/accent there is 2.91:1 in dark, under 3, so the
-   * stroke takes the accent INK instead: 6.22:1.
+   * The outline of ProviderRow's CTA AT REST, which sits on the card fill and is
+   * that control's only boundary. bg/accent there is 2.91:1 in dark, under 3,
+   * so the stroke takes the accent INK instead: 6.25:1.
    */
   {
     fg: 'text/accent',
     bg: 'bg/raised',
     target: 3,
-    what: "the explore row CTA's outline on the card (non-text)",
+    what: "the explore row CTA's resting outline on the card (non-text)",
+  },
+  /*
+   * ...and the same CTA WHILE PRESSED, which is the one place bg/accent meets
+   * the card with nothing between them. Since 2026-09-27 the press is one solid
+   * coral shape with the outline faded out under it (Amit, on the S22: remove
+   * the rim), so the fill's own edge is the boundary for the length of a press:
+   * 5.19:1 light, 2.91:1 dark, under the nominal 3.
+   *
+   * Named rather than waived. The target is a FLOOR for this transient state,
+   * set under today's 2.91 so a ramp change that sinks the pressed coral into
+   * the card still fails here.
+   */
+  {
+    fg: 'bg/accent',
+    bg: 'bg/raised',
+    target: 2.8,
+    what: 'the explore row CTA fill while pressed, its own edge on the card (non-text)',
+    exempt:
+      'transient press feedback under the finger (100-150ms), not the boundary the control is found by: the resting outline is registered above at 6.25:1 and returns on release, and the label on the fill is text/onAccent at 5.19:1. Owner decision 2026-09-27',
   },
   /*
    * The coral WASH (step 50 light / 950 dark) and what sits on it.
