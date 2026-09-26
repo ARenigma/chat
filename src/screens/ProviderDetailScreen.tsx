@@ -512,7 +512,11 @@ function Hero({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const { width: windowWidth } = useWindowDimensions();
-  const gradient = `linear-gradient(150deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
+  // The coral field, ramp 500 -> 700 rather than 400 -> 600 (owner,
+  // 2026-09-27): with no photo there is no scrim, so the name block reads
+  // white straight off it, and on 400 -> 600 the 82% meta line measures 3.89:1
+  // (3.65:1 at the 600dp column), under 4.5 (check-contrast.mjs GRADIENT_TEXT).
+  const gradient = `linear-gradient(150deg, ${theme.color.bg.accentGradientFrom} 0%, ${theme.color.bg.accentGradientTo} 100%)`;
   const presence = readPresence(provider.is_available);
   // Suppressed while they are closed, because the actions below have already
   // collapsed to Notify and a limit on a set nobody can reach says nothing.

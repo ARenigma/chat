@@ -23,6 +23,8 @@
   --bg-scrim: #000000;
   --bg-accent: #C2401F;
   --bg-accent-strong: #C2401F;
+  --bg-accent-gradient-from: #C2401F;
+  --bg-accent-gradient-to: #832B15;
   --bg-accent-tint: #F9EBE7;
   --bg-nav-indicator: #F9EBE7;
   --bg-listener: #D8E8FF;
@@ -161,6 +163,8 @@
   --bg-scrim: #000000;
   --bg-accent: #C2401F;
   --bg-accent-strong: #C2401F;
+  --bg-accent-gradient-from: #C2401F;
+  --bg-accent-gradient-to: #832B15;
   --bg-accent-tint: #361108;
   --bg-nav-indicator: #49170A;
   --bg-listener: #20507F;

@@ -1331,7 +1331,10 @@ function FeaturedCard({
   const theme = useTheme();
   // The gradient is built from the accent tokens rather than raw hex, so the
   // featured hero stays inside the accent budget and follows a theme change.
-  const gradient = `linear-gradient(140deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
+  // Ramp 500 -> 700, not the 400 -> 600 field (owner, 2026-09-27): the name,
+  // age and years sit on it in white with no scrim, and on 400 -> 600 the 82%
+  // age line measures 3.89:1, under 4.5 (check-contrast.mjs GRADIENT_TEXT).
+  const gradient = `linear-gradient(140deg, ${theme.color.bg.accentGradientFrom} 0%, ${theme.color.bg.accentGradientTo} 100%)`;
   /*
    * "F-34", the same shorthand the explore card uses.
    *
