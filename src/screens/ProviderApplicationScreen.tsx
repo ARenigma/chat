@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Image,
   Keyboard,
@@ -66,11 +66,52 @@ interface Props {
   onBack: () => void;
   /** Kept for App.tsx; the real transition is the role flip → provider tree. */
   onSubmitted: () => void;
+  /**
+   * What a host needs to make hardware back match the header arrow, published
+   * whenever the phase changes (the `Apply` route adapter, step 7). The old
+   * tree passes nothing and its back is unchanged.
+   */
+  onGuard?: (guard: ApplyGuard) => void;
 }
 
-
-
 type Phase = 'verify' | 'checking' | 'confirm' | 'profile' | 'done';
+
+/** The application's back contract, as its host reads it. */
+export interface ApplyGuard {
+  phase: Phase;
+  /**
+   * Do what this phase's header arrow does. True when the step was taken
+   * here (the host keeps the route); false in `verify`, where back leaves.
+   */
+  backStep: () => boolean;
+}
+
+/**
+ * What back does in each phase: exactly what that phase's header arrow does,
+ * because Up and Back are identical within an app
+ * (https://developer.android.com/guide/navigation/principles).
+ *
+ *   verify            → leave the screen (the arrow is `onBack`)
+ *   checking, confirm → back to the form with the ladder reset (`onEditDetails`)
+ *   profile           → back to the form (`setPhase('verify')`)
+ *   done              → nothing: "Go to my home" is the only way out, because
+ *                       the role has already flipped
+ *
+ * Pure so the table is testable without the screen (nav-migration §4, 3c).
+ */
+export function applicationBackStep(phase: Phase): 'leave' | 'editDetails' | 'toVerify' | 'stay' {
+  switch (phase) {
+    case 'verify':
+      return 'leave';
+    case 'checking':
+    case 'confirm':
+      return 'editDetails';
+    case 'profile':
+      return 'toVerify';
+    case 'done':
+      return 'stay';
+  }
+}
 
 /** Where one rung of the verification ladder has got to. */
 type StepState = 'waiting' | 'running' | 'ok' | 'failed';
@@ -174,7 +215,7 @@ const ACCOUNT_SHAPE = /^[0-9]{9,18}$/;
  *      no admin review (Cashfree KYC is the vetting; the admin console keeps an
  *      after-the-fact Providers list + suspend).
  */
-export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
+export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Props) {
   /*
    * This screen covers Home, and Home stays mounted underneath it (App.tsx
    * renders pushed screens as overlays so returning never remounts Home's
@@ -428,6 +469,30 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
     setFetched(null);
     setPhase('verify');
   }, []);
+
+  // Published for the step-7 route's usePreventRemove; nothing reads it yet.
+  useEffect(() => {
+    if (onGuard === undefined) {
+      return;
+    }
+    onGuard({
+      phase,
+      backStep: () => {
+        switch (applicationBackStep(phase)) {
+          case 'leave':
+            return false;
+          case 'editDetails':
+            onEditDetails();
+            return true;
+          case 'toVerify':
+            setPhase('verify');
+            return true;
+          case 'stay':
+            return true;
+        }
+      },
+    });
+  }, [phase, onEditDetails, onGuard]);
 
   // The stage name, checked while they type rather than only when Go live
   // fails: the same `check_display_name` the member flow uses (3–24 chars,

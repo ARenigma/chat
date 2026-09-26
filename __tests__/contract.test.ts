@@ -9060,3 +9060,28 @@ describe('navigation step 6: the call screen ends through a state', () => {
     expect(call).toMatch(/onGuard\?\.\(\{ ending, openLeave: \(\) => setLeaveDialogVisible\(true\) \}\)/);
   });
 });
+
+describe('navigation step 6: the application says what back does in each phase', () => {
+  const apply = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
+
+  it('maps every phase to what its header arrow does', () => {
+    const table = apply.slice(
+      apply.indexOf('export function applicationBackStep'),
+      apply.indexOf('export function ProviderApplicationScreen'),
+    );
+    expect(table).toMatch(/case 'verify':\s*return 'leave';/);
+    expect(table).toMatch(/case 'checking':\s*case 'confirm':\s*return 'editDetails';/);
+    expect(table).toMatch(/case 'profile':\s*return 'toVerify';/);
+    expect(table).toMatch(/case 'done':\s*return 'stay';/);
+    // ...and the arrows it claims to match are the ones the phases render.
+    expect(apply).toMatch(/if \(phase === 'checking'\) \{[\s\S]{0,200}<Header onBack=\{onEditDetails\} \/>/);
+    expect(apply).toMatch(/<Header onBack=\{\(\) => setPhase\('verify'\)\} \/>/);
+    expect(apply).toMatch(/if \(phase === 'verify'\) \{[\s\S]{0,200}<Header onBack=\{onBack\} \/>/);
+  });
+
+  it('publishes backStep for the route, and leaves only in verify', () => {
+    expect(apply).toMatch(/case 'leave':\s*return false;/);
+    expect(apply).toMatch(/case 'editDetails':\s*onEditDetails\(\);\s*return true;/);
+    expect(apply).toContain('}, [phase, onEditDetails, onGuard]);');
+  });
+});
