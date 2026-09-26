@@ -920,7 +920,9 @@ describe('large text roles carry a font-scale cap', () => {
   // cannot overflow a title the way an uncapped one would. Body/label/numeral
   // roles are uncapped by construction and never match. See ADR-0024.
   const CAPPED_SPREAD =
-    /\.\.\.\s*TOKENS\.typography\.(wordmark|display|headline|title)[A-Za-z]*/;
+    // textLgSemiBoldTight is the one capped Bluesky role (the screen title,
+    // Layout.Header maxFontSizeMultiplier={2}); the other text* roles are not.
+    /\.\.\.\s*TOKENS\.typography\.(?:(?:wordmark|display|headline|title)[A-Za-z]*|textLgSemiBoldTight\b)/;
   const sources = sourceFiles()
     .filter(f => f.endsWith('.tsx'))
     .map(f => ({ file: f, body: stripComments(read(f)) }));
@@ -2553,9 +2555,51 @@ describe('iOS conformance', () => {
       'bodyMedium',
       'labelLarge',
       'numeralDisplay',
+      'textSm',
+      'textSmSemiBold',
+      'textMdSemiBold',
+      'textLgSemiBold',
     ]) {
       expect(cap[role]).toBeUndefined();
     }
+    // The Bluesky screen title is capped at 2 (Layout.Header TitleText).
+    expect(cap.textLgSemiBoldTight).toBe(2);
+  });
+
+  it('carries the Bluesky alf header roles at alf sizes, in the Geist faces', () => {
+    // ADR-0033 (Amit, 2026-09-26): headers and sub headers take Bluesky's sizes
+    // and weights. Sizes are @bsky.app/alf `fontSize`; line heights are what alf
+    // normalizeTextStyles computes, Math.round(size * leading) with snug 1.3 and
+    // tight 1.15. Asserted as arithmetic so a hand-rounded value cannot pass.
+    const ALF = { xs: 11.3, sm: 13.1, md: 15, lg: 16.9, _3xl: 24.3 };
+    const SNUG = 1.3;
+    const TIGHT = 1.15;
+    const t = LIGHT.typography as Record<
+      string,
+      { fontFamily: string; fontSize: number; lineHeight: number; letterSpacing: number }
+    >;
+    const cases: [string, number, number, string][] = [
+      ['textXs', ALF.xs, SNUG, 'Geist-Regular'],
+      ['textSm', ALF.sm, SNUG, 'Geist-Regular'],
+      ['textSmTight', ALF.sm, TIGHT, 'Geist-Regular'],
+      ['textSmSemiBold', ALF.sm, SNUG, 'Geist-SemiBold'],
+      ['textMd', ALF.md, SNUG, 'Geist-Regular'],
+      ['textMdSemiBold', ALF.md, SNUG, 'Geist-SemiBold'],
+      ['textLgSemiBold', ALF.lg, SNUG, 'Geist-SemiBold'],
+      ['textLgSemiBoldTight', ALF.lg, TIGHT, 'Geist-SemiBold'],
+      ['text3xlBold', ALF._3xl, SNUG, 'Geist-Bold'],
+      ['text3xlBoldTight', ALF._3xl, TIGHT, 'Geist-Bold'],
+    ];
+    for (const [name, size, leading, face] of cases) {
+      const role = t[name];
+      expect(role).toBeDefined();
+      expect(`${name} ${role?.fontSize}`).toBe(`${name} ${size}`);
+      expect(`${name} ${role?.lineHeight}`).toBe(`${name} ${Math.round(size * leading)}`);
+      expect(`${name} ${role?.fontFamily}`).toBe(`${name} ${face}`);
+      expect(role?.letterSpacing).toBe(0);
+    }
+    // Bluesky's pager tab (TabBar.tsx:492) and the snug text_md line agree.
+    expect(t.textMdSemiBold?.lineHeight).toBe(20);
   });
 
   it('binds the decorative face block to real bundled families', () => {
