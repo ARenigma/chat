@@ -211,10 +211,12 @@ describe('a selected money chip is a filled container', () => {
        * flipped text/onAccent to near-black ink and the pair is now 7.21:1, so
        * the claim is only true in LIGHT. Narrowed rather than deleted: light is
        * still the mode where a filled chip must use the deeper step.
+       *
+       * Deleted 2026-09-26, and replaced with its opposite: there is one coral
+       * now, ramp step 500 under both names, so bg/accent carries this chip's
+       * labels at 5.27:1 in both modes (walletTone.test.ts pins the two equal).
        */
-      if (mode === 'Light') {
-        expect(contrast(hex('text/onAccent', mode), hex('bg/accent', mode))).toBeLessThan(4.5);
-      }
+      expect(contrast(hex('text/onAccent', mode), hex('bg/accent', mode))).toBeGreaterThanOrEqual(4.5);
     }
   });
 

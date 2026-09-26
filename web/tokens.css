@@ -4,7 +4,7 @@
  * from. If the site and the app ever look like different products, this file is
  * stale, not wrong.
  *
- * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
+ * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, drawn from one ramp whose step 500 is the logo, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
  */
 
 :root {
@@ -21,9 +21,9 @@
   --bg-selected: #D1D1D6;
   --bg-inverse: #1C1C1E;
   --bg-scrim: #000000;
-  --bg-accent: #F26836;
-  --bg-accent-strong: #C14B1F;
-  --bg-accent-tint: #FCE7E2;
+  --bg-accent: #C04018;
+  --bg-accent-strong: #C04018;
+  --bg-accent-tint: #F9EAE6;
   --bg-listener: #D8E8FF;
   --bg-astrologer: #EBE0FF;
   --bg-positive: #DCE8E3;
@@ -35,8 +35,10 @@
   --text-tertiary: #78787D;
   --text-section: #6A6F72;
   --text-muted: #8E8E93;
-  --text-accent: #BD3E0F;
+  --text-accent: #C04018;
   --text-on-accent: #FFFFFF;
+  --text-on-accent-tint: #67210C;
+  --text-on-state: #FFFFFF;
   --text-on-inverse: #FFFFFF;
   --text-positive: #1F4A3F;
   --text-token: #4A4708;
@@ -46,7 +48,7 @@
   --text-on-token-strong: #FFFFFF;
   --border-hairline: #C6C6C8;
   --border-strong: #C7C7CC;
-  --border-accent: #F26836;
+  --border-accent: #C04018;
   --state-available: #12946A;
   --state-danger: #733635;
   --mark-talk: #E0245E;
@@ -54,11 +56,11 @@
   --mark-vent: #C25E00;
   --mark-share: #7A3DE0;
   --mark-unwind: #0F7F62;
-  --bubble-mine: #FBDAD0;
+  --bubble-mine: #C04018;
   --bubble-theirs: #FFFFFF;
-  --bubble-text: #0A0A0A;
-  --bubble-meta: rgba(0,0,0,0.6);
-  --bubble-tick-read: #007BFC;
+  --bubble-text: #FFFFFF;
+  --bubble-meta: rgba(255,255,255,0.8);
+  --bubble-tick-read: #FFFFFF;
   --bubble-wallpaper: #F5F1EB;
   --media-scrim: rgba(0,0,0,0.55);
   --media-meta: rgba(255,255,255,0.72);
@@ -150,9 +152,9 @@
   --bg-selected: #26303D;
   --bg-inverse: #E9EEF4;
   --bg-scrim: #000000;
-  --bg-accent: #FF8457;
-  --bg-accent-strong: #FF936B;
-  --bg-accent-tint: #3A211D;
+  --bg-accent: #C04018;
+  --bg-accent-strong: #C04018;
+  --bg-accent-tint: #351107;
   --bg-listener: #20507F;
   --bg-astrologer: #452F70;
   --bg-positive: #16302A;
@@ -164,8 +166,10 @@
   --text-tertiary: #687788;
   --text-section: #8896A4;
   --text-muted: #5C6B7A;
-  --text-accent: #FFAD8F;
-  --text-on-accent: #0A1F14;
+  --text-accent: #DE947F;
+  --text-on-accent: #FFFFFF;
+  --text-on-accent-tint: #DE947F;
+  --text-on-state: #0A1F14;
   --text-on-inverse: #151E27;
   --text-positive: #A8D8C8;
   --text-token: #E4E26A;
@@ -175,7 +179,7 @@
   --text-on-token-strong: #FFFFFF;
   --border-hairline: #303C4A;
   --border-strong: #3A4A5C;
-  --border-accent: #FF8457;
+  --border-accent: #C04018;
   --state-available: #3FD69B;
   --state-danger: #E39B92;
   --mark-talk: #E0245E;
@@ -183,11 +187,11 @@
   --mark-vent: #C25E00;
   --mark-share: #7A3DE0;
   --mark-unwind: #0F7F62;
-  --bubble-mine: #93361A;
+  --bubble-mine: #C04018;
   --bubble-theirs: #232E3B;
-  --bubble-text: #FAFAFA;
-  --bubble-meta: rgba(255,255,255,0.6);
-  --bubble-tick-read: #53BDEB;
+  --bubble-text: #FFFFFF;
+  --bubble-meta: rgba(255,255,255,0.8);
+  --bubble-tick-read: #FFFFFF;
   --bubble-wallpaper: #151E27;
   --media-scrim: rgba(0,0,0,0.55);
   --media-meta: rgba(255,255,255,0.72);

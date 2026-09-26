@@ -125,118 +125,91 @@ const PAIRS = [
     exempt:
       'glanceable metadata ONLY, never the only carrier of meaning, the row it labels is legible without it. NOT a control: the label of anything tappable is the only carrier of what the tap does, so it takes the full 4.5 and is registered as its own pair',
   },
+  /*
+   * THE CORAL, re-registered 2026-09-26 when every coral role was pinned to one
+   * ramp (design/tokens.json `color.ramp`, Bluesky's alf model). Every fill is
+   * step 500 in both modes, so the rows below that used to exist to PROHIBIT a
+   * label on the pale "bright" coral are now rows that PERMIT one: white on
+   * step 500 is 5.27:1, the same number in light and dark. What changed shape
+   * is the ink: accent text is 500 light / 300 dark, text on a tint is its own
+   * role (800 / 300), and the own bubble takes white.
+   */
   {
     fg: 'text/onAccent',
     bg: 'bg/accentStrong',
     target: 4.5,
-    /*
-     * NOT the bubble. The outgoing bubble is `bubble/mine` (pale coral light /
-     * deep coral dark, takes bubble/text); this pair measures a filled accent
-     * control under its label. Light accentStrong is #A74029 and carries white
-     * at 6.16:1 — it was #C0492F at 4.96:1 until the coral was darkened a step
-     * on 2026-09-12 (Amit: "our token is too light.. make it little darker
-     * coral"), which moved this pair further clear rather than closer. Still
-     * treat any tune of bg/accentStrong as load-bearing: it was on 4.96 once.
-     */
     what: 'the label on a filled accent control',
   },
   /*
-   * The bright accent, registered because it must NEVER carry a label.
-   *
-   * This pair's ABSENCE was the defect. `text/onAccent` was measured against
-   * `bg/accentStrong` above and against nothing else, so the file reported "56
-   * pairs meet WCAG AA targets" while white 12sp and 14sp labels shipped on
-   * `bg/accent` on five surfaces — a spotlight CTA, the talk-time meter's
-   * Recharge pill, the wallet ₹ disc, a recharge pack ribbon and the selected
-   * age chip. A gate that only measures the pairs somebody remembered to list
-   * cannot report the pair somebody forgot, so the forgotten one is listed.
-   *
-   * developer.android.com/guide/topics/ui/accessibility/apps ("Increase text
-   * visibility"): "If the text is smaller than 18sp, or if the text is bold and
-   * smaller than 14sp, use foreground and background colors that result in a
-   * color contrast ratio of at least 4.5:1. For all other text, set the color
-   * contrast ratio to at least 3:1." Every one of those five labels was under
-   * 18sp, so 4.5:1 was the floor and 3.44:1 light / 2.59:1 dark was the reality.
-   *
-   * `target` is the measured floor, not a legibility threshold — the same move
-   * `border/hairline` on `bg/raised` makes at 1.2. It cannot be 4.5, and it
-   * cannot even be the 3:1 large-text step, because in dark mode the accent is a
-   * LIGHT blue (#5FA3DE) and 2.59:1 clears neither. There is no size at which
-   * white is legible on this fill in dark, and no ink in the palette rescues it
-   * either (`text/primary` on `bg/accent` is 4.95:1 light but 2.70:1 dark, and
-   * in dark `text/primary` IS white). So the honest reading is not "large text
-   * only" — it is that this pair has no permitted use, which is what
-   * design/tokens.json says on the token itself.
+   * The pair whose ABSENCE was once the defect (white labels shipped on the pale
+   * coral at 3.44:1 on five surfaces while this file reported all green), kept
+   * registered for that reason. It now passes at the full 4.5: bg/accent and
+   * bg/accentStrong are the same step, so there is no longer a coral that must
+   * not carry text. developer.android.com/guide/topics/ui/accessibility/apps
+   * ("Increase text visibility") puts every label under 18sp at 4.5:1.
    */
   {
     fg: 'text/onAccent',
     bg: 'bg/accent',
-    target: 2.5,
-    what: 'NOT PERMITTED IN LIGHT — the bright accent under its label',
-    exempt:
-      'registered at its measured floor rather than a legibility target. Dark mode flips text/onAccent to near-black ink on the coral, and that pair measures 6.15:1 — genuinely legible, so no dark prohibition. LIGHT is still prohibited at 3.89:1: white on #EE4027 clears neither 4.5 nor the 3:1 large-text step by a useful margin (bg/accentStrong #A74029, 6.16:1, is the step that carries a label there). Both figures moved on 2026-09-12 when the coral was darkened a step (light 3.28 -> 3.89, dark 7.13 -> 6.15); the light prohibition is unchanged in kind, and the floor stays 2.5 because one target covers both modes and light is the binding one',
+    target: 4.5,
+    what: 'a label on the accent fill (spotlight CTA, recharge pill, push gate)',
   },
   /*
-   * The chat bubbles (outgoing recoloured to coral 2026-09-10).
+   * The chat bubbles. Your own bubble is the brand fill, step 500 in both
+   * modes, so it takes white ink (bubble/text); the peer's bubble is neutral
+   * and takes text/primary, which is what ChatMessageCellV2 reads for it. The
+   * one bubble/text value served both bubbles only while the outgoing fill was
+   * pale in light, and that fill is gone.
    *
-   * Registered because the bubble fills are the one place in this palette where
-   * light and dark are not the same colour dimmed: light outgoing is a PALE
-   * coral (#FBDAD0) taking near-black text, dark outgoing is a DEEP coral
-   * (#6E3A2E) taking near-white. A single `bubble/text` token serves both, so
-   * these four rows are what prove that one value works against all four fills.
-   *
-   * `bubble/meta` — the timestamp and the sent/delivered tick — is deliberately
-   * NOT registered: it is rgba, and this file's parser reads six-digit hex
-   * only. It falls under the same exemption the existing timestamps row states
-   * (glanceable metadata, never the only carrier of meaning). Compositing it
-   * here would mean hard-coding a blend result that the token itself does not
-   * contain, which is worse than naming the gap.
+   * `bubble/meta` is rgba, which this reader cannot parse, so it is composited
+   * over the bubble in BUBBLE_META below rather than left as a named gap.
    */
   {
     fg: 'bubble/text',
     bg: 'bubble/mine',
     target: 4.5,
-    what: 'your own message',
+    what: 'your own message, and the quote inside it',
   },
   {
-    fg: 'bubble/text',
+    fg: 'text/onAccent',
+    bg: 'bubble/mine',
+    target: 4.5,
+    what: 'the voice note player ink on your own bubble',
+  },
+  {
+    fg: 'text/primary',
     bg: 'bubble/theirs',
     target: 4.5,
-    what: 'their message',
+    what: 'their message, and the quote inside it',
   },
   {
     fg: 'bubble/tickRead',
     bg: 'bubble/mine',
     target: 3,
-    what: 'the blue read tick on your own bubble',
+    what: 'the read tick on your own bubble',
     exempt:
-      'a non-text indicator, and never the only signal that a message was read — the tick doubles from one to two glyphs, so its MEANING survives even where its colour does not; 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps',
+      'a non-text indicator, and never the only signal that a message was read: read is the two-glyph checkCheck, sent is the single check. 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps',
   },
   /*
-   * The reply quote inside a bubble. Registered on 2026-09-12 because it was
-   * the one surface in the transcript that nothing measured, and it had been
-   * illegible in both modes since the outgoing bubble stopped being the accent
-   * fill: the rule and both lines were `text/onAccent`, which measured 1.31:1
-   * light and 1.89:1 dark on `bubble/mine`. Only two rows are needed rather
-   * than four, because dropping the fork means the quote takes the same
-   * `bubble/text` the body does, and those two pairs are already registered
-   * above — what is NOT covered there is the left rule, so that is what these
-   * measure, against both fills.
+   * The reply-quote rule, a 2dp bar beside a quoted message. On your own bubble
+   * it takes the bubble's own ink, because no coral can be seen on a coral
+   * fill; on the peer's it takes text/accent, because bg/accent (step 500) is
+   * 2.61:1 on the dark peer bubble #232E3B and step 300 is 5.67:1.
    */
   {
-    fg: 'bg/accentStrong',
+    fg: 'bubble/text',
     bg: 'bubble/mine',
     target: 3,
     what: 'the reply-quote rule inside your own bubble (non-text)',
     exempt:
-      'a 2dp rule, not text: 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps. It is also never the only signal — the quoted author and body sit beside it in bubble/text',
+      'a 2dp rule, not text: 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps. Never the only signal, the quoted author and body sit beside it',
   },
   {
-    fg: 'bg/accentStrong',
+    fg: 'text/accent',
     bg: 'bubble/theirs',
     target: 3,
     what: 'the reply-quote rule inside their bubble (non-text)',
-    exempt: 'same rule, other fill — see the row above',
+    exempt: 'same rule, other fill, see the row above',
   },
   {
     fg: 'text/onInverse',
@@ -244,87 +217,109 @@ const PAIRS = [
     target: 4.5,
     what: 'the primary button label',
   },
-  {
-    fg: 'text/accent',
-    bg: 'bg/base',
-    target: 4.5,
-    what: 'links and the read receipt',
-  },
-  {
-    fg: 'text/accent',
-    bg: 'bg/base',
-    target: 4.5,
-    what: 'the explore row CTA label',
-  },
-  {
-    fg: 'bg/accent',
-    bg: 'bg/base',
-    target: 3,
-    what: 'the outline around the explore row CTA',
-    exempt:
-      'a non-text boundary, and never the only signal — the label inside it reads "Chat" in text/accent at full AA. 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps',
-  },
-  {
-    fg: 'text/accent',
-    bg: 'bg/raised',
-    target: 4.5,
-    what: 'accent text in a card',
-  },
-  {
-    fg: 'text/accent',
-    bg: 'bg/accentTint',
-    target: 4.5,
-    what: 'the avatar initial',
-  },
   /*
-   * The away "Notify" control, on the profile and on the directory row.
-   *
-   * Registered because its ABSENCE was the defect, the same way `text/onAccent`
-   * on `bg/accent` was. Both surfaces painted an ENABLED control with M3's
-   * DISABLED recipe — transparent container, hairline stroke, tertiary ink —
-   * and this file reported "contrast OK" throughout, because neither pair was
-   * listed and the tertiary-on-a-card row above was broad enough to cover the
-   * one that existed. What was actually on screen: the label at 4.39:1 light /
-   * 3.30:1 dark against the 4.5 floor (12dp and 14dp type, so 4.5 is the floor
-   * — developer.android.com/guide/topics/ui/accessibility/apps), and a boundary
-   * at 1.71:1 light / 1.35:1 dark against 3. The ProviderDetail container was
-   * worse than a low number: `styles.cta` also filled with `bg/raised`, the
-   * card's own colour, so the container had literally no contrast with the
-   * surface it sat on.
-   *
-   * The recipe is now M3's FILLED TONAL button: "Filled tonal buttons have a
-   * lighter background color and darker label color, making them less visually
-   * prominent than a regular filled button. They're still used for final or
-   * unblocking actions in a flow, but may be better when these actions don't
-   * require quite so much emphasis" — which is exactly what Notify is next to
-   * Call. Emphasis order in the same doc: elevated, filled, filled tonal,
-   * outlined, text.
-   * https://github.com/material-components/material-components-android/blob/master/docs/components/CommonButton.md
-   *
-   * ONE STATED DEPARTURE: M3's tonal button has no stroke (strokeColor null,
-   * strokeWidth 0dp). Ours keeps a 1dp accent stroke, and the third row below
-   * is why — `bg/accentTint` against the card it sits on measures 1.19:1 light
-   * and 1.02:1 dark, i.e. in dark mode the tonal FILL alone is not a boundary
-   * at all. The stroke is what makes the control findable, so it is measured on
-   * the 3:1 non-text floor rather than assumed.
+   * Accent INK. Step 500 light, 300 dark. The decision named 400 for dark and
+   * 400 is 4.84:1 on the dark base, but 4.34:1 on the dark card, and this ink
+   * is on the card (the sheet bar's Cancel/Done, ProviderRow's CTA label), so
+   * the card row below is the one that set the step.
    */
   {
     fg: 'text/accent',
-    bg: 'bg/accentTint',
+    bg: 'bg/base',
     target: 4.5,
-    what: 'the away Notify label (ProviderDetail + ProviderRow)',
+    what: 'links, the retry status, accent figures',
+  },
+  {
+    fg: 'text/accent',
+    bg: 'bg/raised',
+    target: 4.5,
+    what: 'accent text in a card or sheet (sheet bar actions, row CTA label)',
+  },
+  {
+    fg: 'text/accent',
+    bg: 'bg/grouped',
+    target: 4.5,
+    what: 'a link on the grouped settings page',
   },
   {
     fg: 'bg/accent',
     bg: 'bg/base',
     target: 3,
-    what: "the away Notify button's outline (non-text)",
+    what: 'a coral mark on the page: the tonal Notify outline, the unread ring, the typing dots',
+    exempt:
+      'a non-text boundary or mark, never the only signal (the Notify label, the unread badge, the "typing" word carry it in text). 3:1 is the non-text target from developer.android.com/guide/topics/ui/accessibility/apps',
   },
   {
-    fg: 'bg/accent',
+    fg: 'border/accent',
+    bg: 'bg/base',
+    target: 3,
+    what: 'a selection ring on an avatar, a suggestion or the primary photo',
+    exempt:
+      'non-text, 3:1. The primary photo also carries a check badge, a suggestion also fills the field, an avatar choice also changes the preview',
+  },
+  /*
+   * The outline of ProviderRow's CTA, which sits on the card fill and is that
+   * control's only boundary. bg/accent there is 2.87:1 in dark, under 3, so the
+   * stroke takes the accent INK instead: 6.22:1.
+   */
+  {
+    fg: 'text/accent',
     bg: 'bg/raised',
     target: 3,
-    what: "the away Notify CTA's outline on a card",
+    what: "the explore row CTA's outline on the card (non-text)",
+  },
+  /*
+   * The coral WASH (step 50 light / 950 dark) and what sits on it.
+   *
+   * text/accent is NOT registered here and must not be used here: step 500 on
+   * step 50 is 4.4986:1, a fraction under the 4.5 floor for the 12-14sp labels
+   * these pills carry. The wash has its own ink, text/onAccentTint (800 / 300).
+   * The tonal Notify button keeps its 1dp stroke because the wash against the
+   * page is 1.17:1 light / 1.01:1 dark, i.e. no boundary at all on its own.
+   */
+  {
+    fg: 'text/onAccentTint',
+    bg: 'bg/accentTint',
+    target: 4.5,
+    what: 'a label on the wash: reroll, retry, warm chip, tonal Notify, offer banner',
+  },
+  {
+    fg: 'text/primary',
+    bg: 'bg/accentTint',
+    target: 4.5,
+    what: 'the talk-time timer on the low-balance bar, the UPI row check',
+  },
+  {
+    fg: 'text/secondary',
+    bg: 'bg/accentTint',
+    target: 4.5,
+    what: 'the low-balance bar and extend card copy',
+  },
+  {
+    fg: 'text/accent',
+    bg: 'bg/accentTint',
+    target: 3,
+    what: 'the active nav glyph on its tint indicator (non-text)',
+    exempt:
+      'a glyph, not a label: 3:1 is the non-text target. The destination label under it is text, and the indicator pill is a second signal',
+  },
+  /*
+   * Glyph ink on the state fills of the ring and suggestion prompts. These took
+   * text/onAccent while it was near-black in dark; when that went white for
+   * the step-500 coral, the dark state fills (both LIGHT colours) would have
+   * lost their glyphs, so the ink moved to its own role with the old values.
+   */
+  {
+    fg: 'text/onState',
+    bg: 'state/danger',
+    target: 3,
+    what: 'the decline glyph on the ring prompt (non-text)',
+  },
+  {
+    fg: 'text/onState',
+    bg: 'state/available',
+    target: 3,
+    what: 'the accept glyph on the ring prompt (non-text)',
   },
   {
     fg: 'text/positive',
@@ -563,6 +558,57 @@ for (const pair of HERO_TEXT_PAIRS) {
   );
 }
 
+/*
+ * `bubble/meta` on your own bubble, composited rather than skipped.
+ *
+ * The clock and the sent tick are translucent white over the step-500 fill,
+ * and WCAG measures the pixel that lands, so the token's rgba is parsed and
+ * blended over `bubble/mine` here. Read from design/tokens.json rather than
+ * hand-copied, unlike the hero block above, because both halves ARE tokens.
+ * The target is the timestamp exemption the thread-bubble row states: glanceable
+ * metadata beside a message that already passes at 4.5, never the only carrier
+ * of when it was sent.
+ */
+const parseRgba = value => {
+  const m = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/.exec(value);
+  if (!m) {
+    return null;
+  }
+  const toHex = n => Number(n).toString(16).padStart(2, '0');
+  return {
+    hex: `#${toHex(m[1])}${toHex(m[2])}${toHex(m[3])}`,
+    alpha: Number(m[4]),
+  };
+};
+
+const BUBBLE_META = { fg: 'bubble/meta', bg: 'bubble/mine', target: 3 };
+for (const mode of ['Light', 'Dark']) {
+  const fg = parseRgba(T[BUBBLE_META.fg][mode]);
+  const bg = T[BUBBLE_META.bg][mode];
+  if (!fg) {
+    console.error(
+      `bubble/meta ${mode} is not rgba(r,g,b,a): ${T[BUBBLE_META.fg][mode]}`,
+    );
+    failures += 1;
+    continue;
+  }
+  const landed = composite(fg.hex, fg.alpha, bg);
+  const r = ratio(landed, bg);
+  const ok = r >= BUBBLE_META.target;
+  if (!ok) {
+    failures += 1;
+  }
+  rows.push(
+    `${ok ? '  ok  ' : '  FAIL'} ${mode.padEnd(5)} ${BUBBLE_META.fg.padEnd(
+      16,
+    )} on ${BUBBLE_META.bg.padEnd(16)} ` +
+      `${r.toFixed(2).padStart(6)}:1  (needs ${
+        BUBBLE_META.target
+      })  the clock and sent tick on your bubble, composited to ${landed}` +
+      '\n           exempt: glanceable metadata, same exemption as the thread-bubble timestamp',
+  );
+}
+
 console.log(rows.join('\n'));
 if (failures > 0) {
   console.error(`\ncontrast FAILED, ${failures} pair(s) below target`);
@@ -570,6 +616,6 @@ if (failures > 0) {
 }
 console.log(
   `\ncontrast OK, ${
-    PAIRS.length * 2 + HERO_TEXT_PAIRS.length
+    PAIRS.length * 2 + HERO_TEXT_PAIRS.length + 2
   } pairs meet WCAG AA targets`,
 );

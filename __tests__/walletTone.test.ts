@@ -348,9 +348,14 @@ describe('the bright accent carries no label', () => {
      * it lands on beats the white-on-accentStrong one it replaces in BOTH modes.
      * Asserted as a comparison rather than against 4.5 so it stays meaningful if
      * the palette moves — the claim is "this row got more legible, not less".
+     *
+     * AT LEAST as legible, since the one-ramp coral (2026-09-26): in light the
+     * row's ink and the card's fill are the same step 500, so step-500 ink on
+     * white and white on step 500 are the same pair read in both directions,
+     * 5.27:1 each. Dark is still strictly better (step 300 on the base, 6.94:1).
      */
     for (const mode of ['Light', 'Dark'] as const) {
-      expect(contrast(hex('text/accent', mode), hex('bg/base', mode))).toBeGreaterThan(
+      expect(contrast(hex('text/accent', mode), hex('bg/base', mode))).toBeGreaterThanOrEqual(
         contrast(hex('text/onAccent', mode), hex('bg/accentStrong', mode)),
       );
     }
@@ -395,10 +400,16 @@ describe('the bright accent carries no label', () => {
      * be invisible then rather than merely wrong. So the structural assertions
      * above — bg/inverse for the fill, text/onInverse for the label — are what
      * this test now rests on, and the numeric fact is asserted in its new form.
+     *
+     * And it REPRODUCES again since 2026-09-26: the coral fill is ramp step 500
+     * in both modes, so `text/onAccent` is white in dark as well, and against
+     * dark `text/primary` (also white) it is 1.00:1 — the invisible button,
+     * exactly. Asserted as the collision it is, because it is what makes the
+     * bg/inverse fill above load-bearing rather than a tidy-up.
      */
     expect(
       contrast(hex('text/onAccent', 'Dark'), hex('text/primary', 'Dark')),
-    ).toBeGreaterThan(4.5);
+    ).toBeLessThan(1.1);
     // Why light mode is untouched, as a fact rather than a promise.
     expect(hex('bg/inverse', 'Light')).toBe(hex('text/primary', 'Light'));
     for (const mode of ['Light', 'Dark'] as const) {
@@ -408,40 +419,25 @@ describe('the bright accent carries no label', () => {
     }
   });
 
-  it('keeps the two accent steps far enough apart to be worth having two', () => {
+  it('keeps the two accent names on ONE ramp step, which carries a label', () => {
     /*
-     * REWRITTEN 2026-09-08, because the WhatsApp palette inverted half of it and
-     * leaving the old assertions would have meant loosening a gate to fit a
-     * change rather than restating what is now true.
+     * REWRITTEN 2026-09-26, and the old title ("far enough apart to be worth
+     * having two") is now false by decision rather than by drift. Amit approved
+     * one coral ramp (design/tokens.json `color.ramp`, Bluesky's alf model): every
+     * coral fill is step 500 in both modes. The pale "bright" coral that could
+     * never hold a label (#F26836, 3.08:1 under white) is gone, and with it the
+     * reason for a second, deeper step.
      *
-     * What still holds in BOTH modes: `bg/accentStrong` carries a label at AA.
-     * That is the whole point of having a second step.
-     *
-     * What changed: `bg/accent` in DARK now carries a label too. The old
-     * assertion said it could not, and that was correct while the dark accent
-     * was a light blue under a WHITE label (2.59:1). The dark accent is now a
-     * coral (#FF8457) and `text/onAccent` in dark is near-black ink, so
-     * the pair is legible (7.13:1). The two steps therefore still exist in dark,
-     * but for HIERARCHY rather than for legibility — and saying so is the honest
-     * version.
-     *
-     * LIGHT is unchanged in kind: white on the light coral #EE4027 is 3.89:1,
-     * which clears the 3:1 large-text step (the wordmark) but NOT 4.5, so light
-     * still has a genuine one-step-only-carries-a-label rule.
+     * `bg/accentStrong` survives as a NAME so its readers do not churn. Pinned
+     * EQUAL to `bg/accent` here: if the two ever diverge again, one of them has
+     * been given a hex off the ramp, and that is the regression this catches.
+     * Every `accentStrong` asserted above still holds, because both names now
+     * carry white at 5.27:1 in both modes.
      */
     for (const mode of ['Light', 'Dark'] as const) {
-      expect(contrast(hex('text/onAccent', mode), hex('bg/accentStrong', mode))).toBeGreaterThanOrEqual(4.5);
-      // Two steps means two VALUES, in every mode. Collapsing them would make
-      // every `accentStrong` above load-bearing for nothing.
-      expect(hex('bg/accent', mode)).not.toBe(hex('bg/accentStrong', mode));
+      expect(hex('bg/accentStrong', mode)).toBe(hex('bg/accent', mode));
+      expect(contrast(hex('text/onAccent', mode), hex('bg/accent', mode))).toBeGreaterThanOrEqual(4.5);
     }
-    // Light: still not a label surface.
-    expect(contrast(hex('text/onAccent', 'Light'), hex('bg/accent', 'Light'))).toBeLessThan(4.5);
-    // Dark: now IS one. Asserted so a future palette tune that quietly breaks it
-    // again fails here rather than on a device.
-    expect(
-      contrast(hex('text/onAccent', 'Dark'), hex('bg/accent', 'Dark')),
-    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('registers the failing pair in the contrast gate, which is what let it ship', () => {

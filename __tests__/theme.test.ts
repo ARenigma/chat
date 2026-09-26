@@ -1809,36 +1809,56 @@ describe('accessibility budget', () => {
     ).toBeGreaterThanOrEqual(4.5);
   });
 
+  /*
+   * Text on the coral wash reads `text/onAccentTint` (ramp 800 / 300), not
+   * `text/accent`. The wash is step 50 in light and the accent ink is step 500,
+   * and that pair is 4.4986:1: it rounds to 4.50 and fails the floor it rounds
+   * to. Asserted as the near-miss it is, so nobody "simplifies" the tint's
+   * labels back onto the accent ink.
+   */
   it('holds AA for the accent count on its tint', () => {
     expect(
-      contrast(LIGHT.color.text.accent, LIGHT.color.bg.accentTint),
+      contrast(LIGHT.color.text.onAccentTint, LIGHT.color.bg.accentTint),
     ).toBeGreaterThanOrEqual(4.5);
     expect(
-      contrast(DARK.color.text.accent, DARK.color.bg.accentTint),
+      contrast(DARK.color.text.onAccentTint, DARK.color.bg.accentTint),
     ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(LIGHT.color.text.accent, LIGHT.color.bg.accentTint),
+    ).toBeLessThan(4.5);
   });
 
   /**
    * The single most important assertion in this file.
    *
-   * `bg.accent` is the bright coral and measures 3.4:1 against white, fine for
-   * a glyph, a fail for a label. `bg.accentStrong` is the step that carries
-   * text. Every message the member has ever sent sits on the second one, so a
-   * merge that swaps them would put the entire transcript below AA, and it would
-   * look *better* to whoever made the change.
+   * Every message the member has ever sent sits on `bubble/mine`, which since
+   * 2026-09-26 is the brand fill itself (ramp step 500, both modes) carrying
+   * white `bubble/text`. A merge that lightens the coral toward the old pale
+   * #F26836 would put the entire transcript below AA, and it would look
+   * *brighter* to whoever made the change. The filled controls share the step,
+   * so they are asserted beside it.
    */
   it('keeps message text legible on the accent bubble', () => {
-    expect(
-      contrast(LIGHT.color.text.onAccent, LIGHT.color.bg.accentStrong),
-    ).toBeGreaterThanOrEqual(4.5);
-    expect(
-      contrast(DARK.color.text.onAccent, DARK.color.bg.accentStrong),
-    ).toBeGreaterThanOrEqual(4.5);
+    for (const t of [LIGHT, DARK]) {
+      expect(
+        contrast(t.color.bubble.text, t.color.bubble.mine),
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(t.color.text.onAccent, t.color.bg.accentStrong),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
-  it('records that the bright accent cannot carry text', () => {
-    // Asserted as a fact, so nobody "fixes" the two-step accent by collapsing it.
-    expect(contrast('#FFFFFF', LIGHT.color.bg.accent)).toBeLessThan(4.5);
+  it('lets the accent fill carry text, now there is one coral', () => {
+    // This used to assert the opposite (white on the pale #F26836 was 3.08:1),
+    // and that fact was the whole reason for a second, deeper step. One ramp
+    // step carries both names now, so the claim flipped rather than loosened.
+    expect(contrast('#FFFFFF', LIGHT.color.bg.accent)).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    expect(contrast('#FFFFFF', DARK.color.bg.accent)).toBeGreaterThanOrEqual(
+      4.5,
+    );
   });
 
   it('keeps the send glyph legible on its fill', () => {
@@ -1901,9 +1921,27 @@ describe('accessibility budget', () => {
     expect(
       contrast(LIGHT.color.state.danger, LIGHT.color.bg.base),
     ).toBeGreaterThanOrEqual(4.5);
+    // 2026-09-26: the coral moved DOWN to the logo's step 500 (L42, from L58),
+    // toward the maroon danger, and the luminance gap narrowed from 2+ to
+    // 1.73:1. Separation is now carried by saturation as much as by lightness
+    // (the coral is S78, danger S37), so the gate asserts both rather than
+    // quietly lowering the one number. Both are floors that would catch the
+    // coral going muddy or danger going bright.
     expect(
       contrast(LIGHT.color.state.danger, LIGHT.color.bg.accent),
-    ).toBeGreaterThanOrEqual(2);
+    ).toBeGreaterThanOrEqual(1.6);
+    const sat = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map(
+        i => parseInt(hex.slice(i, i + 2), 16) / 255,
+      ) as [number, number, number];
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      const l = (mx + mn) / 2;
+      return mx === mn ? 0 : (mx - mn) / (l > 0.5 ? 2 - mx - mn : mx + mn);
+    };
+    expect(
+      sat(LIGHT.color.bg.accent) - sat(LIGHT.color.state.danger),
+    ).toBeGreaterThan(0.3);
   });
 });
 
@@ -3202,7 +3240,12 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
     expect(DARK.color.bg.raised).toBe('#1D2733');
   });
 
-  it('dark incoming bubble is neutral; outgoing bubble is deep coral', () => {
+  it('dark incoming bubble is neutral; outgoing bubble is the brand coral', () => {
+    /*
+     * 2026-09-26: the outgoing bubble is ramp step 500 (#C04018) in BOTH modes,
+     * the brand fill carrying white, the way Bluesky's DM bubble is
+     * primary_500. The history below is why it was coral at all.
+     */
     /*
      * 2026-09-10: the outgoing bubble follows the brand revert to coral. Amit:
      * a colour change swaps every brand-green surface to coral, bubbles too, so
@@ -3215,7 +3258,7 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
      * disabled fills — it simply is not the peer bubble any more.
      */
     expect(DARK.color.bubble.theirs).toBe('#232E3B');
-    expect(DARK.color.bubble.mine).toBe('#93361A');
+    expect(DARK.color.bubble.mine).toBe('#C04018');
     expect(DARK.color.bg.sunken).toBe('#232E3B');
   });
 
@@ -3227,11 +3270,13 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
      * change dark". Was WhatsApp green #21C063 / #71EB85; before that the reference app
      * blue #5FA3DE / #64B5EF.
      *
-     * #FF8457 is the dark-page coral (mark/fill); text/accent is the
-     * lighter coral that accent-coloured TEXT needs to clear AA on the dark base.
+     * 2026-09-26: one ramp. The dark FILL is the same step 500 as light
+     * (#C04018, the logo), not a separate brighter dark-page coral; accent TEXT
+     * in dark is step 300 (#DE947F), the ramp's lighter step that clears AA on
+     * the dark card as well as the base. Was #FF8457 / #FFAD8F.
      */
-    expect(DARK.color.bg.accent).toBe('#FF8457');
-    expect(DARK.color.text.accent).toBe('#FFAD8F');
+    expect(DARK.color.bg.accent).toBe('#C04018');
+    expect(DARK.color.text.accent).toBe('#DE947F');
     // The retired brand greens must not creep back in as the accent.
     expect(DARK.color.bg.accent).not.toBe('#21C063');
     expect(DARK.color.bg.accent).not.toBe('#25D366');
@@ -3502,23 +3547,15 @@ describe('the brand stays coral, and coral is a hue', () => {
   const MIN_SAT = 0.5;
 
   /*
-   * The anti-brown floor, take two: LIGHTNESS, and it applies to `bg/accent`
-   * ALONE. That token is the one a member points at and calls "our coral", so
-   * it is the one that has to actually be coral.
-   *
-   * It cannot be applied to the other three, and the reason is arithmetic
-   * rather than reluctance:
-   *   bg/accentStrong  carries white LABELS at 4.5:1, which caps it near L46.
-   *   text/accent      is small-text ink on white at 4.5:1, capped at L40.
-   *   bubble/mine      carries near-white text in dark mode, so it must be dark.
-   * All three are deep BY REQUIREMENT. Demanding brightness of them would be
-   * demanding an illegible app. What stops them going muddy is MIN_SAT, and
-   * what stops the identity colour going muddy is this.
-   *
-   * 0.5 sits above #A53A12's L36 and #C14B1F's L44, and below the L58 that
-   * bg/accent holds.
+   * The anti-brown floor, take two, was a LIGHTNESS floor (L50) on `bg/accent`
+   * alone, the token a member points at and calls "our coral". RETIRED
+   * 2026-09-26, not loosened: the identity colour is now the logo coral itself,
+   * #C04018 at L42, ramp step 500 (Amit, approved from a mockup), and a floor
+   * that the logo fails is a floor measuring the wrong thing. What replaces it is
+   * stronger: `bg/accent` must BE the logo value, asserted in the ramp suite
+   * below, so it cannot drift muddy or pale by any amount. MIN_SAT above still
+   * guards every family member against brown.
    */
-  const MIN_LIGHT_IDENTITY = 0.5;
 
   /*
    * `text/accent` JOINED on 2026-09-13, and its absence was this gate's first
@@ -3534,8 +3571,10 @@ describe('the brand stays coral, and coral is a hue', () => {
   const FAMILY = [
     'bg/accent',
     'bg/accentStrong',
+    'bg/accentTint',
     'border/accent',
     'text/accent',
+    'text/onAccentTint',
     'bubble/mine',
   ] as const;
 
@@ -3567,19 +3606,149 @@ describe('the brand stays coral, and coral is a hue', () => {
         ...measured,
         saturated: true,
       });
-      if (name === 'bg/accent') {
-        expect({
-          ...measured,
-          brightEnoughToReadAsCoral: l >= MIN_LIGHT_IDENTITY,
-        }).toEqual({
-          ...measured,
-          brightEnoughToReadAsCoral: true,
-        });
-      }
     }
   });
 });
 
+describe('every coral role is a step of the one ramp', () => {
+  /*
+   * Amit, 2026-09-26, approved from a mockup: the brand colour is coherent the
+   * way Bluesky's alf makes it coherent. ONE hand-authored ramp
+   * (design/tokens.json `color.ramp`, named like alf's `primary_*`), step 500 is
+   * the logo coral #C04018, and every coral role is PINNED to a step rather than
+   * given its own hex. The failure this exists to stop is the one the palette
+   * had: five corals authored one at a time (#F26836, #C14B1F, #BD3E0F,
+   * #FBDAD0, #FCE7E2), each tuned for its own pair, which added up to no
+   * particular colour.
+   */
+  type Mode = 'Light' | 'Dark';
+  type Role = Record<Mode, string> & { step?: Record<Mode, string> };
+  const spec = JSON.parse(read('design/tokens.json')) as {
+    color: { ramp: Record<string, string>; tokens: Record<string, Role> };
+  };
+  const ramp = Object.fromEntries(
+    Object.entries(spec.color.ramp).filter(([k]) => !k.startsWith('$')),
+  );
+
+  // Anything that resolves to a coral is listed, for the reason the hue-band
+  // suite above gives: a gate is only as wide as its list.
+  const CORAL_ROLES = [
+    'bg/accent',
+    'bg/accentStrong',
+    'bg/accentTint',
+    'border/accent',
+    'text/accent',
+    'text/onAccentTint',
+    'bubble/mine',
+  ] as const;
+
+  it('puts the logo coral at step 500', () => {
+    expect(ramp.primary_500).toBe('#C04018');
+  });
+
+  it('has the thirteen alf steps, lightest to darkest', () => {
+    const steps = [
+      25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950, 975,
+    ];
+    expect(Object.keys(ramp)).toEqual(steps.map(n => `primary_${n}`));
+    // Strictly darker at every step, so "one step lighter" always means
+    // something and a mistyped hex cannot sit out of order.
+    const lum = steps.map(n => luminance(ramp[`primary_${n}`]!));
+    for (let i = 1; i < lum.length; i++) {
+      expect(lum[i]).toBeLessThan(lum[i - 1]!);
+    }
+  });
+
+  it.each(CORAL_ROLES)('pins %s to a ramp step in both modes', name => {
+    const role = spec.color.tokens[name]!;
+    for (const mode of ['Light', 'Dark'] as const) {
+      const step = role.step?.[mode];
+      expect({ name, mode, step }).toEqual({
+        name,
+        mode,
+        step: expect.stringMatching(/^primary_\d+$/),
+      });
+      expect({ name, mode, hex: role[mode] }).toEqual({
+        name,
+        mode,
+        hex: ramp[step!],
+      });
+    }
+  });
+
+  it('keeps every declared step honest, coral or not', () => {
+    // A `step` anywhere is a claim; a claim that disagrees with its hex is the
+    // exact drift this suite is for.
+    for (const [name, role] of Object.entries(spec.color.tokens)) {
+      for (const mode of ['Light', 'Dark'] as const) {
+        const step = role.step?.[mode];
+        if (step !== undefined) {
+          expect({ name, mode, hex: role[mode] }).toEqual({
+            name,
+            mode,
+            hex: ramp[step],
+          });
+        }
+      }
+    }
+  });
+
+  it('fills with step 500 in both modes, so dark keeps the brand', () => {
+    // alf's dark theme inverts the ramp around 500, so the fill is the same
+    // colour in both schemes and only inks and washes move.
+    for (const name of [
+      'bg/accent',
+      'bg/accentStrong',
+      'border/accent',
+      'bubble/mine',
+    ]) {
+      expect(spec.color.tokens[name]!.step).toEqual({
+        Light: 'primary_500',
+        Dark: 'primary_500',
+      });
+    }
+  });
+
+  it('lets none of the retired corals survive', () => {
+    const retired = [
+      '#F26836',
+      '#FF8457',
+      '#C14B1F',
+      '#FF936B',
+      '#BD3E0F',
+      '#FFAD8F',
+      '#FCE7E2',
+      '#3A211D',
+      '#FBDAD0',
+      '#93361A',
+    ];
+    for (const [name, role] of Object.entries(spec.color.tokens)) {
+      for (const mode of ['Light', 'Dark'] as const) {
+        expect({
+          name,
+          mode,
+          retired: retired.includes(role[mode].toUpperCase()),
+        }).toEqual({
+          name,
+          mode,
+          retired: false,
+        });
+      }
+    }
+    // The pale fill specifically, in every file that can carry a colour to the
+    // screen without going through a token.
+    for (const file of [
+      'src/theme/tokens.generated.ts',
+      'web/tokens.css',
+      'android/app/src/main/res/values/colors.xml',
+    ]) {
+      expect({ file, pale: /#F26836/i.test(read(file)) }).toEqual({
+        file,
+        pale: false,
+      });
+    }
+  });
+});
 describe('a primary action is the brand colour, not black and white', () => {
   /*
    * Amit, 2026-09-08: "all prompts CTAs should also follow our token system not

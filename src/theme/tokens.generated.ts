@@ -5,7 +5,7 @@
  * the provenance note in that file).
  * Regenerate with `npm run tokens`. `npm run tokens:check` fails on drift.
  *
- * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
+ * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, drawn from one ramp whose step 500 is the logo, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
  *
  * Accent budget: the coral is for ACTIONS AND STATES ONLY, send, own bubble,
  * unread count, avatar wash, low-balance count, typing dots. Never a page
@@ -33,9 +33,9 @@ export const LIGHT = {
       selected: '#D1D1D6',
       inverse: '#1C1C1E',
       scrim: '#000000',
-      accent: '#F26836',
-      accentStrong: '#C14B1F',
-      accentTint: '#FCE7E2',
+      accent: '#C04018',
+      accentStrong: '#C04018',
+      accentTint: '#F9EAE6',
       listener: '#D8E8FF',
       astrologer: '#EBE0FF',
       positive: '#DCE8E3',
@@ -49,8 +49,10 @@ export const LIGHT = {
       tertiary: '#78787D',
       section: '#6A6F72',
       muted: '#8E8E93',
-      accent: '#BD3E0F',
+      accent: '#C04018',
       onAccent: '#FFFFFF',
+      onAccentTint: '#67210C',
+      onState: '#FFFFFF',
       onInverse: '#FFFFFF',
       positive: '#1F4A3F',
       token: '#4A4708',
@@ -62,7 +64,7 @@ export const LIGHT = {
     border: {
       hairline: '#C6C6C8',
       strong: '#C7C7CC',
-      accent: '#F26836',
+      accent: '#C04018',
     },
     state: {
       available: '#12946A',
@@ -76,11 +78,11 @@ export const LIGHT = {
       unwind: '#0F7F62',
     },
     bubble: {
-      mine: '#FBDAD0',
+      mine: '#C04018',
       theirs: '#FFFFFF',
-      text: '#0A0A0A',
-      meta: 'rgba(0,0,0,0.6)',
-      tickRead: '#007BFC',
+      text: '#FFFFFF',
+      meta: 'rgba(255,255,255,0.8)',
+      tickRead: '#FFFFFF',
       wallpaper: '#F5F1EB',
     },
     media: {
@@ -708,9 +710,9 @@ export const DARK = {
       selected: '#26303D',
       inverse: '#E9EEF4',
       scrim: '#000000',
-      accent: '#FF8457',
-      accentStrong: '#FF936B',
-      accentTint: '#3A211D',
+      accent: '#C04018',
+      accentStrong: '#C04018',
+      accentTint: '#351107',
       listener: '#20507F',
       astrologer: '#452F70',
       positive: '#16302A',
@@ -724,8 +726,10 @@ export const DARK = {
       tertiary: '#687788',
       section: '#8896A4',
       muted: '#5C6B7A',
-      accent: '#FFAD8F',
-      onAccent: '#0A1F14',
+      accent: '#DE947F',
+      onAccent: '#FFFFFF',
+      onAccentTint: '#DE947F',
+      onState: '#0A1F14',
       onInverse: '#151E27',
       positive: '#A8D8C8',
       token: '#E4E26A',
@@ -737,7 +741,7 @@ export const DARK = {
     border: {
       hairline: '#303C4A',
       strong: '#3A4A5C',
-      accent: '#FF8457',
+      accent: '#C04018',
     },
     state: {
       available: '#3FD69B',
@@ -751,11 +755,11 @@ export const DARK = {
       unwind: '#0F7F62',
     },
     bubble: {
-      mine: '#93361A',
+      mine: '#C04018',
       theirs: '#232E3B',
-      text: '#FAFAFA',
-      meta: 'rgba(255,255,255,0.6)',
-      tickRead: '#53BDEB',
+      text: '#FFFFFF',
+      meta: 'rgba(255,255,255,0.8)',
+      tickRead: '#FFFFFF',
       wallpaper: '#151E27',
     },
     media: {
