@@ -259,3 +259,80 @@ describe('the contact guard mode is a switch the admin console can publish', () 
     expect(contactGuardModeFrom(undefined)).toBe('shadow');
   });
 });
+
+/**
+ * The operator's contact-guard commands, run. moderate.mjs runs its CLI on
+ * import, so each command is lifted out of the source and evaluated alone
+ * with the network replaced by a recorder (storyMedia.test.ts does the same).
+ */
+describe('moderate.mjs resolves the contact-guard queues', () => {
+  const source = readFileSync(join(__dirname, '..', 'scripts/moderate.mjs'), 'utf8');
+  const lift = (start: string) => {
+    const from = source.indexOf(start);
+    expect(from).toBeGreaterThan(-1);
+    return source.slice(from, source.indexOf('\n}\n', from) + 3);
+  };
+  type Cmd = () => Promise<void>;
+  function load(entry: string, argv: string[], answers: unknown[], confirmed = true) {
+    const calls: { path: string; body?: unknown }[] = [];
+    const logs: string[] = [];
+    const call = async (path: string, options?: { body?: unknown }) => {
+      calls.push({ path, body: options?.body });
+      return answers.shift() ?? [];
+    };
+    const positional = argv.filter(a => !a.startsWith('--'));
+    const flag = (name: string) => argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+    const { runInNewContext } = require('vm') as typeof import('vm');
+    const fn = runInNewContext(`${lift(`async function ${entry}(`)}\n${entry};`, {
+      rest: call,
+      rpc: (fnName: string, body: unknown) => call(`rpc/${fnName}`, { body }),
+      positional,
+      flag,
+      confirm: async () => confirmed,
+      fail: (m: string) => {
+        throw new Error(m);
+      },
+      clip: (s: unknown) => String(s),
+      short: (s: string) => s.slice(0, 8),
+      console: { log: (s: string) => logs.push(s) },
+      process: { env: { USER: 'tester' } },
+      Number,
+      Date,
+    }) as Cmd;
+    return { fn, calls, logs };
+  }
+
+  it('bans through the audited function, after asking', async () => {
+    const run = load('contactResolve', ['u-1', '--action=ban'], [
+      [{ user_id: 'u-1', role: 'provider', display_name: 'Ada', review_state: 'removal_review', active_strikes: 3 }],
+      { was: 'removal_review', action: 'ban', suspended_until: '2999-01-01T00:00:00+00:00' },
+    ]);
+    await run.fn();
+    expect(run.calls[1]).toEqual({
+      path: 'rpc/contact_guard_resolve_review',
+      body: { p_user_id: 'u-1', p_action: 'ban', p_days: null, p_actor: 'ops:tester', p_note: null },
+    });
+  });
+
+  it('writes nothing when the operator says no', async () => {
+    const run = load('contactResolve', ['u-1', '--action=suspend', '--days=7'], [
+      [{ user_id: 'u-1', role: 'member', display_name: 'x', review_state: 'human_review', active_strikes: 5 }],
+    ], false);
+    await run.fn();
+    expect(run.calls.map(c => c.path)).toEqual(['contact_guard_review_queue?user_id=eq.u-1&select=*']);
+  });
+
+  it('refuses a suspension without a length', async () => {
+    await expect(load('contactResolve', ['u-1', '--action=suspend'], []).fn()).rejects.toThrow(/--days/);
+  });
+
+  it('strikes a story report once, and says so on a retry', async () => {
+    const first = load('contactStrike', ['r-1'], [{ strikes: 2, directory_hidden_until: 'soon', already: false }]);
+    await first.fn();
+    expect(first.calls[0]?.path).toBe('rpc/contact_guard_strike_from_report');
+    expect(first.logs[0]).toMatch(/strike 2 recorded.*hidden until soon/);
+    const again = load('contactStrike', ['r-1'], [{ event_id: 'e-1', already: true }]);
+    await again.fn();
+    expect(again.logs[0]).toMatch(/already struck/);
+  });
+});

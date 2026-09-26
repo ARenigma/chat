@@ -37,6 +37,19 @@
  *                                        by the applicant without support
  *   decline <user-id> [--note=...]       reject, with a note they can read
  *
+ * The contact guard (migrations 157-159)
+ *   contacts [--queue=q]                 the review queues: removal_review (a
+ *                                        provider at strike 3) and human_review
+ *                                        (anyone at strike 5)
+ *   contact <user-id>                    one account's strikes, pause, hiding
+ *                                        and last 50 events with excerpts
+ *   contact-resolve <user-id> --action=<clear|suspend|ban> [--days=n]
+ *                                        close a review row; removal of a
+ *                                        provider is `ban` (or `suspend`)
+ *   contact-strike <story-report-id>     strike the provider of a reported
+ *                                        story whose media held a contact
+ *                                        detail (once per report)
+ *
  * `act` actions: none | warned | suspended | banned | conversation_closed
  *   any action but `none` on a story-comment report also takes the comment
  *   down (a tombstone, as the author's own delete makes), and on a story
@@ -850,7 +863,161 @@ async function maintenance() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// The contact guard (157-159)
+// ---------------------------------------------------------------------------
+
+const GUARD_QUEUES = new Set(['removal_review', 'human_review']);
+
+/** The accounts the ladder sent to a person, providers first, oldest first. */
+async function contacts() {
+  const queue = flag('queue');
+  if (queue !== undefined && !GUARD_QUEUES.has(queue)) {
+    fail('--queue must be removal_review or human_review');
+  }
+  const filter = queue === undefined ? '' : `&review_state=eq.${queue}`;
+  const rows = await rest(
+    `contact_guard_review_queue?select=*${filter}&order=role.desc,review_requested_at.asc`,
+  );
+  if (rows.length === 0) {
+    console.log('the contact-guard review queues are empty');
+    return;
+  }
+  for (const r of rows) {
+    console.log(
+      `${short(r.user_id)}  ${r.review_state.padEnd(14)} ${r.role.padEnd(8)} ` +
+        `strikes=${r.active_strikes}  since=${r.review_requested_at}  ` +
+        `${clip(r.display_name, 30)}  [${(r.categories ?? []).join(',')}]`,
+    );
+  }
+  console.log(`\n${rows.length} to review. Details: contact <user-id>`);
+}
+
+/** Every contact-guard event and strike for one account, excerpts clipped. */
+async function contact() {
+  const id = positional[0];
+  if (id === undefined) {
+    fail('usage: contact <user-id>');
+  }
+  const [queue] = await rest(
+    `contact_guard_review_queue?user_id=eq.${id}&select=*`,
+  );
+  const [restriction] = await rest(
+    `contact_guard_restrictions?user_id=eq.${id}&select=*`,
+  );
+  const strikes = await rest(
+    `contact_guard_strikes?user_id=eq.${id}&select=created_at,expires_at,voided_at&order=created_at.desc`,
+  );
+  const events = await rest(
+    `contact_guard_events?user_id=eq.${id}&select=created_at,surface,field,tier,outcome,category,reason,rules,excerpt,counts_as_strike&order=created_at.desc&limit=50`,
+  );
+  console.log(`account     ${id}`);
+  console.log(`review      ${queue?.review_state ?? 'none'}`);
+  console.log(`paused      ${restriction?.paused_until ?? '-'}`);
+  console.log(`hidden      ${restriction?.directory_hidden_until ?? '-'}`);
+  const active = strikes.filter(
+    s => s.voided_at === null && new Date(s.expires_at) > new Date(),
+  );
+  console.log(`strikes     ${active.length} active of ${strikes.length}`);
+  for (const e of events) {
+    console.log(
+      `  ${e.created_at}  ${e.outcome.padEnd(7)} ${e.tier.padEnd(
+        6,
+      )} ${e.surface.padEnd(13)} ` +
+        `${(e.category ?? '-').padEnd(7)} ${
+          e.counts_as_strike ? 'STRIKE ' : '       '
+        }` +
+        `${clip(e.excerpt, 120)}`,
+    );
+  }
+}
+
+/** Resolve a review row: clear, suspend (--days) or ban; audited by the function. */
+async function contactResolve() {
+  const id = positional[0];
+  const action = flag('action');
+  const note = flag('note') ?? null;
+  const actor = flag('actor') ?? `ops:${process.env.USER ?? 'unknown'}`;
+  if (id === undefined || !['clear', 'suspend', 'ban'].includes(action ?? '')) {
+    fail(
+      'usage: contact-resolve <user-id> --action=<clear|suspend|ban> [--days=n] [--note=...]',
+    );
+  }
+  const days = action === 'suspend' ? Number(flag('days')) : null;
+  if (action === 'suspend' && (!Number.isFinite(days) || days <= 0)) {
+    fail('--days=<n> is required for --action=suspend');
+  }
+  const [row] = await rest(
+    `contact_guard_review_queue?user_id=eq.${id}&select=*`,
+  );
+  if (row === undefined) {
+    fail(`no contact-guard review is open for ${id}`);
+  }
+  if (action !== 'clear') {
+    console.log(`account  ${id} (${row.role}, ${clip(row.display_name, 40)})`);
+    console.log(
+      `queue    ${row.review_state}, ${row.active_strikes} active strikes`,
+    );
+    if (
+      !(await confirm(
+        `${action}${action === 'suspend' ? ` for ${days} days` : ''}?`,
+      ))
+    ) {
+      console.log('aborted, nothing was written');
+      return;
+    }
+  }
+  const result = await rpc('contact_guard_resolve_review', {
+    p_user_id: id,
+    p_action: action,
+    p_days: days,
+    p_actor: actor,
+    p_note: note,
+  });
+  console.log(
+    `resolved ${result.was} for ${short(id)}: ${result.action}` +
+      (result.suspended_until ? ` until ${result.suspended_until}` : ''),
+  );
+}
+
+/** A strike against the provider of a reported story whose media held a contact detail. */
+async function contactStrike() {
+  const reportId = positional[0];
+  if (reportId === undefined) {
+    fail('usage: contact-strike <story-report-id> [--note=...]');
+  }
+  const note = flag('note') ?? null;
+  const actor = flag('actor') ?? `ops:${process.env.USER ?? 'unknown'}`;
+  const result = await rpc('contact_guard_strike_from_report', {
+    p_report_id: reportId,
+    p_actor: actor,
+    p_note: note,
+  });
+  if (result.already) {
+    console.log(
+      `report ${short(reportId)} already struck (event ${short(
+        result.event_id,
+      )}); nothing written`,
+    );
+    return;
+  }
+  console.log(
+    `strike ${result.strikes} recorded for report ${short(reportId)}` +
+      (result.restricted_until
+        ? `, paused until ${result.restricted_until}`
+        : '') +
+      (result.directory_hidden_until
+        ? `, hidden until ${result.directory_hidden_until}`
+        : ''),
+  );
+  console.log('the report itself stays open: act or dismiss it as usual');
+}
+
 const COMMANDS = {
+  contacts,
+  contact,
+  'contact-resolve': contactResolve,
+  'contact-strike': contactStrike,
   list,
   show,
   act,
