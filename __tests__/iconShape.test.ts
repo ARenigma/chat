@@ -267,6 +267,10 @@ interface Site {
    * it to describe a layer it does not draw. This is a RULE, not a per-name
    * waiver, so a new ripple button is covered without an exemption entry.
    * https://developer.android.com/training/material/animations
+   *
+   * `highlight="none"` is the same case by the same line of Pressable:
+   * `layerOpacity` is 0 for `ripple || bare`, so a `none` site draws no layer
+   * either (the step 5 bottom-bar slot, whose feedback is the tab scale alone).
    */
   ripple: boolean;
 }
@@ -339,7 +343,7 @@ export function iconPressables(source: string, file: string): Site[] {
         styles: names,
         declaresShape: /\bshape\s*=/.test(openTag),
         declaresRadius,
-        ripple: /\bhighlight\s*=\s*"ripple"/.test(openTag),
+        ripple: /\bhighlight\s*=\s*"(ripple|none)"/.test(openTag),
       });
     }
     i = e + 1;
