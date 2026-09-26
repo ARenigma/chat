@@ -7900,7 +7900,8 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
 
   it('is reachable from Settings on BOTH trees', () => {
     const settings = withoutComments(read('src/screens/SettingsSheet.tsx'));
-    expect(settings).toContain('testID="settings-usage"');
+    // A row spec since the sectioned list (provider IA, Option A).
+    expect(settings).toContain("testID: 'settings-usage'");
     // The title takes the caller's own side of the row.
     expect(settings).toContain(
       "isProvider ? 'Earnings by session' : 'Usage by session'",

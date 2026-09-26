@@ -28,6 +28,7 @@ import { useProfile } from '../api/chat';
 import { legalUrl } from '../lib/legal';
 import { initialOf } from '../lib/display';
 import { formatRupees } from '../lib/rates';
+import { visibleSections, type SettingsRowId } from '../lib/settingsSections';
 import { Avatar } from '../components/Avatar';
 import { resetStore, useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -61,6 +62,12 @@ interface Props {
    */
   topSection?: React.ReactNode;
   /**
+   * Provider-only rows, placed into their sections by SETTINGS_SECTIONS: Edit
+   * profile and Your photos under "Your profile", Get paid under "Money". Data
+   * rather than JSX so the search filters them like every other row.
+   */
+  extraRows?: Partial<Record<'edit-profile' | 'photos' | 'get-paid', SettingsRowSpec>>;
+  /**
    * What the scroll clears at its foot, chosen by the host rather than by a
    * mode flag. The provider You tab passes it (its own bottom nav already owns
    * the safe-area inset, so plain breathing room); the member tree passes
@@ -79,13 +86,77 @@ interface Props {
  */
 const ROW_TEXT_INSET = 32 + TOKENS.space.sm;
 
+/** One navigable row of the list, as data. */
+export interface SettingsRowSpec {
+  icon: IconName;
+  title: string;
+  detail?: string;
+  /**
+   * `attention` sets the detail in the danger ink. Never the only signal: the
+   * detail's own words say "Action needed" (WCAG 1.4.1, use of colour).
+   */
+  detailTone?: 'default' | 'attention';
+  /** Drawn before the chevron: the photos row's thumbnail strip. */
+  trailing?: React.ReactNode;
+  onPress: () => void;
+  testID: string;
+  accessibilityLabel: string;
+}
+
+/**
+ * The app's own notification settings page, the system screen for exactly
+ * this app. `Settings.ACTION_APP_NOTIFICATION_SETTINGS` with
+ * `Settings.EXTRA_APP_PACKAGE`, added in API 26; minSdk is 24, and the
+ * Settings reference warns a matching Activity may not exist, so the app
+ * details page (`Linking.openSettings`) is the fallback for both cases.
+ * https://developer.android.com/reference/android/provider/Settings#ACTION_APP_NOTIFICATION_SETTINGS
+ * https://reactnative.dev/docs/linking#sendintent-android
+ */
+function openNotificationSettings(): void {
+  Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+    { key: 'android.provider.extra.APP_PACKAGE', value: 'com.companionchat' },
+  ]).catch(() => {
+    Linking.openSettings().catch(() => undefined);
+  });
+}
+
 interface SettingsRowContentProps {
   icon: IconName;
   title: string;
   detail?: string;
+  detailTone?: 'default' | 'attention';
+  trailing?: React.ReactNode;
   selected?: boolean;
   danger?: boolean;
   chevron?: boolean;
+}
+
+/**
+ * A navigable row: the Pressable is the single target, full-bleed like every
+ * row here. No press scale and no enter motion — settings rows are a
+ * tens-a-day surface, so the frequency gate (emil-design-eng) leaves them the
+ * state layer alone.
+ */
+function SettingsRow({ spec }: { spec: SettingsRowSpec }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <Pressable
+      onPress={spec.onPress}
+      testID={spec.testID}
+      accessibilityLabel={spec.accessibilityLabel}
+      press="none"
+      highlight="dim"
+      style={styles.row}
+    >
+      <SettingsRowContent
+        icon={spec.icon}
+        title={spec.title}
+        detail={spec.detail}
+        detailTone={spec.detailTone}
+        trailing={spec.trailing}
+      />
+    </Pressable>
+  );
 }
 
 /**
@@ -98,6 +169,8 @@ function SettingsRowContent({
   icon,
   title,
   detail,
+  detailTone = 'default',
+  trailing,
   selected = false,
   danger = false,
   chevron = true,
@@ -121,11 +194,19 @@ function SettingsRowContent({
           {title}
         </Text>
         {detail ? (
-          <Text allowFontScaling numberOfLines={2} style={styles.rowDetail}>
+          <Text
+            allowFontScaling
+            numberOfLines={2}
+            style={[
+              styles.rowDetail,
+              detailTone === 'attention' && styles.rowDetailAttention,
+            ]}
+          >
             {detail}
           </Text>
         ) : null}
       </View>
+      {trailing ?? null}
       {selected ? (
         <Icon
           name="check"
@@ -167,6 +248,7 @@ export function SettingsSheet({
   onInvoices,
   onUsage,
   topSection,
+  extraRows,
   bottomOffset,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -320,6 +402,121 @@ export function SettingsSheet({
     .filter(Boolean)
     .join(' · ');
 
+  /*
+   * Every row this tree offers, by id; SETTINGS_SECTIONS decides where each
+   * one sits. A row whose handler the host did not pass is absent, which is
+   * how the member tree has no Get paid and the provider tree no Recharge
+   * history, from one list.
+   */
+  const rowSpecs: Partial<Record<SettingsRowId, SettingsRowSpec>> = {
+    ...extraRows,
+    usage:
+      onUsage === undefined
+        ? undefined
+        : {
+            icon: 'listen',
+            title: isProvider ? 'Earnings by session' : 'Usage by session',
+            detail: isProvider
+              ? 'What each conversation paid'
+              : 'What each conversation cost',
+            onPress: onUsage,
+            testID: 'settings-usage',
+            accessibilityLabel: 'Usage by session',
+          },
+    // The money ledger. Its detail line does not claim invoices: those are
+    // the next row, and two rows promising one thing is how a member ends up
+    // on the one that does not have it.
+    transactions:
+      onTransactions === undefined
+        ? undefined
+        : {
+            icon: 'wallet',
+            title: 'Recharge history',
+            detail: 'Your top-ups, and what each one cost',
+            onPress: onTransactions,
+            testID: 'settings-transactions',
+            accessibilityLabel: 'Recharge history',
+          },
+    // `public.invoices` and the stored PDF of each (migration 019). Member
+    // tree only: a provider is paid out, not billed.
+    invoices:
+      onInvoices === undefined
+        ? undefined
+        : {
+            icon: 'download',
+            title: 'Bills & invoices',
+            detail: 'Open or save the bill for any top-up',
+            onPress: onInvoices,
+            testID: 'settings-invoices',
+            accessibilityLabel: 'Bills and invoices',
+          },
+    notifications: {
+      icon: 'bell',
+      title: 'Notifications',
+      detail: 'Sounds and alerts, in your phone settings',
+      onPress: openNotificationSettings,
+      testID: 'settings-notifications',
+      accessibilityLabel: 'Notifications, opens your phone settings',
+    },
+    theme: {
+      icon: 'settings',
+      title: 'Theme',
+      detail: themeLabel,
+      onPress: () => setChoiceSheet('theme'),
+      testID: 'settings-theme',
+      accessibilityLabel: `Theme, ${themeLabel}`,
+    },
+    blocked:
+      onBlocked === undefined
+        ? undefined
+        : {
+            icon: 'block',
+            title: 'Blocked people',
+            detail: 'Review people you have blocked',
+            onPress: onBlocked,
+            testID: 'settings-blocked',
+            accessibilityLabel: 'Blocked People',
+          },
+    /*
+     * Terms, Privacy and Refund: android-audit.md launch-blocking gap. All
+     * three are `Linking.openURL` to the system browser, no in-app webview,
+     * at the URLs the seeded policy_versions rows use (migration 027). Refund
+     * is here because the purchase surfaces state "no refunds" and a member
+     * could not read the policy in-app.
+     */
+    terms: {
+      icon: 'report',
+      title: 'Terms of service',
+      onPress: () => {
+        void Linking.openURL(legalUrl('terms'));
+      },
+      testID: 'settings-terms',
+      accessibilityLabel: 'Terms of Service',
+    },
+    privacy: {
+      icon: 'block',
+      title: 'Privacy policy',
+      onPress: () => {
+        void Linking.openURL(legalUrl('privacy'));
+      },
+      testID: 'settings-privacy',
+      accessibilityLabel: 'Privacy Policy',
+    },
+    refund: {
+      icon: 'wallet',
+      title: 'Refund policy',
+      onPress: () => {
+        void Linking.openURL(legalUrl('refund'));
+      },
+      testID: 'settings-refund',
+      accessibilityLabel: 'Refund Policy',
+    },
+  };
+  const sections = visibleSections(id => {
+    const spec = rowSpecs[id];
+    return spec !== undefined && shows(spec.title);
+  });
+
   return (
     <View style={styles.root} testID="settings-sheet">
       {/*
@@ -409,201 +606,40 @@ export function SettingsSheet({
             not a dashboard with a second settings behind a gear. Chrome for
             browsing, so hidden while searching, like the hero above. */}
         {needle === '' && topSection !== undefined ? topSection : null}
-        {/* Root rows stay scannable like WhatsApp Settings. Multi-choice controls
-            move into sheets, but retain radio semantics and one selection per row. */}
-        {needle === '' ? (
-          <Text allowFontScaling style={styles.subheader}>
-            Settings
-          </Text>
-        ) : null}
-        {/* THE PRESENCE ROW WAS HERE until 2026-09-17. A provider's
+        {/* The list, in sections (owner, 2026-09-25, "Option A approved"): Your
+            profile, Money, App, Legal, in that order, from SETTINGS_SECTIONS so
+            the order is data a test can read. Bluesky's SettingsList shape: a
+            label per section, 48dp rows with no rule between them, and one
+            hairline between sections. A section whose rows this tree does not
+            offer, or a search does not match, is not drawn at all.
+
+            THE PRESENCE ROW WAS HERE until 2026-09-17. A provider's
             availability switch (their own "You" tab, above) is the only control
-            over being reachable now, and a member has none to make: two
-            switches for one thought is how somebody ends up unreachable while
-            believing they are only invisible. src/lib/presence.ts carries the
-            argument. */}
-        <View style={styles.group}>
-          {onBlocked !== undefined && shows('Blocked people') ? (
-            <>
-              <Pressable
-                onPress={onBlocked}
-                testID="settings-blocked"
-                accessibilityLabel="Blocked People"
-                press="none"
-                highlight="dim"
-                style={styles.row}
+            over being reachable now; src/lib/presence.ts carries the argument. */}
+        {sections.map((section, index) => (
+          <View
+            key={section.id}
+            style={styles.section}
+            testID={`settings-section-${section.id}`}
+          >
+            {index === 0 ? null : <Divider />}
+            {needle === '' ? (
+              <Text
+                allowFontScaling
+                accessibilityRole="header"
+                style={styles.subheader}
               >
-                <SettingsRowContent
-                  icon="block"
-                  title="Blocked people"
-                  detail="Review people you have blocked"
-                />
-              </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-            </>
-          ) : null}
-        </View>
-
-        <View style={styles.group}>
-          {shows('Theme') ? (
-            <>
-              <Pressable
-                onPress={() => setChoiceSheet('theme')}
-                testID="settings-theme"
-                accessibilityLabel={`Theme, ${themeLabel}`}
-                press="none"
-                highlight="dim"
-                style={styles.row}
-              >
-                <SettingsRowContent
-                  icon="settings"
-                  title="Theme"
-                  detail={themeLabel}
-                />
-              </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-            </>
-          ) : null}
-        </View>
-
-        {/* Recharge history: the money ledger. Shown only on the member tree
-            (provider tree has no onTransactions).
-
-            Its detail line no longer claims invoices. The documents moved to
-            their own row below, and two rows promising the same thing is how a
-            member ends up on the one that does not have it. */}
-        {onTransactions !== undefined && shows('Recharge history') ? (
-          <View style={styles.group}>
-            <Pressable
-              onPress={onTransactions}
-              testID="settings-transactions"
-              accessibilityLabel="Recharge history"
-              press="none"
-              highlight="dim"
-              style={styles.row}
-            >
-              <SettingsRowContent
-                icon="wallet"
-                title="Recharge history"
-                detail="Your top-ups, and what each one cost"
-              />
-            </Pressable>
-            <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
+                {section.title}
+              </Text>
+            ) : null}
+            {section.rows.map(id => {
+              const spec = rowSpecs[id];
+              return spec === undefined ? null : (
+                <SettingsRow key={id} spec={spec} />
+              );
+            })}
           </View>
-        ) : null}
-
-        {/* The billing documents themselves — `public.invoices` and the stored
-            PDF of each (migration 019). The whole chain existed and nothing in
-            the app reached it, so a member who paid could not obtain the
-            document that says so. Member tree only: a provider is paid out. */}
-        {onInvoices !== undefined && shows('Bills & invoices') ? (
-          <View style={styles.group}>
-            <Pressable
-              onPress={onInvoices}
-              testID="settings-invoices"
-              accessibilityLabel="Bills and invoices"
-              press="none"
-              highlight="dim"
-              style={styles.row}
-            >
-              <SettingsRowContent
-                icon="download"
-                title="Bills & invoices"
-                detail="Open or save the bill for any top-up"
-              />
-            </Pressable>
-            <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          </View>
-        ) : null}
-
-        {/* Usage by session (goal item 2). On both trees, with the title the
-            caller's own side of the row: a member spent, a provider earned. */}
-        {onUsage !== undefined &&
-        shows(isProvider ? 'Earnings by session' : 'Usage by session') ? (
-          <View style={styles.group}>
-            <Pressable
-              onPress={onUsage}
-              testID="settings-usage"
-              accessibilityLabel="Usage by session"
-              press="none"
-              highlight="dim"
-              style={styles.row}
-            >
-              <SettingsRowContent
-                icon="listen"
-                title={isProvider ? 'Earnings by session' : 'Usage by session'}
-                detail={
-                  isProvider
-                    ? 'What each conversation paid'
-                    : 'What each conversation cost'
-                }
-              />
-            </Pressable>
-            <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-          </View>
-        ) : null}
-
-        {/*
-         * Terms and Privacy links: android-audit.md launch-blocking gap.
-         * Both are `Linking.openURL` — no in-app webview, same reason as
-         * the Google sign-in: Linking opens the system browser.
-         * URLs are the same as the seeded policy_versions rows (migration 027).
-         */}
-        <View style={styles.group}>
-          {shows('Terms of service') ? (
-            <>
-              <Pressable
-                onPress={() => {
-                  void Linking.openURL(legalUrl('terms'));
-                }}
-                testID="settings-terms"
-                accessibilityLabel="Terms of Service"
-                press="none"
-                highlight="dim"
-                style={styles.row}
-              >
-                <SettingsRowContent icon="report" title="Terms of service" />
-              </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-            </>
-          ) : null}
-          {shows('Privacy policy') ? (
-            <>
-              <Pressable
-                onPress={() => {
-                  void Linking.openURL(legalUrl('privacy'));
-                }}
-                testID="settings-privacy"
-                accessibilityLabel="Privacy Policy"
-                press="none"
-                highlight="dim"
-                style={styles.row}
-              >
-                <SettingsRowContent icon="block" title="Privacy policy" />
-              </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-            </>
-          ) : null}
-          {/* Refund policy: the purchase surfaces state "no refunds" (RechargeScreen,
-              PaymentSheet) but a member could not read the policy itself in-app. The
-              public site lists it as a legal link (web/refund.html), and legal.ts
-              already resolves the 'refund' route, so it sits here with Terms and
-              Privacy. Same Linking.openURL to the system browser as the two above. */}
-          {shows('Refund policy') ? (
-            <Pressable
-              onPress={() => {
-                void Linking.openURL(legalUrl('refund'));
-              }}
-              testID="settings-refund"
-              accessibilityLabel="Refund Policy"
-              press="none"
-              highlight="dim"
-              style={styles.row}
-            >
-              <SettingsRowContent icon="wallet" title="Refund policy" />
-            </Pressable>
-          ) : null}
-        </View>
+        ))}
 
         <View style={styles.groupSpaced}>
           {shows('Sign out') ? (
@@ -626,12 +662,11 @@ export function SettingsSheet({
                   chevron={false}
                 />
               </Pressable>
-              <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
             </>
           ) : null}
-          {/* The destructive action in the error colour, its own separated row,
-              which is how a destructive action is kept from sitting flush against
-              a benign one. */}
+          {/* The destructive action in the error colour, its own row, which is
+              how a destructive action is kept from sitting flush against a
+              benign one. */}
           {shows('Delete account') ? (
             <Pressable
               onPress={() => requestAnimationFrame(() => setConfirming(true))}
@@ -930,10 +965,12 @@ const makeStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.xs,
     },
-    // WhatsApp's Settings root is one continuous list on the page surface.
-    // Sections are semantic in code but add no card, tile, or divider chrome.
-    group: {
+    // One section of the list: its label, its rows, and a hairline above
+    // every section but the first (Bluesky SettingsList.Divider, `my_sm`).
+    // No card or tile chrome: the page surface is the list.
+    section: {
       backgroundColor: t.color.bg.base,
+      paddingTop: TOKENS.space.xs,
     },
     groupSpaced: {
       marginTop: TOKENS.space.xl,
@@ -941,7 +978,15 @@ const makeStyles = (t: Theme) =>
     row: {
       flexDirection: 'row',
       alignItems: 'center',
-      minHeight: 64,
+      /*
+       * 48dp, Bluesky's SettingsList.Item `minHeight: 48`, and the floor
+       * Android sets for any touch target: "at least 48dp x 48dp"
+       * (developer.android.com/guide/topics/ui/accessibility/apps). STATED
+       * DEVIATION from M3's list spec (56dp one-line, 72dp two-line): the
+       * owner chose Bluesky's proportions (2026-09-25), and a two-line row
+       * still grows past 48 on its own content.
+       */
+      minHeight: TOKENS.interaction.minTarget,
       paddingVertical: TOKENS.space.sm,
       backgroundColor: t.color.bg.base,
       // FULL-BLEED press highlight (Amit, on the S22: the tap read as an inset
@@ -971,14 +1016,19 @@ const makeStyles = (t: Theme) =>
       minWidth: 0,
       paddingHorizontal: TOKENS.space.sm,
     },
+    // Bluesky's roles (ADR-0033): text_md titles, text_sm detail,
+    // text_sm semibold section labels.
     rowTitle: {
-      ...TOKENS.typography.bodyLarge,
+      ...TOKENS.typography.textMd,
       color: t.color.text.primary,
     },
     rowDetail: {
-      ...TOKENS.typography.bodySmall,
+      ...TOKENS.typography.textSm,
       color: t.color.text.secondary,
       marginTop: TOKENS.space.hair,
+    },
+    rowDetailAttention: {
+      color: t.color.state.danger,
     },
     rowTitleDanger: {
       color: t.color.state.danger,

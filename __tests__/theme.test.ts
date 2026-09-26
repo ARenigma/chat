@@ -1001,7 +1001,6 @@ describe('a kind of text reads at one role, screen or sheet', () => {
       [PAYMENT, 'centreLabel'],
       [PAYMENT, 'successBalance'],
       ['src/screens/SafetySheet.tsx', 'reasonLabel'],
-      ['src/screens/SettingsSheet.tsx', 'rowTitle'],
       ['src/components/SessionFeedbackSheet.tsx', 'word'],
       // The screen half of the pair — a centred "Loading…" and an empty-state
       // body on a full page, the same job centreLabel does inside the sheet.
@@ -1022,9 +1021,15 @@ describe('a kind of text reads at one role, screen or sheet', () => {
     // settings row (rowDetail) state it, all at the same DISCLOSURE role.
     expect(roleOf(RECHARGE, 'cardGst')).toBe(DISCLOSURE);
     expect(roleOf(PAYMENT, 'totalGst')).toBe(DISCLOSURE);
-    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe(
-      DISCLOSURE,
-    );
+  });
+
+  it('sets the settings list in the Bluesky roles (ADR-0033, provider IA)', () => {
+    // The sectioned list (owner, 2026-09-25, "Option A approved") takes
+    // Bluesky's SettingsList typography: text_md titles, text_sm detail and
+    // text_sm semibold section labels, where it was bodyLarge / bodySmall.
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowTitle')).toBe('textMd');
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe('textSm');
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'subheader')).toBe('textSmSemiBold');
   });
 
   it('sets every text button in the bold label face', () => {

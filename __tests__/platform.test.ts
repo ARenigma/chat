@@ -1074,7 +1074,10 @@ describe('device coverage matrix', () => {
     // M3 list slots: leading stays narrower than dominant content; the outer
     // Pressable is the only action target. https://m3.material.io/components/lists/specs
     expect(settings).toContain('function SettingsRowContent');
-    expect(settings).toMatch(/row:\s*{[\s\S]*?minHeight:\s*64/);
+    // 48dp, the Android touch-target floor and Bluesky's SettingsList.Item
+    // (owner, 2026-09-25); a stated deviation from M3's 56dp one-line row.
+    // https://developer.android.com/guide/topics/ui/accessibility/apps
+    expect(settings).toMatch(/row:\s*{[\s\S]*?minHeight:\s*TOKENS\.interaction\.minTarget/);
     expect(settings).toMatch(/rowCopy:\s*{[\s\S]*?flex:\s*1/);
     // The leading icon uses styles.iconBox (danger rows add a tinted disc via
     // an array style, so match the token rather than the exact expression).
@@ -1082,8 +1085,11 @@ describe('device coverage matrix', () => {
     expect(settings).toContain(
       "import { Divider } from '../components/Divider'",
     );
-    // Dividers separate rows, and align to where the title starts rather than
-    // borrowing the avatar list's 72dp. https://m3.material.io/components/divider/specs
+    // Dividers separate SECTIONS on the root list (Bluesky SettingsList), and
+    // inside the theme sheet they separate rows, aligned to where the title
+    // starts rather than borrowing the avatar list's 72dp.
+    // https://m3.material.io/components/divider/specs
+    expect(settings).toMatch(/\{index === 0 \? null : <Divider \/>\}/);
     expect(settings).toContain(
       '<Divider variant="inset" insetStart={ROW_TEXT_INSET} />',
     );
