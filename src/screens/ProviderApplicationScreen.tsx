@@ -830,7 +830,6 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
               <Chip
                 key={c}
                 label={CATEGORY_BADGE[c]}
-                tone={category === c ? 'warm' : 'neutral'}
                 selected={category === c}
                 onPress={() => setCategory(c)}
               />
@@ -924,7 +923,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted }: Props) {
               <Chip
                 key={l}
                 label={l}
-                tone={languages.includes(l) ? 'warm' : 'neutral'}
+                selected={languages.includes(l)}
                 onPress={() => toggleLanguage(l)}
               />
             ))}

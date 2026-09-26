@@ -1208,3 +1208,31 @@ describe('Chats rail unread badge', () => {
     expect(anchorTop + overhang).toBeGreaterThanOrEqual(0);
   });
 });
+
+/*
+ * ADR-0033 (Amit, 2026-09-26: "match chips to bluesky"). Bluesky's selectable
+ * pill (src/components/InterestTabs.tsx:359-381) marks selection with fill,
+ * border and ink, never the brand colour, and the callers pass `selected`
+ * rather than a coral tone.
+ */
+describe('selectable chips are Bluesky pills', () => {
+  const chip = read('src/components/Chip.tsx');
+  const block = (name: string) =>
+    chip.slice(chip.indexOf(`  ${name}: {`), chip.indexOf('},', chip.indexOf(`  ${name}: {`)));
+
+  it('draws the pill and its selected state without the accent', () => {
+    expect(block('chip')).toContain('borderWidth: 1');
+    expect(block('chip')).toContain('paddingHorizontal: TOKENS.space.md');
+    expect(block('chip')).toContain('paddingVertical: TOKENS.space.xs');
+    expect(block('label')).toContain('...TOKENS.typography.textSmSemiBold');
+    for (const name of ['chip', 'chipSelected', 'label', 'labelSelected']) {
+      expect(block(name)).not.toMatch(/accent|inverse/);
+    }
+  });
+
+  it('is selected by state, not painted warm, on Home and the application', () => {
+    for (const file of ['src/screens/HomeScreen.tsx', 'src/screens/ProviderApplicationScreen.tsx']) {
+      expect(read(file)).not.toMatch(/tone=\{[^}]*'warm'/);
+    }
+  });
+});

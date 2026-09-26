@@ -816,7 +816,6 @@ export function HomeScreen({
                 <Chip
                   key={c}
                   label={CATEGORY_LABEL[c]}
-                  tone={searchFilter.category === c ? 'warm' : 'neutral'}
                   selected={searchFilter.category === c}
                   onPress={() =>
                     setSearchFilter(f => ({
@@ -839,7 +838,6 @@ export function HomeScreen({
                 <Chip
                   key={band}
                   label={AGE_BAND_LABEL[band]}
-                  tone={searchFilter.bands.includes(band) ? 'warm' : 'neutral'}
                   selected={searchFilter.bands.includes(band)}
                   onPress={() => setSearchFilter(f => toggleBand(f, band))}
                 />
@@ -867,7 +865,6 @@ export function HomeScreen({
                 <Chip
                   key={language}
                   label={language}
-                  tone={searchFilter.languages.includes(language) ? 'warm' : 'neutral'}
                   selected={searchFilter.languages.includes(language)}
                   onPress={() =>
                     setSearchFilter(f =>
@@ -895,7 +892,6 @@ export function HomeScreen({
                 <Chip
                   key={topic}
                   label={topic}
-                  tone={searchFilter.expertise.includes(topic) ? 'warm' : 'neutral'}
                   selected={searchFilter.expertise.includes(topic)}
                   onPress={() =>
                     setSearchFilter(f => toggleFilterExpertise(f, topic, searchTopics))

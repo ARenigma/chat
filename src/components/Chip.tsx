@@ -264,12 +264,22 @@ function FilterChipView({
 export const FilterChip = memo(FilterChipView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
+  /*
+   * Bluesky's selectable pill (src/components/InterestTabs.tsx:359-381),
+   * adopted under ADR-0033 (Amit, 2026-09-26: "match chips to bluesky"):
+   * rounded_full, px_lg 16, py_sm 8 and a 1dp border. Unselected sits on the
+   * page with a faint border and contrast-medium ink; selected is a faint
+   * fill, a stronger border and full ink. No brand colour in either state:
+   * selection is carried by fill, border and ink, not by coral.
+   */
   chip: {
     paddingHorizontal: TOKENS.space.md,
     paddingVertical: TOKENS.space.xs,
     borderRadius: TOKENS.radius.pill,
     borderCurve: 'continuous',
-    backgroundColor: t.color.bg.sunken,
+    borderWidth: 1,
+    borderColor: t.color.border.hairline,
+    backgroundColor: t.color.bg.base,
   },
   chipWarm: {
     backgroundColor: t.color.bg.accentTint,
@@ -278,11 +288,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.positive,
   },
   chipSelected: {
-    backgroundColor: t.color.bg.inverse,
+    backgroundColor: t.color.bg.sunken,
+    borderColor: t.color.border.strong,
   },
+  // Bluesky's label is font_medium on the default text_sm; Geist ships no
+  // Medium face here and `face.medium` is SemiBold, so it is textSmSemiBold.
   label: {
-    ...TOKENS.typography.labelLargeEmphasized,
-    color: t.color.text.primary,
+    ...TOKENS.typography.textSmSemiBold,
+    color: t.color.text.secondary,
   },
   labelWarm: {
     color: t.color.text.accent,
@@ -291,7 +304,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.positive,
   },
   labelSelected: {
-    color: t.color.text.onInverse,
+    color: t.color.text.primary,
   },
 
   /*
