@@ -89,7 +89,7 @@ export function getViewingConversation(): string | null {
 /**
  * Whether a sheet or the media viewer is open over the app. Both are React
  * Native Modals, and on Android a Modal is a Dialog: a window of its own above
- * the activity's. ChatRingScreen is a View in the activity's window, so its
+ * the activity's. ChatRequestScreen is a View in the activity's window, so its
  * zIndex and elevation order it among the app's views and cannot lift it over
  * a Dialog; a ring that starts under an open sheet or photo is out of sight
  * and out of reach (`foregroundPushAction` reads this for that reason).
@@ -104,14 +104,14 @@ let ringing: string | null = null;
 
 /**
  * Declare the conversation whose chat request is ringing full screen in the
- * app, or `null` when no ring is up. Set by ChatRingScreen for the ring's
+ * app, or `null` when no ring is up. Set by ChatRequestScreen for the ring's
  * whole life, whether or not the app is in use, and released by it when the
  * ring ends or unmounts.
  *
  * A second signal rather than a second use of `viewing`, because the ring is
  * not the chat: `useViewingConversation` also clears the conversation's
  * notification, which is right for a chat on screen and wrong for a ring the
- * provider may let run out (ChatRingScreen decides that clear itself).
+ * provider may let run out (ChatRequestScreen decides that clear itself).
  *
  * Not dropped while the app is out of use, for two reasons. It does not need
  * to be: `foregroundPushAction` tests `inUse` before the ring, so a phone
@@ -174,7 +174,7 @@ export function declinedAt(conversationId: string): number | null {
  * was posted into the conversation's entry, silently under the ring, and the
  * landing's clear then cancelled it unseen: the platform's own example of a
  * conversation notification cancelled too early. So a Decline clears only when
- * nothing newer than its press was posted (ChatRingScreen). Server clock, as
+ * nothing newer than its press was posted (ChatRequestScreen). Server clock, as
  * `sentAt` is, against the device's press time: the same skew `declined`
  * already accepts. Emptied on sign-out with the rest.
  * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
@@ -296,8 +296,8 @@ export function foregroundPushAction(
    * The ring. A member's first message inserts the session request and the
    * message in one transaction (077), so the provider gets the ring over
    * Realtime and the "wants to have a chat with you" push for the SAME
-   * conversation. The ring is opaque and full screen (ChatRingScreen), and
-   * ChatRingScreen's own header draws the line: the ring is the in-app half,
+   * conversation. The ring is opaque and full screen (ChatRequestScreen), and
+   * ChatRequestScreen's own header draws the line: the ring is the in-app half,
    * the notification the out-of-app half. A banner dropped over it announces
    * the event twice, and tapping it opened the chat underneath the ring,
    * which stayed up. While it is up, no conversation gets a banner (below).
@@ -312,7 +312,7 @@ export function foregroundPushAction(
    * it the request waits in the thread.) setSilent "prevents the
    * notification from peeking on screen, regardless of the importance",
    * which keeps the ring clear, and the entry sits in the shade until it is
-   * answered, dismissed, or cleared: ChatRingScreen clears it on a decline the
+   * answered, dismissed, or cleared: ChatRequestScreen clears it on a decline the
    * server took, on a ring watched to the end, and when the ring leaves with
    * this conversation's chat on screen under it; opening the chat clears it
    * (`useViewingConversation`).
@@ -328,7 +328,7 @@ export function foregroundPushAction(
    * case this branch exists for.
    *
    * After the not-in-use test, so a phone locked mid-ring still alerts. That
-   * order is the whole of it: ChatRingScreen holds the ringing signal while
+   * order is the whole of it: ChatRequestScreen holds the ringing signal while
    * the app is out of use (see `setRingingConversation`).
    * Residual, and accepted: this reads the signal at delivery, so a push that
    * beats the Realtime insert can still peek once before the ring starts. Both
@@ -398,14 +398,14 @@ export function foregroundPushAction(
  * Conversations.kt), so a chat request's notification goes too.
  *
  * Except while ANY chat request is ringing over it, this conversation's or
- * another's. The ring is opaque and full screen (ChatRingScreen), so the chat
+ * another's. The ring is opaque and full screen (ChatRequestScreen), so the chat
  * is mounted, in use and holding the signal while nobody can see it: the
  * platform's view "where the user can't see or address the message". Every
  * push that lands meanwhile goes to the shade silently (`show-silent` in
  * `foregroundPushAction`), for this chat too, and clearing it on a return, or
  * when a sheet lifted over the ring, cancelled a message still hidden behind
  * it. That used to hold only for the ring's own conversation, so chat A under
- * ring B lost A's entry on every return to the app. ChatRingScreen does this
+ * ring B lost A's entry on every return to the app. ChatRequestScreen does this
  * clear instead, when the ring leaves with this chat on screen, whichever
  * conversation the ring was for.
  * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices

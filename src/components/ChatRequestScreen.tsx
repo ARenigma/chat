@@ -34,7 +34,7 @@ import {
   recordDeclined,
   setRingingConversation,
 } from '../lib/viewingConversation';
-import { useStore } from '../store/useStore';
+import { useStore, type IncomingRequest } from '../store/useStore';
 import { Avatar } from './Avatar';
 import { CallRing } from './CallRing';
 import { Icon } from './Icon';
@@ -85,6 +85,14 @@ function announceQueued(announced: Set<string>): void {
 const RING_FACE = 88;
 
 interface Props {
+  /**
+   * The request ringing, or null for none. PASSED IN since navigation step 6
+   * (nav-migration §2): the old tree hands it the store's `incomingRequest`,
+   * and the `ChatRequest{requestId}` route (step 7) hands it the store's
+   * request when it is still that id. The screen never picks which request it
+   * is showing, so a route cannot end up ringing a different one.
+   */
+  request: IncomingRequest | null;
   /** Where to go when the provider accepts. */
   onOpenConversation: (peerId: string) => void;
   /**
@@ -187,11 +195,10 @@ function clearRevealedChat(ringConversationId: string): void {
   }
 }
 
-export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
+export function ChatRequestScreen({ request: incoming, onOpenConversation, held = false }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const incoming = useStore(s => s.incomingRequest);
   const clearIncoming = useStore(s => s.clearIncomingRequest);
   const setNotice = useStore(s => s.setNotice);
   const accept = useAcceptSessionRequest();
@@ -212,15 +219,24 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
   /** Queued requests already announced out of the app (`announceQueued`). */
   const announced = useRef<Set<string>>(new Set());
 
-  // One clock, restarted per request. Ringing forever is how a provider learns
-  // to ignore the screen.
+  // One clock per request. Ringing forever is how a provider learns to ignore
+  // the screen.
+  //
+  // It counts to the request's own `expiresAt` (receipt + CHAT_RING_SECONDS,
+  // local clock, useStore.ts), not to 30 s from whenever this effect started,
+  // since navigation step 6 (nav-migration §2). The store and the intent queue
+  // already treat `expiresAt` as the end of the ring (an expired request is
+  // dropped rather than promoted or presented); a clock that restarted on
+  // every mount told a different story, and under the navigator the screen
+  // can remount (a route re-presented after a call) without the request being
+  // any younger.
   useEffect(() => {
     if (incoming === null || held) {
       return;
     }
-    setLeft(CHAT_RING_SECONDS);
-    const started = Date.now();
-    const { conversationId, requestId } = incoming;
+    const { conversationId, requestId, expiresAt } = incoming;
+    const secondsLeft = (): number => Math.ceil((expiresAt - Date.now()) / 1000);
+    setLeft(Math.min(CHAT_RING_SECONDS, secondsLeft()));
     /*
      * While this ring is up, a foreground push for its conversation is the
      * same event told twice, and a banner over the ring opened the chat
@@ -245,12 +261,20 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
         announceQueued(announced.current);
       }
     });
-    const timer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - started) / 1000);
-      const remaining = CHAT_RING_SECONDS - elapsed;
+    /*
+     * One tick of the clock, ringing out at zero. Run once before
+     * the interval as well, so a request that is already past `expiresAt`
+     * when it is shown (held behind a call that outlasted it) rings out at
+     * once instead of showing 0:00 for a second.
+     */
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const tick = (): void => {
+      const remaining = secondsLeft();
       setLeft(remaining);
       if (remaining <= 0) {
-        clearInterval(timer);
+        if (timer !== undefined) {
+          clearInterval(timer);
+        }
         // The ring is off the screen from here, whenever the re-render lands.
         release();
         // Silence is not a decline: the request lives its full 24 hours and the
@@ -282,7 +306,15 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
         }
         clearIfUncovered(conversationId);
       }
-    }, 1000);
+    };
+    if (secondsLeft() <= 0) {
+      tick();
+      return () => {
+        leaving.remove();
+        release();
+      };
+    }
+    timer = setInterval(tick, 1000);
     return () => {
       clearInterval(timer);
       leaving.remove();
@@ -457,7 +489,9 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
       });
   }, [incoming, decline, clearIncoming, setNotice]);
 
-  if (incoming === null || held) {
+  // Past `expiresAt` there is nothing to answer: the clock effect is ringing
+  // it out this commit, and a frame of 0:00 with live buttons is not a ring.
+  if (incoming === null || held || incoming.expiresAt <= Date.now()) {
     return null;
   }
 

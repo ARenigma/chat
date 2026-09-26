@@ -3,7 +3,7 @@
  * appears when a member idles on Home (migration 126, HOME_SUGGESTIONS_ENABLED).
  *
  * Amit chose "X is calling" copy even though the provider did not initiate the
- * contact (2026-09-20). The visual is full-screen like ChatRingScreen but uses
+ * contact (2026-09-20). The visual is full-screen like ChatRequestScreen but uses
  * different copy and button labels (Start / Not now) to distinguish it from a
  * real incoming chat request.
  *

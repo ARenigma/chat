@@ -40,7 +40,7 @@ export type CampaignEvent =
   | { type: 'REAL_CALL_ARRIVED' }
   | { type: 'REAL_RING_ARRIVED' };
 
-/** How long the member sees each prompt. Matches send-call TTL and ChatRingScreen. */
+/** How long the member sees each prompt. Matches send-call TTL and ChatRequestScreen. */
 export const PROMPT_DURATION_S = 30;
 
 /** Idle wait before the first prompt fires. */

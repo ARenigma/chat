@@ -403,7 +403,7 @@ export async function notifyChatRequest(
 /**
  * Clear a conversation's notification once it has been read in the app. Called
  * by `useViewingConversation` whenever that conversation is on screen, by
- * `ChatRingScreen` once the server has taken the provider's decline of a
+ * `ChatRequestScreen` once the server has taken the provider's decline of a
  * ringing request or when the ring leaves a chat on screen. A lock-screen
  * Decline clears through `clearChatRequest` instead.
  */

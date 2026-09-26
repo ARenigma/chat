@@ -230,13 +230,13 @@ describe('every covering screen drops a barrier', () => {
     // An overlay App.tsx closes itself, above consumeBack() in its own handler,
     // so it never reaches the guard stack.
     RechargeScreen: 'an overlay App.tsx closes before consumeBack() runs',
-    ChatRingScreen: 'an overlay with its own 30 s countdown; back hardware press dismisses the ring naturally',
+    ChatRequestScreen: 'an overlay with its own 30 s countdown; back hardware press dismisses the ring naturally',
   };
 
   /** Screens that do not live in `src/screens`, by the name App.tsx renders. */
   const ELSEWHERE: Record<string, string> = {
     ChatScreenV2: 'src/chat-v2/ChatScreenV2.tsx',
-    ChatRingScreen: 'src/components/ChatRingScreen.tsx',
+    ChatRequestScreen: 'src/components/ChatRequestScreen.tsx',
   };
 
   /*

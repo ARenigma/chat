@@ -149,7 +149,7 @@ import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
 import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
-import { ChatRingScreen, CHAT_RING_SECONDS } from './src/components/ChatRingScreen';
+import { ChatRequestScreen, CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
 
 initSentry();
@@ -1856,7 +1856,7 @@ function SignedIn({
 
   /*
    * Where an accepted chat request goes: its chat, except over a call. The
-   * ring is held while the call route is up (`held` on ChatRingScreen), but
+   * ring is held while the call route is up (`held` on ChatRequestScreen), but
    * an Accept pressed before a call was routed can land after it, and
    * pushing the chat route then unmounts CallScreen, whose unmount cleanup
    * ends the call. The chat is in the list, and the notice says so.
@@ -1900,7 +1900,7 @@ function SignedIn({
    * The applier routes each intent to the correct tree (member vs. provider),
    * replacing the three separate pending-state effects that existed before.
    * chatRequest: closeAllActiveElements is done in intents.ts before the
-   * applier is called, so the applier itself is a no-op — ChatRingScreen
+   * applier is called, so the applier itself is a no-op — ChatRequestScreen
    * presents itself from the store's incomingRequest field.
    */
   const intentApplier = useCallback(
@@ -1938,7 +1938,7 @@ function SignedIn({
           }
           break;
         case 'chatRequest':
-          // ChatRingScreen renders from the store; no navigation push needed.
+          // ChatRequestScreen renders from the store; no navigation push needed.
           break;
       }
     },
@@ -2088,8 +2088,8 @@ function SignedIn({
         {/* The chat ring, above every screen and both nav bars (goal item 13).
             Renders nothing unless a request is live. setIncomingRequest is wired
             in useIncomingChatRequests above; clearIncomingRequest is called by
-            ChatRingScreen itself on accept/decline/expire. */}
-        <ChatRingScreen
+            ChatRequestScreen itself on accept/decline/expire. */}
+        <ChatRing
           held={providerRoute.name === 'call'}
           onOpenConversation={openAcceptedChat}
         />
@@ -2529,3 +2529,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space['2xl'],
   },
 });
+
+/**
+ * The old tree's ring host: hands ChatRequestScreen the store's ringing
+ * request. Its own component so a ring arriving or leaving re-renders this and
+ * not SignedIn, which is what the ring reading the store itself gave before
+ * navigation step 6. Deleted when `ChatRequest` becomes a route (step 7).
+ */
+function ChatRing(props: {
+  held: boolean;
+  onOpenConversation: (peerId: string) => void;
+}) {
+  const request = useStore(s => s.incomingRequest);
+  return <ChatRequestScreen request={request} {...props} />;
+}

@@ -7524,7 +7524,7 @@ describe('a chat request rings, and can be answered either way', () => {
      * notification rather than a full-screen takeover. Making chat louder than
      * calls on the lock screen would invert that.
      */
-    const ring = read('src/components/ChatRingScreen.tsx');
+    const ring = read('src/components/ChatRequestScreen.tsx');
     expect(ring).toContain('2026-08-27');
     expect(ring).toContain('index.js:59');
     // index.js is untouched: no fourth push kind.
@@ -7532,7 +7532,7 @@ describe('a chat request rings, and can be answered either way', () => {
   });
 
   it('rings for 30 seconds and declines nothing by silence', () => {
-    const ring = withoutComments(read('src/components/ChatRingScreen.tsx'));
+    const ring = withoutComments(read('src/components/ChatRequestScreen.tsx'));
     expect(ring).toContain('export const CHAT_RING_SECONDS = 30');
     // Silence stops the RING, never the request: the row lives its 24 hours
     // and the thread is still waiting in their list.
@@ -7546,9 +7546,9 @@ describe('a chat request rings, and can be answered either way', () => {
   it('mounts the provider ChatRing via useIncomingChatRequests in SignedIn', () => {
     const app = withoutComments(read('App.tsx'));
     // Wired in task notifications-chat-ring (2026-09-20): providers receive
-    // in-app chat-request rings via useIncomingChatRequests + ChatRingScreen.
+    // in-app chat-request rings via useIncomingChatRequests + ChatRequestScreen.
     expect(app).toContain('useIncomingChatRequests');
-    expect(app).toContain('<ChatRingScreen');
+    expect(app).toContain('<ChatRequestScreen');
     // Only for providers (not members): the ring is guarded by role.
     expect(app).toContain("role === 'provider'");
     expect(withoutComments(readChat())).toContain(

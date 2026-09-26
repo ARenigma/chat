@@ -1641,7 +1641,7 @@ describe('useViewingConversation', () => {
     // The ring is opaque whatever it is for. Chat A under ring B is in use and
     // unseen, A's pushes go to the shade silently, and clearing A on mount, on
     // a return, or when a sheet over the ring lifted cancelled a message still
-    // hidden behind it. ChatRingScreen clears A when the ring leaves.
+    // hidden behind it. ChatRequestScreen clears A when the ring leaves.
     const { viewing, screen, appState, clear } = mount();
     viewing.setRingingConversation(B);
     screen(A);
@@ -2379,6 +2379,15 @@ describe('the chat-request ring takes its notification with it', () => {
     // Server time of the row, which a Decline is anchored to (Greptile P1 on
     // 6bb4114): the same instant as the member message that opened it.
     createdAt: new Date(1_790_000_000_000).toISOString(),
+    /*
+     * Receipt + 30 s, as the store sets it (useStore.ts); the ring's clock has
+     * counted to it since navigation step 6. A getter, so a row spread from
+     * this one gets the time it was BUILT, which is when each row here
+     * arrives; the store only ever holds spread copies.
+     */
+    get expiresAt(): number {
+      return Date.now() + 30_000;
+    },
   };
 
   interface Element {
@@ -2511,7 +2520,7 @@ describe('the chat-request ring takes its notification with it', () => {
     // lands (`stillRinging`), and its clear really empties it.
     const waiting = [...queued];
     const store: RingStore = {
-      incomingRequest: REQUEST_ROW,
+      incomingRequest: { ...REQUEST_ROW },
       get queuedRequests() {
         return waiting;
       },
@@ -2519,7 +2528,10 @@ describe('the chat-request ring takes its notification with it', () => {
       setNotice: jest.fn(),
     };
     store.clearIncomingRequest.mockImplementation(() => {
-      store.incomingRequest = waiting.shift() ?? null;
+      const next = waiting.shift();
+      // A queued row rings from its promotion here: every queued row in these
+      // tests arrives as the ring before it runs out (see `queuedFor`).
+      store.incomingRequest = next === undefined ? null : { ...next, expiresAt: Date.now() + 30_000 };
     });
     const useStore = Object.assign(
       (select: (state: RingStore) => unknown) => select(store),
@@ -2566,11 +2578,20 @@ describe('the chat-request ring takes its notification with it', () => {
       }
       clear.mockClear();
     }
-    const { ChatRingScreen } = require('../src/components/ChatRingScreen') as typeof import('../src/components/ChatRingScreen');
+    const { ChatRequestScreen } = require('../src/components/ChatRequestScreen') as typeof import('../src/components/ChatRequestScreen');
     const onOpenConversation = jest.fn();
-    const props = { onOpenConversation, held };
+    // The request is a PROP since navigation step 6. A getter, so every call
+    // below passes the store's current request, which is what App's ChatRing
+    // host does on each store change.
+    const props = {
+      onOpenConversation,
+      held,
+      get request() {
+        return store.incomingRequest;
+      },
+    };
     // One effect, the ring's clock; run it the way React would on mount.
-    let tree = ChatRingScreen(props);
+    let tree = ChatRequestScreen(props);
     expect(effects).toHaveLength(1);
     let cleanup = effects.splice(0)[0]!();
     return {
@@ -2578,7 +2599,7 @@ describe('the chat-request ring takes its notification with it', () => {
         return tree;
       },
       /** Call the component again, as React does on a store change. */
-      render: () => ChatRingScreen(props),
+      render: () => ChatRequestScreen(props),
       /** The call route changes: held or not, and React re-runs the clock. */
       setHeld: (next: boolean) => {
         props.held = next;
@@ -2593,7 +2614,7 @@ describe('the chat-request ring takes its notification with it', () => {
           cleanup();
         }
         effects.length = 0;
-        tree = ChatRingScreen(props);
+        tree = ChatRequestScreen(props);
         expect(effects).toHaveLength(1);
         cleanup = effects.splice(0)[0]!();
       },
@@ -2720,28 +2741,49 @@ describe('the chat-request ring takes its notification with it', () => {
     expect(ring.viewing.getRingingConversation()).toBe(A);
   });
 
-  it('waits out a call: nothing on screen, no clock, no claim, and rings in full once the call ends', () => {
+  /*
+   * CHANGED in navigation step 6 (nav-migration §2, §9 step 6): the clock counts
+   * to the request's `expiresAt`, so a ring held behind a call gets what is
+   * LEFT of its 30 s once the call ends, not a fresh 30 s, and a call that
+   * outlasted it ends the ring without showing it. The store and the intent
+   * queue already dropped an expired request; the clock now agrees with them.
+   * The request itself is untouched either way: silence is not a decline.
+   */
+  it('waits out a call: nothing on screen, no clock, no claim, and rings for what is left once the call ends', () => {
     // Over a live call, Accept pushed the chat route, which unmounts
     // CallScreen, whose unmount cleanup ends the call.
     const ring = mountRing({ held: true });
     expect(ring.tree).toBeNull();
     expect(ring.viewing.getRingingConversation()).toBeNull();
-    jest.advanceTimersByTime(60_000);
+    jest.advanceTimersByTime(10_000);
     expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
     ring.setHeld(false);
     ring.rerun();
     expect(byTestId(ring.tree, 'chat-ring-accept')).toBeDefined();
     expect(ring.viewing.getRingingConversation()).toBe(A);
-    jest.advanceTimersByTime(29_000);
+    jest.advanceTimersByTime(19_000);
     expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
     jest.advanceTimersByTime(1_000);
     expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
   });
 
+  it('ends a ring a call outlasted the moment the call ends, without ringing it', () => {
+    const ring = mountRing({ held: true });
+    jest.advanceTimersByTime(60_000);
+    expect(ring.clearIncomingRequest).not.toHaveBeenCalled();
+    ring.setHeld(false);
+    ring.rerun();
+    expect(byTestId(ring.tree, 'chat-ring-accept')).toBeUndefined();
+    expect(ring.clearIncomingRequest).toHaveBeenCalledTimes(1);
+    expect(ring.clearIncomingRequest).toHaveBeenCalledWith(REQUEST);
+    // Released as it ran out, so no banner is swallowed for a ring not on screen.
+    expect(ring.viewing.getRingingConversation()).toBeNull();
+  });
+
   it('never opens the chat over a call, even for an Accept that lands after the call was routed', () => {
     const app = withoutComments(read('App.tsx'));
     expect(app).toMatch(
-      /<ChatRingScreen\s*held=\{providerRoute\.name === 'call'\}\s*onOpenConversation=\{openAcceptedChat\}\s*\/>/,
+      /<ChatRing\s*held=\{providerRoute\.name === 'call'\}\s*onOpenConversation=\{openAcceptedChat\}\s*\/>/,
     );
     expect(app).toMatch(
       /const openAcceptedChat = useCallback\(\s*\(peerId: string\) => \{\s*if \(currentProviderRouteRef\.current\.name === 'call'\) \{\s*setNotice\('Accepted\. The chat is waiting in your list\.', 'confirm'\);\s*return;\s*\}\s*pushProvider\(\{ name: 'chat', peerId \}\);/,
@@ -2853,7 +2895,7 @@ describe('the chat-request ring takes its notification with it', () => {
   });
 
   it('uses the same clear the chat screen does, by conversation id', () => {
-    const ring = withoutComments(read('src/components/ChatRingScreen.tsx'));
+    const ring = withoutComments(read('src/components/ChatRequestScreen.tsx'));
     expect(ring).toContain("import { clearConversation, notifyConversation } from '../lib/conversations';");
     // A decline that landed, and a ring leaving its own chat on screen
     // (`clearIfUncovered`). Never a ring-out on its own.

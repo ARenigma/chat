@@ -225,7 +225,7 @@ const CHECKS = [
      *
      * Before migration 086, `accept_session_request` let the RECIPIENT of a
      * chat request create the paid session — and on the ordinary member-first
-     * path the recipient is the PROVIDER. So tapping Accept on ChatRingScreen
+     * path the recipient is the PROVIDER. So tapping Accept on ChatRequestScreen
      * started billing a member who had confirmed nothing, and it kept working
      * after the member declined, because 082's decline was enforced in the
      * client's composer and a build without 082 keeps sending.

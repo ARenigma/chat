@@ -1241,7 +1241,7 @@ Sheet on a release/closedTest build. A screenshot block cannot be unit-tested.
   so that push is `show-silent` too. `useViewingConversation` does not clear
   while any ring is up (2026-09-25: it used to hold off only for a ring on its
   own conversation, so chat A under ring B lost A's silent entries on every
-  return to the app). ChatRingScreen does that clear when the ring leaves
+  return to the app). ChatRequestScreen does that clear when the ring leaves
   (Accept, a Decline that ended it, or a ring-out) with a chat on screen: the
   ring's own conversation under its guards, a different one always. The ringing
   signal is now held for the whole ring, in use or not, because AppState calls
