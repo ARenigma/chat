@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  AccessibilityInfo,
   Image,
   ScrollView,
   StyleSheet,
@@ -32,6 +31,7 @@ import { useStore } from '../store/useStore';
 import { useFavorites } from '../store/useFavorites';
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
 import { fadeSwapOutFast, springTo } from '../theme/motion';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -466,17 +466,7 @@ function FavoriteButton({
 }) {
   const styles = useStyles(makeStyles);
   const scale = useSharedValue(1);
-  const reduceMotion = useRef(false);
-
-  useEffect(() => {
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', next => {
-      reduceMotion.current = next;
-    });
-    void AccessibilityInfo.isReduceMotionEnabled().then(next => {
-      reduceMotion.current = next;
-    });
-    return () => sub.remove();
-  }, []);
+  const reduceMotion = useReduceMotion();
 
   const pop = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

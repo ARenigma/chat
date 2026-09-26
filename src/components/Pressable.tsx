@@ -5,10 +5,14 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { INTERACTION, PRESS, springTo } from '../theme/motion';
+import { INTERACTION, PRESS, pressIn, pressOut, springTo } from '../theme/motion';
 
 /**
  * Which press token this surface uses. `none` still handles the tap.
@@ -16,8 +20,13 @@ import { INTERACTION, PRESS, springTo } from '../theme/motion';
  * Spelled out rather than `keyof typeof PRESS`, which also admitted
  * `press="sendSquashY"`, a real value in the token table and meaningless as a
  * press kind.
+ *
+ * `tab` is the bottom-bar slot kind: 0.90 over 100ms EASE_OUT_QUINT on a
+ * dedicated shared value. Owner deviation from animate-expo's 3% ceiling,
+ * stated in design/tokens.json `$tabDeviation`.
+ * https://github.com/bluesky-social/social-app/blob/main/src/view/com/util/forms/PressableScale.tsx
  */
-export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'none';
+export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'tab' | 'none';
 
 /**
  * Which platform's press model this surface uses.
@@ -211,10 +220,21 @@ function PressableView({
   // On the ripple model the native Android ink wave IS the feedback, so the
   // Reanimated state layer is hidden (opacity 0) to avoid doubling up.
   const layerColor = dim ? theme.color.bg.selected : onColor ?? theme.color.text.primary;
+  // Tracks the OS reduced-motion setting at app-start; does not cause
+  // re-renders (Reanimated's own semantics). Safe to capture in worklet closures.
+  // https://docs.swmansion.com/react-native-reanimated/docs/device/useReducedMotion
+  const isReduced = useReducedMotion();
   const p = useSharedValue(0);
+  // `tab` kind: a dedicated shared value that holds the scale DIRECTLY (not a
+  // 0→1 progress). Starts at 1 (rest). The `p` value is unused for this kind
+  // and stays at 0, so the spring-based press path has no effect on tab slots.
+  //
+  // Owner deviation: 0.90 over 100ms EASE_OUT_QUINT instead of animate-expo's
+  // 3% ceiling. Stated in design/tokens.json `$tabDeviation`.
+  const tap = useSharedValue(1);
   // Read out of the token tables once, on the JS thread: indexing them inside a
   // worklet would capture the whole table into the animation closure.
-  const target = press === 'none' || dim || ripple ? 1 : PRESS[press];
+  const target = press === 'none' || press === 'tab' || dim || ripple ? 1 : PRESS[press];
   const squashY = press === 'send' && !dim && !ripple ? PRESS.sendSquashY : 1;
   // `morph` is ignored under the iOS and ripple models rather than being an
   // error: a caller can pass one shape to both platforms and the platform decides.
@@ -237,6 +257,25 @@ function PressableView({
   }, [busy, held]);
 
   const animated = useAnimatedStyle(() => {
+    // Under the OS "reduce animations" setting, drop the transform entirely for
+    // every press kind. State change still fires; the surface still responds.
+    // Follows Bluesky PressableScale.tsx:57 — omit rather than jump to target,
+    // so nothing scales at all rather than snapping to a compressed state.
+    if (isReduced) {
+      return {
+        ...(from !== undefined && to !== undefined
+          ? { borderRadius: from + (to - from) * p.value }
+          : null),
+        opacity: disabled ? 0.45 : 1,
+      };
+    }
+    if (press === 'tab') {
+      // `tap.value` is already the scale — no progress formula needed.
+      return {
+        transform: [{ scale: tap.value * held.value }],
+        opacity: disabled ? 0.45 : 1,
+      };
+    }
     const progress = p.value;
     const scale = (1 - (1 - target) * progress) * held.value;
     const scaleY = 1 - (1 - squashY) * progress;
@@ -334,11 +373,19 @@ function PressableView({
       onPress={busy ? () => {} : onPress}
       onLongPress={onLongPress}
       onPressIn={() => {
-        p.value = springTo(1, 'snap');
+        if (press === 'tab') {
+          tap.value = pressIn('tab');
+        } else {
+          p.value = springTo(1, 'snap');
+        }
         onPressInProp?.();
       }}
       onPressOut={() => {
-        p.value = springTo(0, 'snap');
+        if (press === 'tab') {
+          tap.value = pressOut();
+        } else {
+          p.value = springTo(0, 'snap');
+        }
       }}
       disabled={disabled}
       hitSlop={slop}

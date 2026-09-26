@@ -565,6 +565,15 @@ describe('motion tokens', () => {
     expect(press.cell).toBeLessThan(press.send);
   });
 
+  it('orders the tab press between send and chip (send < tab < chip)', () => {
+    // 0.90 — owner chose this on 2026-09-25; exceeds animate-expo's 3% ceiling
+    // for frequent controls, deviation stated in design/tokens.json $tabDeviation.
+    // Bluesky uses 0.80 (BottomBar.tsx:413); 0.90 is shallower (near-imperceptible
+    // on a frequent control) while still providing tactile confirmation.
+    expect(press.send).toBeLessThan(press.tab);
+    expect(press.tab).toBeLessThan(press.chip);
+  });
+
   it('squashes the send non-uniformly', () => {
     // Uniform scaling reads as "it got smaller"; a shorter Y reads as weight.
     expect(press.sendSquashY).toBeLessThan(press.send);
@@ -1643,6 +1652,37 @@ describe('motion lives in one module', () => {
     expect(block).toContain('withTiming');
     expect(block).not.toContain('withSpring');
     expect(block).toContain('DURATION.pressRamp');
+    // Retuned to EASE_OUT_QUINT (owner ruling 2026-09-25); EASE_OUT removed.
+    expect(block).toContain('EASE_OUT_QUINT');
+    expect(block).not.toMatch(/easing:\s*EASE_OUT[^_]/);
+  });
+
+  it('exposes a symmetric pressOut builder', () => {
+    // pressOut returns to 1 (rest scale) with the same duration and curve as
+    // pressIn — symmetric press feels like a physical button.
+    const motion = read('src/theme/motion.ts');
+    expect(motion).toContain('export function pressOut(');
+    const start = motion.indexOf('export function pressOut(');
+    const block = motion.slice(start, start + 300);
+    expect(block).toContain('withTiming');
+    expect(block).toContain('DURATION.pressRamp');
+    expect(block).toContain('EASE_OUT_QUINT');
+    expect(block).toContain('ReduceMotion.System');
+  });
+
+  it("'tab' kind uses a dedicated shared value and withTiming in Pressable", () => {
+    // B29 ruling: owner named the tool ("100ms withTiming"), so CSS transitions
+    // are rejected. A shared value is required so the animation runs on the UI
+    // thread and is not dropped by the bridge on a busy JS thread.
+    const pressable = read('src/components/Pressable.tsx');
+    expect(pressable).toContain("'tab'");
+    // Dedicated shared value for the tab scale.
+    expect(pressable).toContain('tap');
+    expect(pressable).toContain('pressIn(');
+    expect(pressable).toContain('pressOut(');
+    // Transform omitted when isReduced — Bluesky PressableScale.tsx:57 pattern.
+    expect(pressable).toContain('isReduced');
+    expect(pressable).toMatch(/if \(isReduced\)/);
   });
 
   it('exposes the transition lock as a value and a writer, and nothing more', () => {

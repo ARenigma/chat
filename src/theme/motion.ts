@@ -169,17 +169,37 @@ export const KEYBOARD_CUBIC = Easing.bezier(
  *
  * The rule that governs the curve: a spring where a finger's velocity is being
  * continued; a timed curve where it is not. A tap has no accumulated velocity
- * so the ramp is `EASE_OUT`, not a spring. The short duration (100ms) keeps
+ * so the ramp is `EASE_OUT_QUINT`, not a spring. The short duration (100ms) keeps
  * feedback attached to the finger — the reference app's emoji cell presses to 0.8 in
  * ~80ms (`EmojiView.java`). `ReduceMotion.System` collapses the scale to
  * nothing under the OS "remove animations" setting; the element still responds
  * (the state change fires), it just does not move.
+ *
+ * The `'tab'` kind uses this curve rather than a spring per the owner ruling on
+ * 2026-09-25: "100ms withTiming". `EASE_OUT_QUINT` is the reference app's
+ * own interpolator for UI feedback (`CubicBezierInterpolator.EASE_OUT_QUINT`).
  */
 export function pressIn(kind: keyof typeof PRESS): number {
   'worklet';
   return withTiming(PRESS[kind], {
     duration: DURATION.pressRamp,
-    easing: EASE_OUT,
+    easing: EASE_OUT_QUINT,
+    reduceMotion: ReduceMotion.System,
+  });
+}
+
+/**
+ * Return a pressable element to its rest scale after the finger lifts.
+ *
+ * Symmetric with `pressIn`: same duration, same curve, same reduce-motion
+ * treatment. Scale returns to 1 (the worklet's own animation target, not a
+ * progress value) so callers that hold the scale directly use this directly.
+ */
+export function pressOut(): number {
+  'worklet';
+  return withTiming(1, {
+    duration: DURATION.pressRamp,
+    easing: EASE_OUT_QUINT,
     reduceMotion: ReduceMotion.System,
   });
 }
@@ -272,11 +292,12 @@ export function springTo(
   to: number,
   name: AnySpringName = 'snap',
   velocity?: number,
+  reduceMotion: ReduceMotion = ReduceMotion.System,
 ): number {
   'worklet';
   const config: WithSpringConfig = {
     ...ALL_SPRINGS[name],
-    reduceMotion: ReduceMotion.System,
+    reduceMotion,
     ...(velocity === undefined ? {} : { velocity }),
   };
   return withSpring(to, config);

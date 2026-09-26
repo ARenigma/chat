@@ -1100,6 +1100,46 @@ describe('device coverage matrix', () => {
     expect(bar).toContain('size={48}');
   });
 
+  /**
+   * Step 4: press primitive — the 'tab' kind in Pressable.
+   *
+   * Owner ruling 2026-09-25: tab slots press to 0.90 over 100ms EASE_OUT_QUINT
+   * on a shared value (B29 rejected CSS transitions). Under reduce motion, the
+   * transform is omitted entirely for every press kind (Bluesky PressableScale.tsx:57).
+   */
+  it("'tab' kind in Pressable uses withTiming 100ms EASE_OUT_QUINT on a shared value", () => {
+    const pressable = read('src/components/Pressable.tsx');
+    // Shared value dedicated to the tab scale (B29 ruling: named tool = shared value).
+    expect(pressable).toContain('tap');
+    expect(pressable).toContain('useSharedValue(1)');
+    // Routes press-in and press-out through the motion.ts builders.
+    expect(pressable).toContain("pressIn('tab')");
+    expect(pressable).toContain('pressOut()');
+    // The motion.ts pressIn is withTiming(PRESS.tab, {duration: pressRamp, easing: EASE_OUT_QUINT}).
+    const motion = read('src/theme/motion.ts');
+    const piStart = motion.indexOf('export function pressIn(');
+    const piBlock = motion.slice(piStart, piStart + 300);
+    expect(piBlock).toContain('EASE_OUT_QUINT');
+    expect(piBlock).toContain('DURATION.pressRamp'); // 100ms
+    expect(piBlock).not.toMatch(/easing:\s*EASE_OUT[^_]/);
+  });
+
+  it('drops the transform entirely under reduce motion for every press kind', () => {
+    const pressable = read('src/components/Pressable.tsx');
+    // isReduced is captured from useReducedMotion() (Reanimated) so it is
+    // safe inside the worklet — no AccessibilityInfo.addEventListener per frame.
+    expect(pressable).toContain('useReducedMotion');
+    expect(pressable).toContain('isReduced');
+    // The worklet must branch on isReduced before returning any transform.
+    expect(pressable).toMatch(/if \(isReduced\)/);
+    // No transform key returned in the reduced branch.
+    const reducedBranch = (() => {
+      const idx = pressable.indexOf('if (isReduced)');
+      return pressable.slice(idx, pressable.indexOf('if (press ===', idx));
+    })();
+    expect(reducedBranch).not.toContain('transform');
+  });
+
   it('hides the bottom bar on a push instead of rebuilding it', () => {
     // The bar is `position: 'absolute'`, so it never took layout from the
     // content area — the conditional render bought nothing and cost a native

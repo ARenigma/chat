@@ -211,6 +211,7 @@ export const LIGHT = {
       sendSquashY: 0.78,
       busy: 0.98,
       cell: 0.8,
+      tab: 0.9,
     },
     stagger: {
       row: 42,
@@ -814,6 +815,7 @@ export const DARK = {
       sendSquashY: 0.78,
       busy: 0.98,
       cell: 0.8,
+      tab: 0.9,
     },
     stagger: {
       row: 42,
