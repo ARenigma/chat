@@ -3918,6 +3918,30 @@ describe('sign-out drops the device session first and ends the old one on a clie
     expect(a.store.has('auth.pendingSignOut')).toBe(false);
   });
 
+  it('a cold start with ANOTHER account signed in finishes the old sign-out without revoking the live token', async () => {
+    // Review follow-up (2026-09-25): the boot's `resumePendingSignOuts` has no
+    // `!signedInOnDevice()` guard, unlike the online listener. It needs none:
+    // `pushHalfFor` asks per entry, and with somebody else signed in the
+    // entry owes only its own row (`unregisterPush`), never `stopPush`,
+    // whose halt and `deleteToken` would take the signed-in account's.
+    const store = new Map<string, string>([
+      ['auth.pendingSignOut', JSON.stringify([{ session: STORED_B, push: true }])],
+      [SESSION_KEY, STORED],
+    ]);
+    const a = loadAuth({ store });
+    a.pushTeardown.open();
+    await a.auth.resumePendingSignOuts();
+    expect(a.stopPush).not.toHaveBeenCalled();
+    expect(a.events).toEqual([
+      'ghost setSession access-B',
+      'unregisterPush',
+      'push row delete only, as the old account',
+      'ghost signOut local',
+    ]);
+    expect(a.store.get(SESSION_KEY)).toBe(STORED);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
   it('asks again before each entry, so a sign-in between two pending sign-outs spares the next account', async () => {
     const STORED_C = JSON.stringify({ access_token: 'access-C', refresh_token: 'refresh-C', user: { id: 'user-c' } });
     const store = new Map<string, string>([
