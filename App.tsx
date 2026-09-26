@@ -56,15 +56,19 @@ import {
 import { clearCall } from './src/lib/conversations';
 import {
   memberParent,
-  isAccountLink,
-  linkIsForAccount,
-  parseChatV2Url,
   providerParent,
   transitionFor,
   type ChatDoor,
   type MemberRoute,
   type ProviderRoute,
 } from './src/lib/routes';
+import {
+  isAccountLink,
+  linkIsForAccount,
+  parseCallUrl,
+  parseChatV2Url,
+  parsePeerUrl,
+} from './src/lib/routes/links';
 import { initSentry } from './src/lib/sentry';
 import { sweepExpiredOutbox } from './src/lib/outboxStore';
 import { isUuid } from './src/lib/ids';
@@ -989,23 +993,19 @@ function Root() {
        *
        * Parsed with regex, not URLSearchParams, which Hermes does not ship.
        */
-      const callMatch = url.match(/^companionchat:\/\/call\/([^?]+)\?(.*)$/);
-      if (callMatch) {
-        const callPeer = callMatch[1] ?? '';
-        const qs = callMatch[2] ?? '';
-        const callId = qs.match(/callId=([^&]+)/)?.[1];
-        const action = qs.match(/action=([^&]+)/)?.[1] ?? 'answer';
-        // `medium` is now sent by callActionIntent. The 'voice' fallback stays for
-        // a notification posted by an older build still sitting in the shade.
-        const medium = (qs.match(/medium=([^&]+)/)?.[1] ?? 'voice') as 'voice' | 'video';
-        if (isUuid(callPeer) && callId !== undefined && isUuid(callId)) {
-          void clearCall(callId);
-          if (action === 'decline') {
-            void endCall(callId);
-            return;
-          }
-          setPendingIncoming({ peerId: callPeer, callId, medium });
+      const parsedCall = parseCallUrl(url);
+      if (parsedCall !== null) {
+        const { peerId: callPeer, callId, action, medium } = parsedCall;
+        void clearCall(callId);
+        if (action === 'decline') {
+          void endCall(callId);
+          return;
         }
+        setPendingIncoming({ peerId: callPeer, callId, medium });
+        return;
+      }
+      if (url.startsWith('companionchat://call/')) {
+        // URL matched the scheme but failed UUID validation in parseCallUrl.
         return;
       }
 
@@ -1024,23 +1024,20 @@ function Root() {
         return;
       }
 
-      const peer = url.match(/^companionchat:\/\/peer\/(.+)$/)?.[1];
-      if (peer !== undefined) {
-        // Query strings are ignored for routing; strip so a harness-augmented
-        // peer URI still opens the chat.
-        const peerId = peer.split('?')[0] ?? peer;
-        /*
-         * HELD, not routed (2026-09-17 audit) — same reason `pendingIncoming`
-         * is held above rather than routed from here: `role` is not known
-         * yet, and a bare `setRoute` always writes the MEMBER tree. A
-         * provider's own tap on a message notification set a route their
-         * tree never draws, and a member's cold-start tap raced the boot
-         * effect's own `setRoute({name:'home'})` for whichever won. `SignedIn`
-         * applies `pendingPeer` once `role` resolves, choosing the tree.
-         */
-        if (isUuid(peerId)) {
-          setPendingPeer(peerId);
-        }
+      /*
+       * HELD, not routed (2026-09-17 audit) — `role` is not known here and a
+       * bare `setRoute` always writes the MEMBER tree. A provider's own tap on
+       * a message notification set a route their tree never draws. `SignedIn`
+       * applies `pendingPeer` once `role` resolves, choosing the tree.
+       * parsePeerUrl strips query strings so a harness-augmented URI routes.
+       */
+      const parsedPeer = parsePeerUrl(url);
+      if (parsedPeer !== null) {
+        setPendingPeer(parsedPeer);
+        return;
+      }
+      if (url.startsWith('companionchat://peer/')) {
+        // URL matched the scheme but failed UUID validation in parsePeerUrl.
         return;
       }
       handleAuthDeepLink(url)

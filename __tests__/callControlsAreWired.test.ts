@@ -91,7 +91,10 @@ describe('the call notification carries what the app needs to obey it', () => {
      * possible answer to "no" — and left the caller ringing until the 30s sweep
      * recorded it as missed rather than declined.
      */
-    expect(app).toMatch(/const action = qs\.match\(\/action=\(\[\^&\]\+\)\/\)/);
+    // The inline `const action = qs.match(...)` was moved into parseCallUrl
+    // (links.ts). The extraction behaviour is unit-tested in links.test.ts.
+    // App.tsx now destructures action from the parsed result.
+    expect(app).toMatch(/parseCallUrl/);
     const branch = app.slice(app.indexOf("if (action === 'decline')"));
     expect(branch.slice(0, 120)).toMatch(/void endCall\(callId\);\s*\n\s*return;/);
     /*

@@ -631,22 +631,14 @@ describe('conversation notifications actually open the conversation', () => {
     expect(manifest).not.toMatch(/android:host="peer"/);
   });
 
-  it('routes the peer deep link in JS, gated by isUuid', () => {
+  it('routes the peer deep link in JS via parsePeerUrl', () => {
     // The explicit intent surfaces via Linking (getInitialURL / url event), the
-    // same path OAuth uses. Remote input, so it is uuid-checked before routing.
+    // same path OAuth uses. App.tsx delegates validation to parsePeerUrl, which
+    // strips the query string and uuid-checks the id — those structural checks
+    // are unit-tested in __tests__/links.test.ts (parsePeerUrl describe).
     const app = read('App.tsx');
     expect(app).toMatch(/companionchat:\/\/peer/);
-    /*
-     * The value that gets ROUTED must be the one that is uuid-checked, and that
-     * is no longer the raw capture: bdda9ce strips a query string first so a
-     * harness-augmented peer URI still opens the chat. The old assertion named
-     * `isUuid(peer)` and went stale the moment the variable did - it was failing
-     * on main before this merge. Asserting the STRIPPED id is checked keeps the
-     * guarantee (remote input is validated before it reaches a query) without
-     * pinning a variable name.
-     */
-    expect(app).toMatch(/peer\.split\('\?'\)/);
-    expect(app).toMatch(/isUuid\(peerId\)/);
+    expect(app).toMatch(/parsePeerUrl/);
   });
 });
 
@@ -977,16 +969,20 @@ describe('call lifecycle — foreground service and permissions', () => {
     expect(sendCall).not.toContain("ttl: '45s'");
   });
 
-  it('notification-driven call answer parses medium from the deep-link URL', () => {
+  it('notification-driven call answer parses medium via parseCallUrl', () => {
     /*
      * Before the fix, App.tsx hardcoded medium: 'voice' for notification-answer
      * deep links, dropping video for any call answered from the notification.
      * (android-audit.md 2026-08-29)
+     *
+     * The regex extraction now lives inside parseCallUrl (links.ts); its
+     * voice-default behaviour is unit-tested in __tests__/links.test.ts.
+     * This pin keeps the wiring: App.tsx must call parseCallUrl, not hardcode.
      */
     const app = read('App.tsx');
-    // Must read medium from the query string, not use a literal 'voice'
-    // in the callMatch branch. The regex checks for medium= extraction.
-    expect(app).toMatch(/medium.*=.*qs\.match.*medium=.*\?.*'voice'/s);
+    expect(app).toMatch(/parseCallUrl/);
+    // parsedCall.medium — App.tsx reads medium from the parsed result, not inline.
+    expect(app).toMatch(/parsedCall.*medium|medium.*parsedCall/s);
   });
 
   it('dataExtractionRules is declared on the application element', () => {
