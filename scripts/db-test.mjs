@@ -194,6 +194,7 @@ const MIGRATIONS = [
   'supabase/migrations/150_story_reports.sql',
   'supabase/migrations/151_story_expiry_purge.sql',
   'supabase/migrations/152_story_commenter_block.sql',
+  'supabase/migrations/153_function_grants_closed_by_default.sql',
 ];
 
 /**
@@ -926,6 +927,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/567_story_report_retries_and_reach.sql'),
     label:
       'a story report is filed once however often it is sent, reaches a viewer the provider blocked afterwards, and keeps the name it was published under',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/568_function_grants_inventory.sql'),
+    label:
+      'the functions a client can call are exactly the listed ones, trigger functions are closed and still fire, and the next function starts closed',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions
