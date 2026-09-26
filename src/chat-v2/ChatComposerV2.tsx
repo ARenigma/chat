@@ -47,6 +47,13 @@ interface Props {
   onTyping?: () => void;
   onRecording?: () => void;
   onRecordingEnded?: () => void;
+  /**
+   * False once the chat is covered (navigation step 6). A covered chat stays
+   * mounted under the navigator, so what the unmount did has to happen on
+   * blur: a recording in progress is discarded (nothing records for a screen
+   * nobody is on) and the text draft is saved. Defaults to true.
+   */
+  focused?: boolean;
 }
 
 export function ChatComposerV2({
@@ -60,6 +67,7 @@ export function ChatComposerV2({
   onTyping,
   onRecording,
   onRecordingEnded,
+  focused = true,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -229,6 +237,20 @@ export function ChatComposerV2({
     });
     return () => sub.remove();
   }, [discard]);
+
+  /* ---- losing focus, which is leaving under the navigator ---------------- */
+  useEffect(() => {
+    if (focused) {
+      return;
+    }
+    const id = conversationRef.current;
+    if (id !== undefined) {
+      writeDraftText(id, textRef.current);
+    }
+    if (handle.current !== null) {
+      void discard();
+    }
+  }, [focused, discard]);
 
   /* ---- leaving the screen mid-recording --------------------------------- */
   useEffect(

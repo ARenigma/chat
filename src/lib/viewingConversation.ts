@@ -39,10 +39,12 @@ let viewing: string | null = null;
 /**
  * Declare the conversation on screen, or `null` for none.
  *
- * THE STABLE SEAM. The navigation is moving to react-navigation, at which point
- * the caller becomes the chat screen's `useFocusEffect` (focus sets, blur
- * clears) and nothing about this signature changes. Anything that reads the
- * signal goes through `getViewingConversation`, never the variable.
+ * THE STABLE SEAM. There is one writer, `useViewingConversation`, and it now
+ * takes the chat's `focused` (navigation step 6): under react-navigation a
+ * covered chat stays mounted, so FOCUS rather than mount is what claims the
+ * signal, and blur releases it (owner-checked, so the chat arriving keeps its
+ * claim). Nothing about this signature changed. Anything that reads the signal
+ * goes through `getViewingConversation`, never the variable.
  */
 export function setViewingConversation(conversationId: string | null): void {
   viewing = conversationId;
@@ -410,10 +412,20 @@ export function foregroundPushAction(
  * conversation the ring was for.
  * https://developer.android.com/develop/ui/views/notifications/conversations#best-practices
  * https://developer.android.com/develop/ui/views/notifications/build-notification#Removing
+ *
+ * `focused` (navigation step 6, nav-migration §5): a chat claims the signal
+ * only while it is the focused screen, and a blur is a release exactly as an
+ * unmount was. A chat covered by a pushed profile or a call, or sitting in an
+ * unfocused tab, is not what the person is reading. Focus again re-runs the
+ * claim and the clear, as a remount did. Defaults to true: the old tree
+ * unmounts a covered chat, so mount and focus are the same moment there.
  */
-export function useViewingConversation(conversationId: string | undefined): void {
+export function useViewingConversation(
+  conversationId: string | undefined,
+  focused = true,
+): void {
   useEffect(() => {
-    if (conversationId === undefined) {
+    if (conversationId === undefined || !focused) {
       return;
     }
     const release = (): void => {
@@ -457,5 +469,5 @@ export function useViewingConversation(conversationId: string | undefined): void
       uncoverListeners.delete(clearIfSeen);
       release();
     };
-  }, [conversationId]);
+  }, [conversationId, focused]);
 }

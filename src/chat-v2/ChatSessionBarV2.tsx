@@ -173,11 +173,16 @@ const makeStyles = (t: Theme) =>
     talkBarLow: {
       backgroundColor: t.color.bg.accentTint,
     },
+    // text/accent, not bg/accent: the wash is step 900 in dark (2026-09-27)
+    // and step 500 on it is 2.87:1, under the 3:1 non-text floor
+    // (developer.android.com/guide/topics/ui/accessibility/apps). text/accent
+    // is 500 in light (4.46:1 on the step-50 wash, unchanged) and 300 in dark
+    // (6.16:1). Registered in scripts/check-contrast.mjs.
     talkDot: {
       width: 8,
       height: 8,
       borderRadius: 4,
-      backgroundColor: t.color.bg.accent,
+      backgroundColor: t.color.text.accent,
     },
     talkTimer: {
       ...TOKENS.typography.numeralMedium,

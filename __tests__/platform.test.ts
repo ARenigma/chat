@@ -3105,6 +3105,28 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     expect(indicator).toContain('backgroundColor: t.color.bg.navIndicator');
   });
 
+  it('draws the selected glyph in its own role, step 500 light and 400 dark', () => {
+    // Owner, 2026-09-27: text/accent dark is step 300; the selected glyph on
+    // the step-900 pill is 400 (4.33:1), the nearest step to the brand 500
+    // (2.87:1 there) that clears the 3:1 non-text floor.
+    // https://developer.android.com/guide/topics/ui/accessibility/apps
+    expect(bar).toContain(
+      'color={selected ? theme.color.text.navSelected : theme.color.text.secondary}',
+    );
+    expect(bar).not.toMatch(/selected \? theme\.color\.text\.accent\b/);
+    const spec = JSON.parse(read('design/tokens.json')) as {
+      color: { tokens: Record<string, { step?: Record<string, string> }> };
+    };
+    expect(spec.color.tokens['text/navSelected']!.step).toEqual({
+      Light: 'primary_500',
+      Dark: 'primary_400',
+    });
+    expect(spec.color.tokens['bg/navIndicator']!.step).toEqual({
+      Light: 'primary_50',
+      Dark: 'primary_900',
+    });
+  });
+
   it('pops the tapped tab\'s own stack and dedupes every navigation', () => {
     expect(bar).toMatch(/navigation\.dispatch\(\{ \.\.\.StackActions\.popToTop\(\), target \}\)/);
     expect(bar).toContain('useDedupe(250)');

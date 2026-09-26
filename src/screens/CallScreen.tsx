@@ -56,8 +56,32 @@ interface Props {
   callId: string | null;
   /** 'voice' for audio-only; 'video' auto-enables the camera on connect. */
   medium: CallMedium;
-  /** Decline (incoming, ringing) or hang up (in call). Leaving the screen ends it. */
-  onEnd: () => void;
+  /**
+   * The call screen has decided to leave: called ONCE, after the render that
+   * set `ending` has committed. The host pops or navigates; unmounting is what
+   * hangs up (the cleanup below). Every way a call ends reaches this through
+   * the screen's own `onEnd`, which only sets `ending`.
+   *
+   * Split from the old `onEnd` prop in navigation step 6 (nav-migration §4,
+   * 3b): the `Call` route guards its removal with `usePreventRemove(!ending)`,
+   * so the guard has to see `ending` BEFORE the pop is dispatched, or the
+   * screen's own exit would be stopped by its own back guard.
+   */
+  onEnded: () => void;
+  /**
+   * What a host needs to guard this screen's removal, published whenever it
+   * changes (the route adapter in step 7). The old tree passes nothing: its
+   * back goes through `useBackGuard` here.
+   */
+  onGuard?: (guard: CallGuard) => void;
+}
+
+/** The call screen's removal guard, as its host reads it. */
+export interface CallGuard {
+  /** True once the screen is leaving; a removal then proceeds unasked. */
+  ending: boolean;
+  /** Ask before leaving: the same dialog hardware back opens. */
+  openLeave: () => void;
 }
 
 /** How long between heartbeats while a call is up; the ticker reads last_seen_at. */
@@ -158,7 +182,14 @@ type Phase = 'starting' | 'ringing' | 'connecting' | 'active' | 'incoming';
  * Toggling uses RTCRtpSender.replaceTrack so no renegotiation is needed. If the
  * call was started as `medium='video'`, the camera is auto-enabled on connect.
  */
-export function CallScreen({ providerId, direction, callId: incomingCallId, medium, onEnd }: Props) {
+export function CallScreen({
+  providerId,
+  direction,
+  callId: incomingCallId,
+  medium,
+  onEnded,
+  onGuard,
+}: Props) {
   /*
    * This screen covers Home, and Home stays mounted underneath it (App.tsx
    * renders pushed screens as overlays so returning never remounts Home's
@@ -305,6 +336,26 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
     setLeaveDialogVisible(true);
     return true;
   }, []);
+  /*
+   * Leaving is a STATE, not a call (nav step 6). `onEnd` is the one door every
+   * end path uses, and all it does is set `ending`; the effect below tells the
+   * host once that render has committed. Two paths noticing the same end (the
+   * red button and the heartbeat, say) now make one exit, not two pops.
+   */
+  const [ending, setEnding] = useState(false);
+  const onEnd = useCallback(() => setEnding(true), []);
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
+  useEffect(() => {
+    if (ending) {
+      onEndedRef.current();
+    }
+  }, [ending]);
+  useEffect(() => {
+    onGuard?.({ ending, openLeave: () => setLeaveDialogVisible(true) });
+  }, [ending, onGuard]);
+  // Held while ending too: the old tree pops on `onEnded`, and a back that got
+  // past the guard in that one commit would pop a second screen.
   useBackGuard(backGuard);
 
   // Outgoing needs the conversation the call belongs to; a member calling a
@@ -345,7 +396,7 @@ export function CallScreen({ providerId, direction, callId: incomingCallId, medi
    * exit. End Call, Decline, the back-guard dialog, a peer hang-up noticed by
    * the heartbeat (`status === 'ended'`), a media failure (`connState ===
    * 'failed'`) and a server-side end for an exhausted balance all funnel into
-   * `onEnd`, which pops the route and unmounts us; the effect above is the
+   * `onEnd` (which sets `ending`; the host pops on `onEnded`), and the pop unmounts us; the effect above is the
    * proof, because it is how the server learns the call ended at all. Five
    * separate triggers for one exit is five chances to miss one.
    *

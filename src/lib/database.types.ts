@@ -135,14 +135,24 @@ export type Profile = {
    * by 011 that a client is meant to write. False by default: presence is not
    * derived from whether the app happens to be in the foreground, because
    * nobody agreed to have that published about them.
+   *
+   * Read by nothing since 155: a provider's last seen is always on for members
+   * and a member's is never published, so the setting decides nothing.
    */
   presence_visible: boolean;
   /**
-   * Written only by `touch_presence`, and only while `presence_visible` — so
-   * never, in practice: no client has ever called that RPC, which is why the
-   * app shows a word rather than a last-seen stamp.
+   * The provider's last presence event, a heartbeat or an explicit offline
+   * (155). Written only by `presence_heartbeat`, for providers only, so a
+   * member's is never written. Guarded. `presence_visible` no longer gates it:
+   * providers' last seen is always on, and members' is never published.
    */
   last_active_at: string | null;
+  /**
+   * What that last event said: true for a heartbeat, false for an explicit
+   * offline (155). Guarded; never read alone (see `ProviderSummary.online`).
+   * Optional only because rows from a server before 155 lack it.
+   */
+  presence_online?: boolean;
   /**
    * The declared state added by 012, and read by nothing since 2026-09-17:
    * `is_available` is the one reachability signal now. Still written by the
@@ -371,16 +381,13 @@ export type ConversationSummary = {
   /** The peer's photo (providers only; null for members and until set). */
   peer_avatar_url: string | null;
   /**
-   * The peer's master switch, and what the inbox dot and the chat header read
-   * since 2026-09-17.
+   * The peer's master switch (`case when peer.role = 'provider' then
+   * peer.is_available else false end`, from `conversation_peers`).
    *
-   * NEEDS A VIEW MIGRATION. `conversation_peers` has resolved this column since
-   * 011 (`case when peer.role = 'provider' then peer.is_available else false
-   * end`), but `conversation_summaries` — last rebuilt in 037 — does not project
-   * it or `peer_is_provider`, so both are absent from the wire until a migration
-   * adds `pe.peer_available` and `pe.peer_is_provider` to that select list.
-   * Until then every peer reads as not-loaded, which is the fail-closed
-   * direction: no dot and no line, rather than a claim.
+   * On the wire since migration 155. `conversation_summaries` (rebuilt in 037)
+   * had dropped it and `peer_is_provider`, so until 155 is live both are
+   * undefined and every peer reads as not loaded: no dot and no line, the
+   * fail-closed direction.
    */
   peer_available: boolean;
   /**
@@ -391,11 +398,23 @@ export type ConversationSummary = {
    */
   peer_is_provider: boolean;
   /**
+   * Server-derived (155): a PROVIDER peer with the switch on, a heartbeat
+   * within 75 s and no explicit offline since. False for a member peer and
+   * across a block. Undefined until 155 is live. Read it through
+   * `readPresence({ online, lastSeenAt, now })`.
+   */
+  peer_online?: boolean;
+  /**
+   * A provider peer's last presence event, rounded down to the minute (155).
+   * Null for a member peer, across a block, and for a provider never seen.
+   */
+  peer_last_seen_at?: string | null;
+  /**
    * The peer's declared presence. Replaced `peer_available` in 012, and read by
    * nothing since 2026-09-17; see `PresenceChoice`.
    */
   peer_presence: PresenceChoice | null;
-  /** Null unless the peer turned presence on. Unread; see `PresenceChoice`. */
+  /** Retired by 155 and always null: read `peer_last_seen_at`. */
   peer_last_active_at: string | null;
   /**
    * Timestamp of the most recent session event for this thread (populated by
@@ -463,8 +482,19 @@ export type ProviderSummary = {
   rating_count: number;
   /** Published so "does she actually reply" is answerable before spending. */
   median_reply_seconds: number | null;
-  /** Never written by anything; unread since 2026-09-17. See `PresenceChoice`. */
+  /** Retired by 155 and always null: read `last_seen_at`. */
   last_active_at: string | null;
+  /**
+   * Server-derived (155): the switch on, a heartbeat within 75 s and no
+   * explicit offline since. False across a block. Undefined until 155 is live.
+   * Read it through `readPresence({ online, lastSeenAt, now })`.
+   */
+  online?: boolean;
+  /**
+   * The provider's last presence event, rounded down to the minute (155).
+   * Shown with the switch off too. Null across a block and when never seen.
+   */
+  last_seen_at?: string | null;
   created_at: string;
   /** The declared state. Unread since 2026-09-17; see `PresenceChoice`. */
   presence: PresenceChoice;
@@ -536,10 +566,15 @@ export type ConversationPeer = {
   peer_display_name: string;
   /** The provider's listing switch, and false for a member peer by definition. */
   peer_available: boolean;
+  /** Retired by 155 and always null: read `peer_last_seen_at`. */
   peer_last_active_at: string | null;
   peer_is_provider: boolean;
   /** The declared state, published for either role. Added by 012. */
   peer_presence: PresenceChoice;
+  /** As `ConversationSummary.peer_online` (155). */
+  peer_online?: boolean;
+  /** As `ConversationSummary.peer_last_seen_at` (155). */
+  peer_last_seen_at?: string | null;
 };
 
 export type Conversation = {
@@ -1491,8 +1526,15 @@ export type Database = {
         };
         Returns: number;
       };
-      touch_presence: {
-        Args: Record<string, never>;
+      /**
+       * The provider app's presence signal (155): true on foreground and every
+       * 30 s while foregrounded, false on background. Providers only (a
+       * member's call writes nothing); at most one write per 20 s unless the
+       * state changes. Replaces `touch_presence`, which 155 closed to clients.
+       * Called by `src/lib/presenceHeartbeat.ts`.
+       */
+      presence_heartbeat: {
+        Args: { p_online?: boolean };
         Returns: undefined;
       };
       /** The price, so the pre-call sheet quotes the server rather than a literal. */

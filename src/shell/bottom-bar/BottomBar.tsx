@@ -232,10 +232,11 @@ function SlotView({ tab, selected, onPressTab }: SlotProps) {
           // destination is filled" (m3.material.io/components/navigation-bar/guidelines).
           active={selected}
           size={TOKENS.icon.md}
-          // text/accent on bg/navIndicator: 4.46:1 light, 6.16:1 dark
-          // (scripts/check-contrast.mjs). Step 500 in light; dark keeps step
-          // 300 because 500 on the 900 pill is 2.87:1, under 3:1 non-text.
-          color={selected ? theme.color.text.accent : theme.color.text.secondary}
+          // text/navSelected on bg/navIndicator: 4.46:1 light (step 500 on
+          // 50), 4.33:1 dark (step 400 on 900), over the 3:1 non-text floor
+          // (scripts/check-contrast.mjs). Dark is 400, not the brand 500,
+          // because 500 on the 900 pill is 2.87:1 (owner, 2026-09-27).
+          color={selected ? theme.color.text.navSelected : theme.color.text.secondary}
         />
         <Badge count={count} placement="badgedBox" />
       </View>

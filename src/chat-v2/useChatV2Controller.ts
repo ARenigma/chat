@@ -45,6 +45,7 @@ import {
   useLiveMessageEdits,
   useMessages,
   useOutboxReplay,
+  usePeerPresence,
   useProfile,
   useProviders,
   useSelfId,
@@ -125,6 +126,9 @@ import {
   type ChatV2Notice,
   type ChatV2Row,
 } from './rows';
+
+/** The outgoing-activity stand-in while the chat is not live. */
+const NOOP = (): void => undefined;
 
 /** Stable empty tally map, so a thread with no reactions never re-renders. */
 const NO_TALLIES: ReadonlyMap<string, ReactionTally[]> = new Map();
@@ -273,9 +277,35 @@ export interface ChatV2MessageTarget {
   preview: string;
 }
 
+/**
+ * What the screen around the controller knows and the controller cannot
+ * (navigation step 6, nav-migration §5 "chat hook classification").
+ *
+ * Under react-navigation a chat stays MOUNTED while covered, where the old
+ * tree unmounted it, so every mount-scoped hook here was sorted by what
+ * unmounting used to mean for it:
+ *
+ *   live     the chat is in use: its tab is focused and only overlays that
+ *            used to sit over a mounted chat (the wallet, a chat request) are
+ *            above it. Gates what cost money or spoke for the person: the
+ *            session lease, outgoing typing and recording, the openers, the
+ *            session clock, the open announcement (re-fired on false → true,
+ *            as a remount did) and the review-on-end watcher.
+ *   focused  the chat is the screen on top. Gates what depends on the person
+ *            SEEING it: the viewing signal and the read-receipt write.
+ *
+ * Realtime, message edits and incoming typing stay mount-scoped, so the
+ * transcript is fresh on return. Both default to true, which is the old tree.
+ */
+export interface ChatV2Gates {
+  live?: boolean;
+  focused?: boolean;
+}
+
 export function useChatV2Controller(
   providerId: string,
   benchmarkReadOnly = false,
+  { live = true, focused = true }: ChatV2Gates = {},
 ): ChatV2Controller {
   // Mirrors the authoritative balance into the store, which is what both send
   // paths gate on before they spend anything.
@@ -364,20 +394,27 @@ export function useChatV2Controller(
   // This thread is on screen: a foreground push for it is already drawn by
   // Realtime, so `onForegroundPush` posts nothing for it (push.ts), and any
   // notification it already has is taken out of the shade.
-  useViewingConversation(conversationId);
-  useSessionLease(benchmarkReadOnly ? null : activeSession);
+  useViewingConversation(conversationId, focused);
+  // Not live is what unmounting was for the lease: heartbeats stop and the
+  // server's grace window runs (parity: the chat under a call or a profile).
+  useSessionLease(benchmarkReadOnly || !live ? null : activeSession);
 
-  const { notifyTyping, notifyRecording, notifyRecordingEnded } =
-    useLiveConversation(
-      mutationInputs.liveConversationId,
-      mutationInputs.liveSelfId,
-    );
+  const live$ = useLiveConversation(
+    mutationInputs.liveConversationId,
+    mutationInputs.liveSelfId,
+  );
+  // Outgoing activity only while live: a chat nobody is using does not type.
+  // Incoming activity stays on the mount-scoped channel above.
+  const notifyTyping = live ? live$.notifyTyping : NOOP;
+  const notifyRecording = live ? live$.notifyRecording : NOOP;
+  const notifyRecordingEnded = live ? live$.notifyRecordingEnded : NOOP;
   // An edit or a delete made on the OTHER device. `useLiveConversation` reads
   // only `read_at` off the UPDATE it receives; this is the rest of that event.
   useLiveMessageEdits(conversationId, selfId);
   const markVisible = useMarkRead(
     mutationInputs.markReadConversationId,
     mutationInputs.markReadSelfId,
+    focused,
   );
 
   const send = useSendMessage(
@@ -504,25 +541,58 @@ export function useChatV2Controller(
   const peerAvatarUrl =
     knownThread?.peer_avatar_url ?? provider?.avatar_url ?? null;
   /*
-   * A member has no listing switch, so `peer_available` is false for one by
-   * construction. Passing that through would tell a provider the person they
-   * are talking to is away, which is a claim nobody made — null instead.
+   * PRESENCE: the server's reading (migration 155), and nothing else.
+   *
+   * `online` is the server's derivation (a provider, open, a heartbeat within
+   * 75 s, no offline since, no block) and `last_seen_at` its last event; see
+   * `readPresence`. The client never re-derives either, so the header, the
+   * inbox row, the rail and the directory card say the same thing about the
+   * same person. A member peer's presence is never published: the views
+   * return false and null for one, which reads as nothing at all, so there is
+   * no `peer_is_provider` special case left to get wrong here.
+   *
+   * While a MEMBER's chat with a PROVIDER is open and focused, that peer's row
+   * is re-read every 15 s (`usePeerPresence`), because `online` lapses 75 s
+   * after the last heartbeat without any row changing, and the thread row
+   * from the inbox is only as fresh as the inbox's last fetch. Sources, most
+   * recent first, each taken WHOLE rather than mixed per field (a null last
+   * seen from a fresh row must not be filled in from a stale one): the polled
+   * row, then the thread row, then the directory row for a thread not in the
+   * cached inbox yet.
    */
-  const presence = readPresence(
-    knownThread !== undefined
-      ? knownThread.peer_is_provider
-        ? knownThread.peer_available
-        : null
-      : provider?.is_available,
-  );
+  const peerIsProvider =
+    knownThread !== undefined ? knownThread.peer_is_provider : provider !== undefined;
+  const peerPresence = usePeerPresence(conversationId, {
+    enabled: isMemberSide && peerIsProvider && !benchmarkReadOnly,
+    focused,
+  });
+  const peerRow = peerPresence.data;
+  const presenceSource =
+    peerRow !== undefined && peerRow !== null
+      ? { online: peerRow.peer_online, lastSeenAt: peerRow.peer_last_seen_at }
+      : knownThread !== undefined
+        ? { online: knownThread.peer_online, lastSeenAt: knownThread.peer_last_seen_at }
+        : { online: provider?.online, lastSeenAt: provider?.last_seen_at };
+  /*
+   * "Now" ticks with the poll. Reading `dataUpdatedAt` subscribes this hook to
+   * every refetch (TanStack's tracked query properties), so the header
+   * re-renders every 15 s even when the row came back unchanged, and a last
+   * seen crossing midnight turns from "today" to "yesterday" on the next one.
+   * The render's clock, never earlier than the reading, so a chat that is not
+   * polling (the provider side) still reads the day right on any render.
+   */
+  const presenceNow = new Date(Math.max(Date.now(), peerPresence.dataUpdatedAt));
+  const presence = readPresence({ ...presenceSource, now: presenceNow });
   // Read for THIS conversation: two chats can be mounted at once under the
   // navigator, and the other one's typing is not this peer's (nav §5).
   const peerActivity = useStore(selectPeerActivityIn(conversationId));
 
   /* ---- the ping confirmation ------------------------------------------- */
+  // `&& live`: the announce is a per-visit event, and a return to a chat that
+  // was covered by a call or a profile is a visit, as the remount made it.
   const openAlert = useAnnounceChatOpen(
     mutationInputs.announceConversationId,
-    mutationInputs.announceEnabled,
+    mutationInputs.announceEnabled && live,
   );
   /*
    * A one-time confirmation that an away peer was actually pinged. Stamped
@@ -560,12 +630,14 @@ export function useChatV2Controller(
   useChatV2Openers({
     providerId,
     conversationId,
-    enabled: chatV2OwnsOpeners({
-      isMemberSide,
-      benchmarkReadOnly,
-      messagesLoaded: messages !== undefined,
-      hasLiveMessage: chatV2HasLiveMessage(messages),
-    }),
+    enabled:
+      live &&
+      chatV2OwnsOpeners({
+        isMemberSide,
+        benchmarkReadOnly,
+        messagesLoaded: messages !== undefined,
+        hasLiveMessage: chatV2HasLiveMessage(messages),
+      }),
   });
 
   /* ---- rows ------------------------------------------------------------- */
@@ -922,13 +994,13 @@ export function useChatV2Controller(
    */
   const tickMs = clockTickMs(sessionRemaining);
   useEffect(() => {
-    if (sessionStartedAt === null) {
+    if (sessionStartedAt === null || !live) {
       return;
     }
     setSessionNow(Date.now());
     const timer = setInterval(() => setSessionNow(Date.now()), tickMs);
     return () => clearInterval(timer);
-  }, [sessionStartedAt, tickMs]);
+  }, [sessionStartedAt, tickMs, live]);
   const sessionElapsedClock =
     sessionStartedAt === null
       ? null
@@ -985,18 +1057,28 @@ export function useChatV2Controller(
    */
   const liveSessionRef = useRef<string | null>(null);
   useEffect(() => {
-    const live =
+    /*
+     * Not live: forget the session, as the unmount under a call or a profile
+     * did (A5). A session that ends while the chat is covered, or because a
+     * call connected, never asks over the call, and the return does not ask
+     * about an end it did not watch.
+     */
+    if (!live) {
+      liveSessionRef.current = null;
+      return;
+    }
+    const liveId =
       activeSession != null && activeSession.ended_at === null
         ? activeSession.id
         : null;
     const previous = liveSessionRef.current;
-    if (live !== null) {
-      liveSessionRef.current = live;
+    if (liveId !== null) {
+      liveSessionRef.current = liveId;
       return;
     }
     const ended = chatV2ReviewOnEnd({
       previousLiveId: previous,
-      liveId: live,
+      liveId,
       isMemberSide,
       peerName: displayName,
     });
@@ -1006,7 +1088,7 @@ export function useChatV2Controller(
     if (ended !== null) {
       askReview(ended);
     }
-  }, [activeSession, askReview, displayName, isMemberSide]);
+  }, [activeSession, askReview, displayName, isMemberSide, live]);
 
   /* ---- the draft -------------------------------------------------------- */
   const purgeDraft = useCallback(() => {

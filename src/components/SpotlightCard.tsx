@@ -153,8 +153,12 @@ function SpotlightCardView({ visible, name, avatarUri, online = false, onClose, 
   });
 
   const photo = avatarImageSource(avatarUri, windowWidth, sheetH);
-  // A warm coral field is the fallback when there is no photo.
-  const gradient = `linear-gradient(150deg, ${theme.color.bg.accent} 0%, ${theme.color.bg.accentStrong} 100%)`;
+  // A warm coral field is the fallback when there is no photo: ramp 500 -> 700
+  // rather than 400 -> 600 (owner, 2026-09-27). In portrait the copy sits low
+  // enough under `copyScrim` to pass on either, but a landscape phone window
+  // lifts it onto the 400 end, where the 88% name line is 4.46:1, under 4.5
+  // (check-contrast.mjs GRADIENT_TEXT).
+  const gradient = `linear-gradient(150deg, ${theme.color.bg.accentGradientFrom} 0%, ${theme.color.bg.accentGradientTo} 100%)`;
   // Bottom scrim so white copy holds over any photo.
   const copyScrim =
     'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 38%, rgba(0,0,0,0.76) 100%)';

@@ -2752,16 +2752,70 @@ describe('the chat restyle is wired, not just drawn', () => {
 
   it('drops the derived socket presence the settled decision rejects', () => {
     /*
-     * Realtime presence answers "is their app in the foreground", which is a
-     * question nobody agreed to have answered about them. The reading has to
-     * come from something the peer SET: `peer_available`, the provider's own
-     * master switch.
+     * Realtime presence answers "is their app in the foreground" for ANYONE,
+     * which is a question nobody agreed to have answered about them. Still
+     * rejected. What replaced the master switch here (migration 155, owner
+     * decision 2026-09-27) is narrower and server-derived: a PROVIDER's
+     * heartbeat, published only to their members, only as `peer_online` and
+     * `peer_last_seen_at`, withheld for members and across a block. The client
+     * reads those two and derives nothing itself.
      *
      * Comments stripped, because the note explaining what the header no longer
      * claims names the selector it stopped reading.
      */
     expect(chatCode).not.toContain('selectPeerOnline');
-    expect(chatCode).toContain('peer_available');
+    expect(chatCode).toContain('knownThread.peer_online');
+    expect(chatCode).toContain('knownThread.peer_last_seen_at');
+    // The switch is not the dot any more: availability off with a recent
+    // heartbeat is a last-seen line, and the server's `online` already
+    // requires the switch, so reading it here could only disagree.
+    expect(chatCode).not.toContain('peer_available');
+  });
+
+  it('polls the open chat\'s provider peer every 15 s, only while focused', () => {
+    /*
+     * `online` lapses 75 s after the last heartbeat without any row changing,
+     * so a header drawn from the inbox's cached row would say "Online" long
+     * after they left. One row of `conversation_peers`, while a MEMBER's chat
+     * with a PROVIDER is on top; nothing while covered or backgrounded.
+     */
+    const api = withoutComments(read('src/api/chat.ts'));
+    const hook = api.slice(
+      api.indexOf('export function usePeerPresence('),
+      api.indexOf('export function useConversationId('),
+    );
+    expect(api).toContain('export const PEER_PRESENCE_POLL_MS = 15_000;');
+    expect(hook).toContain(".from('conversation_peers')");
+    expect(hook).toContain(".select('peer_online, peer_last_seen_at')");
+    expect(hook).toContain(".eq('conversation_id', conversationId as string)");
+    expect(hook).toContain('.maybeSingle()');
+    expect(hook).toContain('refetchInterval: PEER_PRESENCE_POLL_MS');
+    expect(hook).toContain('refetchIntervalInBackground: false');
+    expect(hook).toContain('subscribed: focused');
+    expect(hook).toContain("enabled: enabled && conversationId !== undefined");
+    const controller = withoutComments(read('src/chat-v2/useChatV2Controller.ts'));
+    expect(controller).toContain(
+      'enabled: isMemberSide && peerIsProvider && !benchmarkReadOnly',
+    );
+    expect(controller).toMatch(/usePeerPresence\(conversationId, \{[\s\S]{0,120}focused,/);
+    // Merged into the header's reading, freshest source first, each whole.
+    expect(controller).toContain('peerRow.peer_online');
+    expect(controller).toContain('peerRow.peer_last_seen_at');
+    expect(controller).toContain('provider?.online');
+    expect(controller).toContain('provider?.last_seen_at');
+    // "Now" ticks with the poll: dataUpdatedAt is read, so each refetch renders.
+    expect(controller).toContain('peerPresence.dataUpdatedAt');
+    expect(controller).toContain('readPresence({ ...presenceSource, now: presenceNow })');
+  });
+
+  it('prints the one presence line under typing and recording', () => {
+    const subtitle = withoutComments(read('src/components/HeaderSubtitle.tsx'));
+    // recording > typing > presence line; "Online" comes from readPresence and
+    // is not spelled a second time here, so the two cannot drift.
+    expect(subtitle).toMatch(
+      /activity === 'recording'[\s\S]*'recording…'[\s\S]*activity === 'typing'[\s\S]*'typing…'[\s\S]*\(presence\.line \?\? ''\)/,
+    );
+    expect(subtitle).not.toContain("'Online'");
   });
 
   it('wires swipe-to-reply and on-bubble reactions on both sides', () => {
@@ -4243,6 +4297,14 @@ describe('no screen reads a listing switch as a presence dot', () => {
    * honestly have been: `touch_presence()` was never once called from the
    * client, so every "Last seen" this app rendered was formatting a column
    * nobody had written.
+   *
+   * 2026-09-27, MIGRATION 155: THE DOT LEFT THE SWITCH. The provider app
+   * heartbeats; the server derives `online` (the switch open, a heartbeat
+   * within 75 s, no offline since, no block) and `last_seen_at`, and every
+   * dot below reads those through `readPresence({ online, lastSeenAt, now })`.
+   * The boolean form is deleted. The switch still decides the ACTION (Call
+   * versus Notify), because open but idle is still callable; the pins for
+   * that are in the block after this one.
    */
   const sites = [
     'src/components/ProviderRow.tsx',
@@ -4258,7 +4320,87 @@ describe('no screen reads a listing switch as a presence dot', () => {
     // The provider inbox, split in navigation step 6: both lists draw the dot.
     'src/screens/ProviderChatsScreen.tsx',
     'src/screens/ProviderSavedScreen.tsx',
+    // The member's inbox rows and the profile hero, both on the server
+    // reading since 155.
+    'src/screens/ChatsListScreen.tsx',
+    'src/screens/ProviderDetailScreen.tsx',
   ];
+
+  /** The argument of every `readPresence(` call, balanced on parentheses. */
+  const presenceArgs = (source: string): string[] => {
+    const out: string[] = [];
+    let at = source.indexOf('readPresence(');
+    while (at !== -1) {
+      let depth = 0;
+      let i = at + 'readPresence'.length;
+      const start = i + 1;
+      for (; i < source.length; i += 1) {
+        if (source[i] === '(') depth += 1;
+        if (source[i] === ')') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+      }
+      out.push(source.slice(start, i));
+      at = source.indexOf('readPresence(', i);
+    }
+    return out;
+  };
+
+  it.each(sites)('reads the server fields, and only them, in %s', file => {
+    const source = withoutComments(read(file));
+    const calls = presenceArgs(source).filter(arg => arg.trim() !== 'input: PresenceInput');
+    expect(calls.length).toBeGreaterThan(0);
+    for (const arg of calls) {
+      // The object form: the server's online and last seen, and a clock.
+      expect(arg.trim().startsWith('{')).toBe(true);
+      if (arg.includes('...presenceSource')) {
+        // The chat header picks one whole source (the polled row, the thread
+        // row, the directory row); each branch is the server's two fields.
+        expect(source).toContain(
+          '{ online: peerRow.peer_online, lastSeenAt: peerRow.peer_last_seen_at }',
+        );
+        expect(source).toContain(
+          '{ online: knownThread.peer_online, lastSeenAt: knownThread.peer_last_seen_at }',
+        );
+        expect(source).toContain(
+          '{ online: provider?.online, lastSeenAt: provider?.last_seen_at }',
+        );
+        expect(source).not.toMatch(/is_available|peer_available/);
+        continue;
+      }
+      expect(arg).toMatch(/online: [\w?.]*\b(peer_)?online\b/);
+      expect(arg).toMatch(/lastSeenAt: [\w?.]*\b(peer_)?last_seen_at\b/);
+      expect(arg).toMatch(/\bnow\b/);
+      // Never the switch: that is the CTA's question, not the dot's.
+      expect(arg).not.toMatch(/is_available|peer_available/);
+    }
+  });
+
+  it('draws every one of those dots from `here`, the server\'s online', () => {
+    // The dot is `online` and nothing else: available but idle draws unlit.
+    for (const file of [
+      'src/components/ProviderRow.tsx',
+      'src/components/ProviderCard.tsx',
+      'src/screens/HomeScreen.tsx',
+      'src/screens/ChatsListScreen.tsx',
+      'src/chat-v2/ChatHeaderV2.tsx',
+    ]) {
+      expect(withoutComments(read(file))).toContain('online={presence.here}');
+    }
+    // The hero, the square card and the profile draw their own dot in the
+    // same slot, gated on the same reading.
+    expect(withoutComments(read('src/screens/HomeScreen.tsx'))).toMatch(
+      /\) : presence\.here \? \(\s*<View style=\{styles\.featuredOnline\} \/>/,
+    );
+    expect(withoutComments(read('src/components/ProviderCard.tsx'))).toMatch(
+      /\) : presence\.here \? \(\s*<View style=\{styles\.presenceRing\}>/,
+    );
+    expect(withoutComments(read('src/screens/ProviderDetailScreen.tsx'))).toContain(
+      '{presence.here ? <View style={styles.heroDot} /> : null}',
+    );
+  });
+
 
   it.each(sites)('derives the dot in %s from readPresence', file => {
     const source = withoutComments(read(file));
@@ -4322,8 +4464,10 @@ describe('no screen reads a listing switch as a presence dot', () => {
     );
     // One input now: the provider's master switch. See the block header above
     // for why 012's separation was collapsed deliberately.
-    expect(detail).toMatch(
-      /const away = provider !== null && !readPresence\(provider\.is_available\)\.here/,
+    // The switch, not the heartbeat (155): open but idle is still callable.
+    expect(detail).toContain('const away = provider !== null && !provider.is_available;');
+    expect(detail).toContain(
+      'const channelLine = provider.is_available ? offeredChannelsLine(provider) : null;',
     );
     const actions = detail.slice(
       detail.indexOf('<View style={styles.actions}>'),
@@ -4381,8 +4525,10 @@ describe('no screen reads a listing switch as a presence dot', () => {
     ]) {
       const body = withoutComments(read(file));
       // The identical expression ProviderRow uses, so "away" cannot come to mean
-      // something else on a surface that renders the same person.
-      expect(body).toContain('const away = !presence.here');
+      // something else on a surface that renders the same person. The switch,
+      // not the dot (155): the heartbeat never takes a Call away.
+      expect(body).toContain('const away = !provider.is_available;');
+      expect(body).not.toContain('const away = !presence.here');
       // Gated, and on the away side of the gate.
       expect(body).toMatch(/away \?[\s\S]{0,600}name="bell"/);
     }
@@ -4444,7 +4590,23 @@ describe('no screen reads a listing switch as a presence dot', () => {
   it('keeps availability and presence separate on the surface that has both', () => {
     // Explore reads `readPresence` for the dot and never dots a stored listing
     // switch, which is the substance of the old rail assertion.
-    expect(read('src/screens/HomeScreen.tsx')).toContain('readPresence');
+    const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+    expect(home).toContain('readPresence');
+    /*
+     * The rail reads the SAME derivation as the card below it (migration 155:
+     * conversation_peers.peer_online and provider_directory.online), which is
+     * the reported rail-versus-card mismatch closed. Before 155 the rail read
+     * `peer_available` behind `peer_is_provider`, and conversation_summaries
+     * carried neither, so the rail drew an unlit dot the card drew lit.
+     */
+    const rail = home.slice(home.indexOf('const RailItem = memo('), home.indexOf('const DirectoryPage = memo('));
+    expect(rail).toContain('online: chat.peer_online');
+    expect(rail).toContain('lastSeenAt: chat.peer_last_seen_at');
+    expect(rail).not.toContain('peer_available');
+    // The week's picks rank online, then open, then closed, then rating.
+    expect(home).toContain(
+      "return (here ? 2000 : 0) + (p.is_available ? 1000 : 0) + (p.rating_avg ?? 0);",
+    );
   });
 });
 
@@ -8425,12 +8587,20 @@ describe('the status line and the typing bubble fade through a change, not a har
   const subtitle = withoutComments(read('src/components/HeaderSubtitle.tsx'));
   const typing = withoutComments(read('src/components/PeerTyping.tsx'));
 
-  it('HeaderSubtitle keys its Animated.Text by label and fades the swap', () => {
+  it('HeaderSubtitle fades the typing swap and cuts the presence line', () => {
     expect(subtitle).toContain(
       "import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion'",
     );
     expect(subtitle).toContain('<Animated.Text');
-    expect(subtitle).toContain('key={label}');
+    /*
+     * Keyed by the kind of line (2026-09-27), not its text: "typing…" and
+     * "recording…" arriving and leaving still fade, while the presence line
+     * changing on its own ("Online" to a last seen, polled every 15 s) is the
+     * tens-a-day tier that animate-expo's gate gives nothing, so it changes in
+     * place. `key={label}` would fade every one of those.
+     */
+    expect(subtitle).toContain("key={activity ?? 'presence'}");
+    expect(subtitle).not.toContain('key={label}');
     expect(subtitle).toContain('entering={fadeSwapFast}');
     expect(subtitle).toContain('exiting={fadeSwapOutFast}');
   });
@@ -9039,5 +9209,116 @@ describe('navigation step 6: Home waits for focus', () => {
     const screen = withoutComments(read('src/components/HomeSuggestionScreen.tsx'));
     expect(screen).toContain('export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)');
     expect(screen).not.toContain('useStore');
+  });
+});
+
+describe('navigation step 6: the call screen ends through a state', () => {
+  const call = withoutComments(read('src/screens/CallScreen.tsx'));
+
+  it('makes every end path set ending, and tells the host once it has committed', () => {
+    expect(call).toContain('const onEnd = useCallback(() => setEnding(true), []);');
+    expect(call).toMatch(/useEffect\(\(\) => \{\s*if \(ending\) \{\s*onEndedRef\.current\(\);\s*\}\s*\}, \[ending\]\);/);
+    // The host never hears a bare onEnd any more.
+    expect(call).not.toMatch(/\bonEnd:\s*\(\)/);
+    const app = withoutComments(read('App.tsx'));
+    expect(app).not.toMatch(/<CallScreen[^>]*\bonEnd=/);
+    expect(app.match(/onEnded=\{/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it('publishes what a route needs to guard its removal', () => {
+    expect(call).toContain('export interface CallGuard');
+    expect(call).toMatch(/onGuard\?\.\(\{ ending, openLeave: \(\) => setLeaveDialogVisible\(true\) \}\)/);
+  });
+});
+
+describe('navigation step 6: the application says what back does in each phase', () => {
+  const apply = withoutComments(read('src/screens/ProviderApplicationScreen.tsx'));
+
+  it('maps every phase to what its header arrow does', () => {
+    const table = apply.slice(
+      apply.indexOf('export function applicationBackStep'),
+      apply.indexOf('export function ProviderApplicationScreen'),
+    );
+    expect(table).toMatch(/case 'verify':\s*return 'leave';/);
+    expect(table).toMatch(/case 'checking':\s*case 'confirm':\s*return 'editDetails';/);
+    expect(table).toMatch(/case 'profile':\s*return 'toVerify';/);
+    expect(table).toMatch(/case 'done':\s*return 'stay';/);
+    // ...and the arrows it claims to match are the ones the phases render.
+    expect(apply).toMatch(/if \(phase === 'checking'\) \{[\s\S]{0,200}<Header onBack=\{onEditDetails\} \/>/);
+    expect(apply).toMatch(/<Header onBack=\{\(\) => setPhase\('verify'\)\} \/>/);
+    expect(apply).toMatch(/if \(phase === 'verify'\) \{[\s\S]{0,200}<Header onBack=\{onBack\} \/>/);
+  });
+
+  it('publishes backStep for the route, and leaves only in verify', () => {
+    expect(apply).toMatch(/case 'leave':\s*return false;/);
+    expect(apply).toMatch(/case 'editDetails':\s*onEditDetails\(\);\s*return true;/);
+    expect(apply).toContain('}, [phase, onEditDetails, onGuard]);');
+  });
+});
+
+/**
+ * Navigation step 6, the chat (nav-migration §5, ruling 9). Under the navigator
+ * a covered chat stays mounted, so each mount-scoped hook takes the gate that
+ * says what unmounting used to mean for it. Both gates default to true, and
+ * the old tree passes neither.
+ */
+describe('navigation step 6: the chat gates what a covered chat must not do', () => {
+  const controller = withoutComments(read('src/chat-v2/useChatV2Controller.ts'));
+  const screen = withoutComments(read('src/chat-v2/ChatScreenV2.tsx'));
+
+  it('takes live and focused, defaulting to the old tree', () => {
+    expect(controller).toContain('{ live = true, focused = true }: ChatV2Gates = {},');
+    expect(screen).toContain('live = true,');
+    expect(screen).toContain('focused = true,');
+    expect(screen).toContain('useChatV2Controller(providerId, benchmarkReadOnly, { live, focused })');
+  });
+
+  it('gates the lease, the announce, the openers, the clock, outgoing typing and the review on live', () => {
+    expect(controller).toContain('useSessionLease(benchmarkReadOnly || !live ? null : activeSession);');
+    expect(controller).toContain('mutationInputs.announceEnabled && live,');
+    expect(controller).toMatch(/enabled:\s*live &&\s*chatV2OwnsOpeners\(/);
+    expect(controller).toMatch(/if \(sessionStartedAt === null \|\| !live\) \{/);
+    expect(controller).toContain('const notifyTyping = live ? live$.notifyTyping : NOOP;');
+    expect(controller).toMatch(/if \(!live\) \{\s*liveSessionRef\.current = null;\s*return;\s*\}/);
+    expect(controller).toContain('}, [activeSession, askReview, displayName, isMemberSide, live]);');
+    // Incoming data stays mount-scoped, so the transcript is fresh on return.
+    expect(controller).toContain('useSessionRealtime(conversationId);');
+    expect(controller).toContain('useLiveMessageEdits(conversationId, selfId);');
+  });
+
+  it('flushes read receipts only while focused, and again on focus', () => {
+    expect(controller).toMatch(/useMarkRead\(\s*mutationInputs\.markReadConversationId,\s*mutationInputs\.markReadSelfId,\s*focused,\s*\)/);
+    const realtime = withoutComments(read('src/api/realtime.ts'));
+    expect(realtime).toMatch(/const flush = \(\): void => \{\s*if \(!focusedRef\.current\) \{\s*return;\s*\}/);
+    expect(realtime).toMatch(/useEffect\(\(\) => \{\s*if \(focused\) \{\s*flushRef\.current\(\);\s*\}\s*\}, \[focused\]\);/);
+  });
+
+  it('claims the viewing signal on focus', () => {
+    expect(controller).toContain('useViewingConversation(conversationId, focused);');
+    const viewing = withoutComments(read('src/lib/viewingConversation.ts'));
+    expect(viewing).toContain('}, [conversationId, focused]);');
+  });
+
+  it('publishes the guard and cleans up on blur', () => {
+    expect(screen).toContain('export interface ChatV2Guard');
+    expect(screen).toMatch(/onGuard\?\.\(\{\s*sessionActive,\s*replyActive: replyTo !== null,\s*leaveVisible,\s*clearReply,\s*openLeave,\s*purgeDraft,\s*\}\)/);
+    const blur = screen.slice(screen.indexOf('if (wasFocused.current && !focused)'));
+    for (const close of [
+      'setActionRequest(null)',
+      'setEditing(null)',
+      'setDeleting(null)',
+      'setSafety({ open: false, messageId: null })',
+      'setRenaming(false)',
+      'setViewerImage(null)',
+      'setMemberProfileVisible(false)',
+      'setLeaveVisible(false)',
+      'KeyboardController.dismiss()',
+      'stopVoice()',
+    ]) {
+      expect(blur.slice(0, 600)).toContain(close);
+    }
+    const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
+    expect(composer).toMatch(/if \(focused\) \{\s*return;\s*\}[\s\S]{0,200}writeDraftText\(id, textRef\.current\);[\s\S]{0,120}void discard\(\);/);
+    expect(withoutComments(read('src/chat-v2/ChatHeaderV2.tsx'))).toMatch(/if \(!focused\) \{\s*setMenuVisible\(false\);/);
   });
 });

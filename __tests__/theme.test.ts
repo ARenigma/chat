@@ -3607,11 +3607,14 @@ describe('the brand stays coral, and coral is a hue', () => {
   const FAMILY = [
     'bg/accent',
     'bg/accentStrong',
+    'bg/accentGradientFrom',
+    'bg/accentGradientTo',
     'bg/accentTint',
     'bg/navIndicator',
     'border/accent',
     'text/accent',
     'text/onAccentTint',
+    'text/navSelected',
     'bubble/mine',
   ] as const;
 
@@ -3672,11 +3675,14 @@ describe('every coral role is a step of the one ramp', () => {
   const CORAL_ROLES = [
     'bg/accent',
     'bg/accentStrong',
+    'bg/accentGradientFrom',
+    'bg/accentGradientTo',
     'bg/accentTint',
     'bg/navIndicator',
     'border/accent',
     'text/accent',
     'text/onAccentTint',
+    'text/navSelected',
     'bubble/mine',
   ] as const;
 
@@ -3745,6 +3751,44 @@ describe('every coral role is a step of the one ramp', () => {
         Dark: 'primary_500',
       });
     }
+  });
+
+  it('draws the coral field as a real ramp gradient, 500 -> 700', () => {
+    // bg/accent -> bg/accentStrong went flat when both became step 500. Owner,
+    // 2026-09-27: 400 -> 600, or 500 -> 700 where white text sits on the 400
+    // end, which is all three (scripts/check-contrast.mjs GRADIENT_TEXT).
+    expect(spec.color.tokens['bg/accentGradientFrom']!.step).toEqual({
+      Light: 'primary_500',
+      Dark: 'primary_500',
+    });
+    expect(spec.color.tokens['bg/accentGradientTo']!.step).toEqual({
+      Light: 'primary_700',
+      Dark: 'primary_700',
+    });
+    for (const file of [
+      'src/screens/HomeScreen.tsx',
+      'src/screens/ProviderDetailScreen.tsx',
+      'src/components/SpotlightCard.tsx',
+    ]) {
+      const src = read(file);
+      expect({ file, ramp: src.includes('${theme.color.bg.accentGradientFrom} 0%, ${theme.color.bg.accentGradientTo} 100%') }).toEqual({ file, ramp: true });
+      expect({ file, flat: /bg\.accent\} 0%, \$\{theme\.color\.bg\.accentStrong\}/.test(src) }).toEqual({ file, flat: false });
+    }
+  });
+
+  it('puts the dark wash at step 900, where it can be seen, and moves the dot off 500', () => {
+    // Owner, 2026-09-27: 950 was 1.005:1 against the dark page. 900 is 1.13:1,
+    // and step 500 on it is 2.87:1, so the low-balance bar's live dot takes
+    // text/accent (300 in dark, 6.16:1) rather than bg/accent.
+    expect(spec.color.tokens['bg/accentTint']!.step).toEqual({
+      Light: 'primary_50',
+      Dark: 'primary_900',
+    });
+    const bar = read('src/chat-v2/ChatSessionBarV2.tsx');
+    const dot = bar.slice(bar.indexOf('talkDot: {'), bar.indexOf('}', bar.indexOf('talkDot: {')));
+    expect(dot).toContain('backgroundColor: t.color.text.accent');
+    expect(contrast(DARK.color.text.accent, DARK.color.bg.accentTint)).toBeGreaterThanOrEqual(3);
+    expect(contrast(DARK.color.bg.accent, DARK.color.bg.accentTint)).toBeLessThan(3);
   });
 
   it('lets none of the retired corals survive', () => {

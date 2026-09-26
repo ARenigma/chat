@@ -6,6 +6,7 @@ import type { Database } from '../lib/database.types';
 import { clearAllConversations } from '../lib/conversations';
 import { clearOutbox } from '../lib/outboxStore';
 import { resetViewingSignals } from '../lib/viewingConversation';
+import { haltPresenceHeartbeat, sendPresenceHeartbeat } from '../lib/presenceHeartbeat';
 import { reportSwallowed } from '../lib/sentry';
 import {
   GoogleCredentialError,
@@ -1018,7 +1019,14 @@ function markPushDone(entry: PendingSignOut): void {
 function leaveDevice(remember: { push: boolean } | null): {
   local: Promise<void>;
   pending: PendingSignOut | null;
+  presenceOwed: boolean;
 } {
+  // First, before the session goes: the provider's heartbeat stops here, in
+  // the same synchronous step, so no beat and no unmount offline can leave
+  // through the app's client after it has lost the session (or gained the
+  // next account's). Whether an offline is owed is handed to the server half,
+  // which sends it as this account. See `haltPresenceHeartbeat`.
+  const presenceOwed = haltPresenceHeartbeat();
   const stored = storage.get(SESSION_STORAGE_KEY);
   const pending =
     stored !== null && remember !== null ? { session: stored, push: remember.push, at: Date.now() } : null;
@@ -1041,7 +1049,7 @@ function leaveDevice(remember: { push: boolean } | null): {
     // Nothing is stored any more, so this makes no request (see above).
     await supabase.auth.signOut({ scope: 'local' });
   })();
-  return { local, pending };
+  return { local, pending, presenceOwed };
 }
 
 /** The stored session's two tokens, or null for anything that is not one. */
@@ -1103,7 +1111,11 @@ type PushHalf = 'device' | 'account' | 'none';
  * revoked) is final and is dropped, push half or not: nothing is left that
  * could delete as that account.
  */
-async function tellServer(entry: PendingSignOut | null, push: PushHalf): Promise<void> {
+async function tellServer(
+  entry: PendingSignOut | null,
+  push: PushHalf,
+  presenceOwed = false,
+): Promise<void> {
   const account = entry === null ? Promise.resolve(null) : authenticateAs(entry);
   // Started now, not after the account resolves: `stopPush` halts
   // registration and sets the teardown `startPush` waits on in its first
@@ -1117,7 +1129,19 @@ async function tellServer(entry: PendingSignOut | null, push: PushHalf): Promise
   let retry = false;
   try {
     const client = await account;
+    /*
+     * The provider's offline (migration 155), as the leaving account and
+     * BEFORE `/logout` below revokes that account's session: after it, nobody
+     * is left who may write this presence. The device session was already
+     * removed synchronously (the device half's invariant, above), so this is
+     * the earliest moment an authenticated offline can leave. Best effort and
+     * never retried: `sendPresenceHeartbeat` does not reject, and an offline
+     * that fails is what the server's 75 s window covers.
+     */
+    const offline =
+      client !== null && presenceOwed ? sendPresenceHeartbeat(false, client) : Promise.resolve(true);
     const pushed = await pushDone;
+    await offline;
     if (entry !== null && push !== 'none' && pushed) {
       markPushDone(entry);
     }
@@ -1154,11 +1178,11 @@ async function tellServer(entry: PendingSignOut | null, push: PushHalf): Promise
  * what the returned promise settles on.
  */
 export function beginSignOut(): Promise<void> {
-  const { local, pending } = leaveDevice({ push: true });
+  const { local, pending, presenceOwed } = leaveDevice({ push: true });
   trackSignOut(local);
   // The whole teardown: the device half has just removed the only session
   // stored, so nobody is signed in to take it from.
-  const server = trackServerHalf(tellServer(pending, 'device'));
+  const server = trackServerHalf(tellServer(pending, 'device', presenceOwed));
   return Promise.all([local, server]).then(() => undefined);
 }
 
@@ -1168,9 +1192,9 @@ export function beginSignOut(): Promise<void> {
  * (OnboardingScreen).
  */
 export function signOut(): Promise<void> {
-  const { local, pending } = leaveDevice({ push: false });
+  const { local, pending, presenceOwed } = leaveDevice({ push: false });
   trackSignOut(local);
-  const server = trackServerHalf(tellServer(pending, 'none'));
+  const server = trackServerHalf(tellServer(pending, 'none', presenceOwed));
   return Promise.all([local, server]).then(() => undefined);
 }
 

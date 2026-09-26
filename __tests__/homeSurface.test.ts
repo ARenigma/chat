@@ -1037,7 +1037,10 @@ describe('the category tabs sit on a native pager, driven on the UI thread', () 
     const selectedBranch = worklet.slice(worklet.indexOf("endsWith('onPageSelected')"));
     expect(scrollBranch).not.toContain('scheduleOnRN');
     expect(selectedBranch).toContain('scheduleOnRN(notifySelected');
-    expect(pager.match(/scheduleOnRN\(/g)?.length).toBe(1);
+    // Two hops, both off the per-frame path: onPageSelected, and the snap that
+    // settles a cancelled drag once the pager reports idle off a page (047f582).
+    expect(pager.match(/scheduleOnRN\(/g)?.length).toBe(2);
+    expect(pager).toContain('scheduleOnRN(snapToPage, nearest)');
     // Built once; the JS callback behind it is a stable identity.
     expect(pager).not.toMatch(/useEvent<PagerEvent>\([\s\S]*?\],\s*true\s*\)/);
     // No React state in the strip or the pager, and no JS scroll handler.

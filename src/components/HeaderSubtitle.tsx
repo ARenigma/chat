@@ -12,11 +12,13 @@ import type { PresenceRead } from '../lib/presence';
  *
  * Subscribes narrowly to `selectPeerActivity` so that typing broadcasts only
  * re-render this small leaf, not the entire chat screen — the same isolation
- * pattern that `PeerTyping` uses for the transcript bubble. `presence` is a
- * stable value derived from the thread row and changes only when the peer
- * updates their declared state, not on every keystroke.
+ * pattern that `PeerTyping` uses for the transcript bubble. `presence` is the
+ * server's reading (migration 155) as the controller resolved it, re-read
+ * every 15 s while a member's chat with a provider is focused, and not on
+ * every keystroke.
  *
- * Priority: typing > online > last-seen / away / nothing.
+ * Priority: recording > typing > the presence line ("Online" or "last seen
+ * today at 10:15 am", from `readPresence`) > nothing.
  *
  * The row is dropped entirely when there is nothing to announce, which is what
  * Material 3's own bar does: `TopAppBarLayout` composes the title as a two-child
@@ -41,16 +43,16 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
       'recording…'
     : activity === 'typing'
     ? 'typing…'
-    : presence.here
-      ? 'Online'
-      : (presence.line ?? '');
+    : (presence.line ?? '');
 
   // Quiet (tertiary) only when there is nothing active to announce. Typing and
-  // "Online" both carry the positive colour so they read as live signals.
+  // "Online" both carry the positive colour so they read as live signals; a
+  // last-seen line is a fact about the past and takes the quiet ink.
   const quiet = activity === null && !presence.here;
 
-  // Nothing to say, so nothing rendered. `presence.line` is null for 'hidden'
-  // and for a peer that has not loaded, which is the DEFAULT state, and the
+  // Nothing to say, so nothing rendered. `presence.line` is null for a member
+  // peer, a blocked pair, a provider never seen and a peer that has not
+  // loaded, which is the DEFAULT state, and the
   // empty line box this used to render is what held the name 8dp above the
   // avatar's centre. src/lib/presence.ts has always documented this behaviour
   // ("the chat header renders the name alone rather than reserving a blank
@@ -65,17 +67,22 @@ function HeaderSubtitleView({ presence }: { presence: PresenceRead }) {
 
   return (
     /*
-     * Rule 7 (motion.ts): a text node whose content just changed, keyed by
-     * that content so React remounts it and Reanimated runs the swap (M14,
-     * 2026-09-17 audit). Without the key this was a hard cut between
-     * "typing…", "Online" and a last-seen line — a status glimpsed often
-     * enough during a live conversation that the same fadeSwapFast/
-     * fadeSwapOutFast pair the Notify button already uses fits the
-     * near-imperceptible tier this frequency calls for, not a heavier
-     * bubble-style entrance.
+     * Rule 7 (motion.ts): keyed so React remounts the node and Reanimated runs
+     * the swap (M14, 2026-09-17 audit), with the fadeSwapFast/fadeSwapOutFast
+     * pair the Notify button uses.
+     *
+     * Keyed by the KIND of line, not by its text (2026-09-27, animate-expo's
+     * frequency gate). The typing and recording swap is somebody starting to
+     * do something, and keeps its fade. The presence line changing on its own
+     * ("Online" to "last seen today at 10:15 am", or a stamp moving on) is seen
+     * tens of times a day in a chat that polls it every 15 s, which is the
+     * tier that gets nothing: the text changes in place, a hard cut, and the
+     * avatar's dot beside it snaps in the same frame (Avatar's PresenceDot is
+     * a style swap with no animation). A fade there would announce a change
+     * nobody made on purpose.
      */
     <Animated.Text
-      key={label}
+      key={activity ?? 'presence'}
       entering={fadeSwapFast}
       exiting={fadeSwapOutFast}
       testID="peer-presence"

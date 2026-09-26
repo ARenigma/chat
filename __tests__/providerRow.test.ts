@@ -684,7 +684,11 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(body).toContain(
       'const canCall = provider.audio_enabled && onCall !== undefined && !away',
     );
-    expect(body).toContain("const away = !presence.here");
+    // The switch, not the dot (migration 155): open but idle for more than
+    // 75 s is not online and is still callable, so the heartbeat must not put
+    // a Notify on somebody who would pick up.
+    expect(body).toContain('const away = !provider.is_available;');
+    expect(body).not.toContain('const away = !presence.here');
     /*
      * The fallback stopped being the literal 'Chat' on 2026-09-17. It was the
      * same false affordance one layer down: a provider who offers video only

@@ -311,11 +311,22 @@ export function useLiveConversation(
 export function useMarkRead(
   conversationId: string | undefined,
   selfId: string | undefined,
+  /*
+   * Whether the chat is the focused screen (navigation step 6, nav-migration
+   * §5, A10). Visibility is recorded either way, because FlashList keeps
+   * reporting it for a covered list; only the WRITE waits for focus, and runs
+   * again the moment focus returns, so messages that arrived under the wallet
+   * are marked read on return without a scroll. Defaults to true, which is the
+   * old tree, where a covered chat is unmounted.
+   */
+  focused = true,
 ): (visibleIds: readonly string[]) => void {
   const queryClient = useQueryClient();
   const inFlightRef = useRef<Set<string>>(new Set());
   const visibleRef = useRef<Set<string>>(new Set());
   const flushRef = useRef<() => void>(() => undefined);
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
 
   useEffect(() => {
     // A conversation switch starts the visibility/in-flight bookkeeping over —
@@ -334,6 +345,9 @@ export function useMarkRead(
     const key = messagesKey(conversationId);
 
     const flush = (): void => {
+      if (!focusedRef.current) {
+        return;
+      }
       const list = queryClient.getQueryData<TranscriptMessage[]>(key) ?? [];
       const ids = unreadFromPeer(list, selfId).filter(
         id => visibleRef.current.has(id) && !inFlightRef.current.has(id),
@@ -370,6 +384,14 @@ export function useMarkRead(
     });
     return unsubscribe;
   }, [conversationId, selfId, queryClient]);
+
+  // The flush on regaining focus. On mount it finds nothing visible yet and
+  // writes nothing, so the old tree sees no difference.
+  useEffect(() => {
+    if (focused) {
+      flushRef.current();
+    }
+  }, [focused]);
 
   return useCallback((visibleIds: readonly string[]) => {
     let grew = false;

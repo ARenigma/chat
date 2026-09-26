@@ -151,6 +151,7 @@ import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen
 import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
 import { ChatRequestScreen, CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
+import { usePresenceHeartbeat } from './src/hooks/usePresenceHeartbeat';
 
 initSentry();
 // Wire live call API into the intent queue. Called once at module init so
@@ -1853,6 +1854,17 @@ function SignedIn({
     [role, conversations, setIncomingRequest],
   );
   useIncomingChatRequests(role === 'provider' ? selfId : undefined, onIncomingChatRequest);
+  /*
+   * The provider's presence heartbeat (migration 155): foreground, every 30 s
+   * while active, offline on background. At the top level with the role as its
+   * argument, beside the ring above, because a hook cannot sit inside the role
+   * branch below. A member passes false and never beats, and so does a role
+   * still loading (`undefined`), so a provider starts a moment late rather
+   * than anyone else ever starting at all. Sign-out does not wait for this tree to unmount: it
+   * halts the heartbeat and sends the offline itself, before the session is
+   * cleared (`leaveDevice` in src/api/auth.ts).
+   */
+  usePresenceHeartbeat(role === 'provider');
 
   /*
    * Where an accepted chat request goes: its chat, except over a call. The
@@ -1999,7 +2011,7 @@ function SignedIn({
               medium={providerRoute.medium}
               // Symmetry with the member tree: hanging up returns to that peer's
               // chat, not the provider home (user 2026-08-31).
-              onEnd={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
+              onEnded={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
             />
           ) : providerRoute.name === 'chatV2' ? (
             /*
@@ -2255,7 +2267,7 @@ function SignedIn({
                 // conversation it belongs to (user 2026-08-31). Covers both the
                 // outgoing call (started from the chat) and an answered incoming
                 // ring, which should also drop the member into that SP's thread.
-                onEnd={() => openChat(route.providerId)}
+                onEnded={() => openChat(route.providerId)}
               />
             </AfterPaint>
           ) : route.name === 'providerDetail' ? (

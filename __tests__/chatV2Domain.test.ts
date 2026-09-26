@@ -147,6 +147,8 @@ function thread(
     peer_is_provider: true,
     peer_presence: null,
     peer_last_active_at: null,
+    peer_online: true,
+    peer_last_seen_at: null,
     last_session_at: null,
     last_session_channel: null,
     last_session_duration_seconds: null,
@@ -727,8 +729,9 @@ describe('the V2 shell renders real rows', () => {
   const list = read('src/chat-v2/ChatListV2.tsx');
 
   it('drives the screen from the controller', () => {
+    // Plus the step-6 gates (nav-migration §5), which default to true.
     expect(screen).toContain(
-      'useChatV2Controller(providerId, benchmarkReadOnly)',
+      'useChatV2Controller(providerId, benchmarkReadOnly, { live, focused })',
     );
     expect(screen).toContain('rows={chat.rows}');
     expect(screen).toContain('onSend={onSend}');

@@ -1532,8 +1532,8 @@ describe('useViewingConversation', () => {
     const clear = jest.fn(async (_conversationId: string) => undefined);
     (rn.NativeModules as Record<string, unknown>).Conversations = { clear };
     const viewing = require('../src/lib/viewingConversation') as ViewingModule;
-    const screen = (conversationId: string | undefined) => {
-      viewing.useViewingConversation(conversationId);
+    const screen = (conversationId: string | undefined, focused?: boolean) => {
+      viewing.useViewingConversation(conversationId, focused);
       const cleanup = effects[effects.length - 1]?.();
       return () => {
         if (typeof cleanup === 'function') {
@@ -1569,6 +1569,34 @@ describe('useViewingConversation', () => {
     expect(viewing.getViewingConversation()).toBeNull();
     appState('active');
     expect(viewing.getViewingConversation()).toBe(A);
+  });
+
+  /*
+   * Navigation step 6: focus, not mount, claims the signal. A chat covered by
+   * a pushed screen stays mounted under the navigator, and it is not what the
+   * person is reading; the blur is a release exactly as the unmount was.
+   */
+  it('claims nothing and clears nothing for a chat that is mounted but not focused', () => {
+    const { viewing, screen, listeners, clear } = mount();
+    screen(A, false);
+    expect(viewing.getViewingConversation()).toBeNull();
+    expect(listeners.size).toBe(0);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it('lets go on blur and takes the signal and the shade clear back on focus', () => {
+    const { viewing, screen, clear } = mount();
+    const blur = screen(A, true);
+    expect(clear.mock.calls).toEqual([[A]]);
+    blur();
+    expect(viewing.getViewingConversation()).toBeNull();
+    // The chat pushed over it claims; the covered one's blur did not erase it.
+    const other = screen(B, true);
+    expect(viewing.getViewingConversation()).toBe(B);
+    other();
+    screen(A, true);
+    expect(viewing.getViewingConversation()).toBe(A);
+    expect(clear.mock.calls).toEqual([[A], [B], [A]]);
   });
 
   it('claims nothing before the thread resolves', () => {
@@ -2182,12 +2210,24 @@ describe('the in-app flag reaches its own Android channel', () => {
   it('clears everything the account left, notifications and shortcuts, under the post lock', () => {
     const all = slice('fun clearAll(context: Context) {', '\n    }\n');
     expect(all).toMatch(
-      /synchronized\(postLock\) \{\s*NotificationManagerCompat\.from\(context\)\.cancelAll\(\)\s*posted\.clear\(\)\s*requestPosts\.clear\(\)\s*cleared\.clear\(\)\s*clearedAll = true\s*\}/,
+      /synchronized\(postLock\) \{\s*NotificationManagerCompat\.from\(context\)\.cancelAll\(\)\s*posted\.clear\(\)\s*requestPosts\.clear\(\)\s*cleared\.clear\(\)\s*clearedAll = true\s*val ids = /,
     );
     // Cached long-lived copies, not only the dynamic list, which keeps them.
     expect(all).toContain('ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_CACHED');
     expect(all).toContain('ShortcutManagerCompat.removeLongLivedShortcuts(context, ids)');
     expect(all).toContain('ShortcutManagerCompat.removeAllDynamicShortcuts(context)');
+    // Review follow-up (2026-09-25): the shortcut removal is inside the same
+    // hold as the cancel. After the release, a post for the next account could
+    // push its shortcut in between and have it removed from under its live
+    // notification. The whole body is the one locked block, so nothing of the
+    // sign-out runs outside it.
+    expect(all).toMatch(
+      /^fun clearAll\(context: Context\) \{\s*synchronized\(postLock\) \{[\s\S]*ShortcutManagerCompat\.removeAllDynamicShortcuts\(context\)\s*\}$/,
+    );
+    // And every shortcut push is a post's, which only ever runs under the lock.
+    const pushes = kt.split('ShortcutManagerCompat.pushDynamicShortcut(').length - 1;
+    expect(pushes).toBe(2);
+    expect(count(kt, '        fun post(\n')).toBe(pushes);
     expect(module).toMatch(/fun clearAll\(promise: Promise\) \{\s*try \{\s*Conversations\.clearAll\(reactContext\)\s*promise\.resolve\(null\)/);
     expect(bridge).toMatch(/export async function clearAllConversations\(\): Promise<void> \{\s*if \(native === undefined\) \{\s*return;\s*\}\s*await native\.clearAll\(\);/);
     for (const page of [
@@ -2330,7 +2370,11 @@ describe('push.ts wiring', () => {
 describe('who sets the signal, and who starts push', () => {
   it('sets it from the V2 chat controller, which both trees mount', () => {
     const controller = withoutComments(read('src/chat-v2/useChatV2Controller.ts'));
-    expect(controller).toContain('useViewingConversation(conversationId);');
+    // With the chat's focus since navigation step 6: focus, not mount, claims.
+    expect(controller).toContain('useViewingConversation(conversationId, focused);');
+    expect(withoutComments(read('src/lib/viewingConversation.ts'))).toMatch(
+      /if \(conversationId === undefined \|\| !focused\) \{\s*return;\s*\}/,
+    );
     const lib = withoutComments(read('src/lib/viewingConversation.ts'));
     expect(lib).toContain("AppState.addEventListener('change', sync)");
     expect(lib).toMatch(/return \(\) => \{\s*subscription\.remove\(\);\s*uncoverListeners\.delete\(clearIfSeen\);\s*release\(\);/);
@@ -3597,6 +3641,11 @@ describe('sign-out drops the device session first and ends the old one on a clie
       supabaseStorage: {},
     }));
     const ghost = {
+      // The leaving provider's offline (migration 155) goes through here.
+      rpc: jest.fn(async (name: string, args: { p_online: boolean }) => {
+        events.push(`ghost rpc ${name} ${String(args.p_online)}`);
+        return { data: null, error: null };
+      }),
       auth: {
         setSession: jest.fn(async (tokens: { access_token: string; refresh_token: string }) => {
           events.push(`ghost setSession ${tokens.access_token}`);
@@ -3789,6 +3838,51 @@ describe('sign-out drops the device session first and ends the old one on a clie
     expect(next.ghost.auth.signOut).toHaveBeenCalledTimes(1);
   });
 
+  it('says a provider offline as the leaving account, before the session is revoked', async () => {
+    /*
+     * Migration 155. The heartbeat is halted in the device half's synchronous
+     * step, so nothing more leaves through the app's client (which has lost
+     * the session by then), and the owed offline goes on the dropped
+     * session's own client BEFORE `/logout` ends that session.
+     */
+    const a = loadAuth();
+    const heartbeat = require('../src/lib/presenceHeartbeat') as typeof import('../src/lib/presenceHeartbeat');
+    const beats: boolean[] = [];
+    const stop = heartbeat.startPresenceHeartbeat({
+      appState: {
+        currentState: 'active',
+        addEventListener: () => ({ remove: () => undefined }),
+      },
+      send: async online => {
+        beats.push(online);
+        a.events.push(`app beat ${String(online)} ${a.store.has(SESSION_KEY) ? 'signed in' : 'signed out'}`);
+      },
+      intervalMs: 30_000,
+    });
+    expect(beats).toEqual([true]);
+    const out = a.auth.beginSignOut();
+    // Halted in the same step the session went: no timer is left to beat.
+    expect(a.store.has(SESSION_KEY)).toBe(false);
+    a.pushTeardown.open();
+    await out;
+    // The tree unmounting afterwards sends nothing through the app's client.
+    stop();
+    expect(beats).toEqual([true]);
+    expect(a.main.rpc).not.toHaveBeenCalled();
+    const offline = a.events.indexOf('ghost rpc presence_heartbeat false');
+    expect(offline).toBeGreaterThan(a.events.indexOf('ghost setSession access-A'));
+    expect(offline).toBeLessThan(a.events.indexOf('ghost signOut local'));
+    expect(a.events.filter(e => e.startsWith('ghost rpc'))).toHaveLength(1);
+  });
+
+  it('owes no offline when no heartbeat was running, as for a member', async () => {
+    const a = loadAuth();
+    const out = a.auth.beginSignOut();
+    a.pushTeardown.open();
+    await out;
+    expect(a.events.some(e => e.startsWith('ghost rpc'))).toBe(false);
+  });
+
   it('drops a pending sign-out the server refused, rather than retrying it forever', async () => {
     const a = loadAuth({ ghostSignOut: async () => ({ error: Object.assign(new Error('invalid'), { status: 400 }) }) });
     const out = a.auth.beginSignOut();
@@ -3915,6 +4009,30 @@ describe('sign-out drops the device session first and ends the old one on a clie
     expect(a.unregisterPush).not.toHaveBeenCalled();
     expect(a.stopPush).not.toHaveBeenCalled();
     expect(a.events).toEqual(['ghost setSession access-A', 'ghost signOut local']);
+    expect(a.store.has('auth.pendingSignOut')).toBe(false);
+  });
+
+  it('a cold start with ANOTHER account signed in finishes the old sign-out without revoking the live token', async () => {
+    // Review follow-up (2026-09-25): the boot's `resumePendingSignOuts` has no
+    // `!signedInOnDevice()` guard, unlike the online listener. It needs none:
+    // `pushHalfFor` asks per entry, and with somebody else signed in the
+    // entry owes only its own row (`unregisterPush`), never `stopPush`,
+    // whose halt and `deleteToken` would take the signed-in account's.
+    const store = new Map<string, string>([
+      ['auth.pendingSignOut', JSON.stringify([{ session: STORED_B, push: true }])],
+      [SESSION_KEY, STORED],
+    ]);
+    const a = loadAuth({ store });
+    a.pushTeardown.open();
+    await a.auth.resumePendingSignOuts();
+    expect(a.stopPush).not.toHaveBeenCalled();
+    expect(a.events).toEqual([
+      'ghost setSession access-B',
+      'unregisterPush',
+      'push row delete only, as the old account',
+      'ghost signOut local',
+    ]);
+    expect(a.store.get(SESSION_KEY)).toBe(STORED);
     expect(a.store.has('auth.pendingSignOut')).toBe(false);
   });
 
