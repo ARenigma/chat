@@ -45,6 +45,7 @@ import {
   useLiveMessageEdits,
   useMessages,
   useOutboxReplay,
+  usePeerPresence,
   useProfile,
   useProviders,
   useSelfId,
@@ -540,17 +541,48 @@ export function useChatV2Controller(
   const peerAvatarUrl =
     knownThread?.peer_avatar_url ?? provider?.avatar_url ?? null;
   /*
-   * A member has no listing switch, so `peer_available` is false for one by
-   * construction. Passing that through would tell a provider the person they
-   * are talking to is away, which is a claim nobody made — null instead.
+   * PRESENCE: the server's reading (migration 155), and nothing else.
+   *
+   * `online` is the server's derivation (a provider, open, a heartbeat within
+   * 75 s, no offline since, no block) and `last_seen_at` its last event; see
+   * `readPresence`. The client never re-derives either, so the header, the
+   * inbox row, the rail and the directory card say the same thing about the
+   * same person. A member peer's presence is never published: the views
+   * return false and null for one, which reads as nothing at all, so there is
+   * no `peer_is_provider` special case left to get wrong here.
+   *
+   * While a MEMBER's chat with a PROVIDER is open and focused, that peer's row
+   * is re-read every 15 s (`usePeerPresence`), because `online` lapses 75 s
+   * after the last heartbeat without any row changing, and the thread row
+   * from the inbox is only as fresh as the inbox's last fetch. Sources, most
+   * recent first, each taken WHOLE rather than mixed per field (a null last
+   * seen from a fresh row must not be filled in from a stale one): the polled
+   * row, then the thread row, then the directory row for a thread not in the
+   * cached inbox yet.
    */
-  const presence = readPresence(
-    knownThread !== undefined
-      ? knownThread.peer_is_provider
-        ? knownThread.peer_available
-        : null
-      : provider?.is_available,
-  );
+  const peerIsProvider =
+    knownThread !== undefined ? knownThread.peer_is_provider : provider !== undefined;
+  const peerPresence = usePeerPresence(conversationId, {
+    enabled: isMemberSide && peerIsProvider && !benchmarkReadOnly,
+    focused,
+  });
+  const peerRow = peerPresence.data;
+  const presenceSource =
+    peerRow !== undefined && peerRow !== null
+      ? { online: peerRow.peer_online, lastSeenAt: peerRow.peer_last_seen_at }
+      : knownThread !== undefined
+        ? { online: knownThread.peer_online, lastSeenAt: knownThread.peer_last_seen_at }
+        : { online: provider?.online, lastSeenAt: provider?.last_seen_at };
+  /*
+   * "Now" ticks with the poll. Reading `dataUpdatedAt` subscribes this hook to
+   * every refetch (TanStack's tracked query properties), so the header
+   * re-renders every 15 s even when the row came back unchanged, and a last
+   * seen crossing midnight turns from "today" to "yesterday" on the next one.
+   * The render's clock, never earlier than the reading, so a chat that is not
+   * polling (the provider side) still reads the day right on any render.
+   */
+  const presenceNow = new Date(Math.max(Date.now(), peerPresence.dataUpdatedAt));
+  const presence = readPresence({ ...presenceSource, now: presenceNow });
   // Read for THIS conversation: two chats can be mounted at once under the
   // navigator, and the other one's typing is not this peer's (nav §5).
   const peerActivity = useStore(selectPeerActivityIn(conversationId));

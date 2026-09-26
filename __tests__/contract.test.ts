@@ -2752,16 +2752,70 @@ describe('the chat restyle is wired, not just drawn', () => {
 
   it('drops the derived socket presence the settled decision rejects', () => {
     /*
-     * Realtime presence answers "is their app in the foreground", which is a
-     * question nobody agreed to have answered about them. The reading has to
-     * come from something the peer SET: `peer_available`, the provider's own
-     * master switch.
+     * Realtime presence answers "is their app in the foreground" for ANYONE,
+     * which is a question nobody agreed to have answered about them. Still
+     * rejected. What replaced the master switch here (migration 155, owner
+     * decision 2026-09-27) is narrower and server-derived: a PROVIDER's
+     * heartbeat, published only to their members, only as `peer_online` and
+     * `peer_last_seen_at`, withheld for members and across a block. The client
+     * reads those two and derives nothing itself.
      *
      * Comments stripped, because the note explaining what the header no longer
      * claims names the selector it stopped reading.
      */
     expect(chatCode).not.toContain('selectPeerOnline');
-    expect(chatCode).toContain('peer_available');
+    expect(chatCode).toContain('knownThread.peer_online');
+    expect(chatCode).toContain('knownThread.peer_last_seen_at');
+    // The switch is not the dot any more: availability off with a recent
+    // heartbeat is a last-seen line, and the server's `online` already
+    // requires the switch, so reading it here could only disagree.
+    expect(chatCode).not.toContain('peer_available');
+  });
+
+  it('polls the open chat\'s provider peer every 15 s, only while focused', () => {
+    /*
+     * `online` lapses 75 s after the last heartbeat without any row changing,
+     * so a header drawn from the inbox's cached row would say "Online" long
+     * after they left. One row of `conversation_peers`, while a MEMBER's chat
+     * with a PROVIDER is on top; nothing while covered or backgrounded.
+     */
+    const api = withoutComments(read('src/api/chat.ts'));
+    const hook = api.slice(
+      api.indexOf('export function usePeerPresence('),
+      api.indexOf('export function useConversationId('),
+    );
+    expect(api).toContain('export const PEER_PRESENCE_POLL_MS = 15_000;');
+    expect(hook).toContain(".from('conversation_peers')");
+    expect(hook).toContain(".select('peer_online, peer_last_seen_at')");
+    expect(hook).toContain(".eq('conversation_id', conversationId as string)");
+    expect(hook).toContain('.maybeSingle()');
+    expect(hook).toContain('refetchInterval: PEER_PRESENCE_POLL_MS');
+    expect(hook).toContain('refetchIntervalInBackground: false');
+    expect(hook).toContain('subscribed: focused');
+    expect(hook).toContain("enabled: enabled && conversationId !== undefined");
+    const controller = withoutComments(read('src/chat-v2/useChatV2Controller.ts'));
+    expect(controller).toContain(
+      'enabled: isMemberSide && peerIsProvider && !benchmarkReadOnly',
+    );
+    expect(controller).toMatch(/usePeerPresence\(conversationId, \{[\s\S]{0,120}focused,/);
+    // Merged into the header's reading, freshest source first, each whole.
+    expect(controller).toContain('peerRow.peer_online');
+    expect(controller).toContain('peerRow.peer_last_seen_at');
+    expect(controller).toContain('provider?.online');
+    expect(controller).toContain('provider?.last_seen_at');
+    // "Now" ticks with the poll: dataUpdatedAt is read, so each refetch renders.
+    expect(controller).toContain('peerPresence.dataUpdatedAt');
+    expect(controller).toContain('readPresence({ ...presenceSource, now: presenceNow })');
+  });
+
+  it('prints the one presence line under typing and recording', () => {
+    const subtitle = withoutComments(read('src/components/HeaderSubtitle.tsx'));
+    // recording > typing > presence line; "Online" comes from readPresence and
+    // is not spelled a second time here, so the two cannot drift.
+    expect(subtitle).toMatch(
+      /activity === 'recording'[\s\S]*'recording…'[\s\S]*activity === 'typing'[\s\S]*'typing…'[\s\S]*\(presence\.line \?\? ''\)/,
+    );
+    expect(subtitle).not.toContain("'Online'");
   });
 
   it('wires swipe-to-reply and on-bubble reactions on both sides', () => {
@@ -8425,12 +8479,20 @@ describe('the status line and the typing bubble fade through a change, not a har
   const subtitle = withoutComments(read('src/components/HeaderSubtitle.tsx'));
   const typing = withoutComments(read('src/components/PeerTyping.tsx'));
 
-  it('HeaderSubtitle keys its Animated.Text by label and fades the swap', () => {
+  it('HeaderSubtitle fades the typing swap and cuts the presence line', () => {
     expect(subtitle).toContain(
       "import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion'",
     );
     expect(subtitle).toContain('<Animated.Text');
-    expect(subtitle).toContain('key={label}');
+    /*
+     * Keyed by the kind of line (2026-09-27), not its text: "typing…" and
+     * "recording…" arriving and leaving still fade, while the presence line
+     * changing on its own ("Online" to a last seen, polled every 15 s) is the
+     * tens-a-day tier that animate-expo's gate gives nothing, so it changes in
+     * place. `key={label}` would fade every one of those.
+     */
+    expect(subtitle).toContain("key={activity ?? 'presence'}");
+    expect(subtitle).not.toContain('key={label}');
     expect(subtitle).toContain('entering={fadeSwapFast}');
     expect(subtitle).toContain('exiting={fadeSwapOutFast}');
   });

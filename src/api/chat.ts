@@ -10,6 +10,7 @@ import { AppState } from 'react-native';
 import { supabase } from '../lib/supabase';
 import type {
   ClaimResult,
+  ConversationPeer,
   ConversationSummary,
   Message,
   Profile,
@@ -209,6 +210,62 @@ export function useConversations() {
       return data;
     },
     staleTime: 10_000,
+  });
+}
+
+/** How often an open chat re-reads its provider peer's presence. */
+export const PEER_PRESENCE_POLL_MS = 15_000;
+
+/** The two presence columns of one thread's peer row (migration 155). */
+export type PeerPresenceRow = Pick<ConversationPeer, 'peer_online' | 'peer_last_seen_at'>;
+
+/**
+ * The provider peer's presence for ONE open chat, re-read every 15 s.
+ *
+ * Polling for the same reason as `useProviders`: `conversation_peers` is a
+ * view, which `postgres_changes` cannot replicate, and the server's `online`
+ * is a derivation over time (a heartbeat within 75 s) that expires without
+ * any row changing, so there is no event to push. One row, two columns, by
+ * `conversation_id`: the smallest read that answers the header's question,
+ * rather than the whole inbox the thread row came from.
+ *
+ * `enabled` is the caller's "a member's chat with a provider": a member peer's
+ * presence is never published (the view returns false and null for one), so
+ * polling for it would be a request that can only say nothing. `focused` maps
+ * to TanStack's `subscribed`, so a chat under another screen stops polling
+ * (https://tanstack.com/query/latest/docs/framework/react/react-native,
+ * "Disable queries on out of focus screens"); the app-background pause comes
+ * from `refetchIntervalInBackground: false` with AppState wired to
+ * `focusManager` in App.tsx. `staleTime` 0, so coming back into focus re-reads
+ * at once rather than showing the reading from before the chat was covered.
+ *
+ * Null data is a real answer (no such thread for this caller, e.g. after a
+ * block removes it); undefined is "not read yet". The caller falls back to the
+ * thread row or the directory for the second, not the first.
+ */
+export function usePeerPresence(
+  conversationId: string | undefined,
+  { enabled, focused }: { enabled: boolean; focused: boolean },
+) {
+  return useQuery<PeerPresenceRow | null>({
+    queryKey: ['peer-presence', conversationId ?? ''],
+    enabled: enabled && conversationId !== undefined,
+    subscribed: focused,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('conversation_peers')
+        .select('peer_online, peer_last_seen_at')
+        .eq('conversation_id', conversationId as string)
+        .maybeSingle();
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data;
+    },
+    staleTime: 0,
+    refetchInterval: PEER_PRESENCE_POLL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
