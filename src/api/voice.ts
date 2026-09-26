@@ -32,7 +32,8 @@ import {
 } from '../lib/recorder';
 import { useStore } from '../store/useStore';
 import { keys, memberPaysInThread } from './chat';
-import { sendResultFrom } from '../lib/sendErrors';
+import { sendNotice, sendResultFrom } from '../lib/sendErrors';
+import { CONTACT_GUARD_NOTICE } from '../lib/contactGuard';
 import { armStallDetector } from '../lib/uploadStall';
 import { openRefill } from '../lib/routes/actions';
 
@@ -59,6 +60,7 @@ const NOTICE: Record<SendError | 'UPLOAD', string> = {
   SUSPENDED: 'Your account is under review and cannot send messages.',
   RATE_LIMITED: 'Slow down a moment, then try again.',
   CHANNEL_DISABLED_BY_PROVIDER: 'They are not taking chats right now.',
+  ...CONTACT_GUARD_NOTICE,
   // Not a `SendError`: the upload is a separate hop and it is the one that fails
   // on a bad connection, so it says so rather than borrowing BAD_REQUEST.
   UPLOAD: 'The recording could not be uploaded. Check your connection.',
@@ -300,7 +302,7 @@ export function useSendVoiceNote(
         const code = result?.error;
         track('send_rejected', { reason: code ?? 'network' });
         keepFailed(
-          code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.',
+          code !== undefined ? (sendNotice(result, NOTICE) ?? NOTICE[code]) : 'Could not send. Check your connection.',
         );
         if (code === 'INSUFFICIENT_BALANCE') {
           openRefill();
@@ -385,7 +387,7 @@ export function useRetryVoiceSend(
       if (result === null || !result.success) {
         const code = result?.error;
         track('send_rejected', { reason: code ?? 'network' });
-        keepFailed(code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.');
+        keepFailed(code !== undefined ? (sendNotice(result, NOTICE) ?? NOTICE[code]) : 'Could not send. Check your connection.');
         if (code === 'INSUFFICIENT_BALANCE') {
           openRefill();
         }

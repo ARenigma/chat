@@ -1,0 +1,338 @@
+/**
+ * The contact guard's mirror against the shared fixture.
+ *
+ * supabase/tests/contact_guard_cases.json is asserted here against the
+ * TypeScript mirror and, through scripts/db-test.mjs, against the SQL. Both
+ * must equal each row's `expect`, so the two detectors agree on every row.
+ * `expect` is what the spec does today; `label` is the author's truth, and
+ * the floors below say how far apart the two are allowed to drift.
+ */
+import cases from '../supabase/tests/contact_guard_cases.json';
+import {
+  CONTACT_GUARD_SPEC,
+  contactCategory,
+  contactFragment,
+  contactGuardPrefilter,
+  contactGuardRules,
+  contactGuardRulesUnfiltered,
+  contactReason,
+  contactWindow,
+  isContactBlocked,
+} from '../src/lib/contactGuard.generated';
+import {
+  contactGuardModeFrom,
+  contactGuardNotice,
+  contactGuardRefusalFromError,
+  precheckContactGuard,
+} from '../src/lib/contactGuard';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+type Row = {
+  text: string;
+  label: 'hard' | 'signal' | 'allow' | 'reference';
+  set: string;
+  expect: { rules: string[]; signals: string[] };
+};
+type Sequence = {
+  messages: string[];
+  label: 'split' | 'benign';
+  set: string;
+  expect: { windows: (string | null)[] };
+};
+
+const rows = cases.rows as Row[];
+const sequences = cases.sequences as Sequence[];
+
+describe('contact guard mirror', () => {
+  it('is the spec the fixture was recorded against', () => {
+    expect(cases.spec).toBe(CONTACT_GUARD_SPEC);
+  });
+
+  it('returns the recorded hard rules on every fixture row', () => {
+    const differ = rows
+      .filter(r => JSON.stringify(contactGuardRules(r.text)) !== JSON.stringify(r.expect.rules))
+      .map(r => r.text);
+    expect(differ).toEqual([]);
+  });
+
+  it('blocks exactly when a hard rule fires', () => {
+    const differ = rows.filter(r => isContactBlocked(r.text) !== r.expect.rules.length > 0);
+    expect(differ.map(r => r.text)).toEqual([]);
+  });
+
+  it('never lets the prefilter or a copy guard hide a hit', () => {
+    const hidden = rows.filter(
+      r => contactGuardRulesUnfiltered(r.text).length > 0 && !contactGuardPrefilter(r.text),
+    );
+    expect(hidden.map(r => r.text)).toEqual([]);
+    const changed = rows.filter(
+      r => JSON.stringify(contactGuardRulesUnfiltered(r.text)) !== JSON.stringify(contactGuardRules(r.text)),
+    );
+    expect(changed.map(r => r.text)).toEqual([]);
+  });
+
+  it('answers every recorded window the same way', () => {
+    const differ = sequences.filter(s => {
+      const got = s.messages.map((_, i) => contactWindow(s.messages.slice(Math.max(0, i - 5), i + 1)));
+      return JSON.stringify(got) !== JSON.stringify(s.expect.windows);
+    });
+    expect(differ.map(s => s.messages)).toEqual([]);
+  });
+});
+
+/**
+ * Floors that can only rise. Measured on spec b0130d3b: blind2 was written by
+ * an author who never saw the spec and scored once, after tuning froze;
+ * blind1 was scored once the same way, then tuned on.
+ */
+const FLOORS: Record<string, { hard: number; allowBlocked: number; reference: number }> = {
+  probes: { hard: 34, allowBlocked: 0, reference: 3 },
+  blind1: { hard: 170, allowBlocked: 0, reference: 30 },
+  blind2: { hard: 108, allowBlocked: 0, reference: 20 },
+};
+
+describe('contact guard recall and false blocks', () => {
+  for (const [set, floor] of Object.entries(FLOORS)) {
+    it(`${set}: holds its recall floor and false-block ceiling`, () => {
+      const inSet = rows.filter(r => r.set === set);
+      const blocked = (r: Row) => isContactBlocked(r.text);
+      expect(inSet.filter(r => r.label === 'hard' && blocked(r)).length).toBeGreaterThanOrEqual(floor.hard);
+      expect(inSet.filter(r => r.label === 'allow' && blocked(r)).length).toBeLessThanOrEqual(floor.allowBlocked);
+      expect(inSet.filter(r => r.label === 'reference' && blocked(r)).length).toBe(floor.reference);
+    });
+  }
+
+  it('never hard-blocks a benign sequence', () => {
+    const hits = sequences
+      .filter(s => s.label === 'benign')
+      .filter(s => s.messages.some((m, i) => isContactBlocked(m) || contactWindow(s.messages.slice(Math.max(0, i - 5), i + 1)) !== null));
+    expect(hits.map(s => s.messages)).toEqual([]);
+  });
+});
+
+describe('contact guard categories and reasons', () => {
+  const read = (text: string) => {
+    const rules = contactGuardRules(text);
+    return { category: contactCategory(rules), reason: contactReason(rules) };
+  };
+
+  it('names the identifier it found', () => {
+    expect(read('mera number 70158 84326').category).toBe('phone');
+    expect(read('priya.sharma95@gmail.com').category).toBe('email');
+    expect(read('rohan99@ybl').category).toBe('payment');
+    expect(read('HDFC0001234').category).toBe('payment');
+    expect(read('www.astroseva.in').category).toBe('link');
+    expect(read('@priya.astro').category).toBe('handle');
+    expect(read('kal milte hain').category).toBeNull();
+  });
+
+  it('marks a bare long reference so the copy can point to Help', () => {
+    expect(read('UTR 402911882345 ka paisa nahi aaya')).toEqual({ category: 'phone', reason: 'reference' });
+    expect(read('mera number 70158 84326').reason).toBeNull();
+  });
+});
+
+describe('contact guard fragments', () => {
+  it('reads digit groups with carrier words as a fragment', () => {
+    expect(contactFragment('mera number 70158')).toBe('70158');
+    expect(contactFragment('aur 84326 🙏')).toBe('84326');
+    expect(contactFragment('pehle 5 digit 93154')).toBe('93154');
+  });
+
+  it('does not read a time, a date, a price or a lone digit as one', () => {
+    expect(contactFragment('4:35')).toBe('');
+    expect(contactFragment('12/08')).toBe('');
+    expect(contactFragment('99.5')).toBe('');
+    expect(contactFragment('9')).toBe('');
+    expect(contactFragment('kya haal hai')).toBe('');
+  });
+
+  it('completes a number only on the message that completes it, in either order', () => {
+    expect(contactWindow(['70158'])).toBeNull();
+    expect(contactWindow(['70158', '84326'])).toBe('7015884326');
+    expect(contactWindow(['54321', '98765'])).toBe('9876554321');
+    expect(contactWindow(['kitne ka pack hai?', '500', 'ok 1000 wala'])).toBeNull();
+  });
+});
+
+/**
+ * The mirror runs on send, never per keystroke, but a 4,000-character draft
+ * (the body cap) must still stay far under a frame. Postgres is linear on
+ * these shapes (the ARE engine is a hybrid DFA); a JavaScript backtracking
+ * blowup would show here first.
+ */
+describe('contact guard cost', () => {
+  const shapes = [
+    'a1 '.repeat(1334),
+    'whatsapp '.repeat(445),
+    '9 '.repeat(2000),
+    '@'.repeat(4000),
+    'a.'.repeat(2000),
+    'नौ '.repeat(1334),
+    'insta pe '.repeat(445),
+    '98765 '.repeat(667),
+    'x@y.'.repeat(1000),
+    'double nine '.repeat(334),
+    '9🔥'.repeat(1333),
+  ];
+
+  it.each(shapes.map(s => [s.slice(0, 12), s]))('%s… stays under 60 ms', (_label, shape) => {
+    isContactBlocked(shape);
+    const start = Date.now();
+    isContactBlocked(shape);
+    contactGuardRules(shape);
+    expect(Date.now() - start).toBeLessThan(60);
+  });
+});
+
+describe('the composer precheck', () => {
+  it('predicts nothing outside enforce mode', () => {
+    expect(precheckContactGuard('mera number 70158 84326', 'shadow')).toBeNull();
+    expect(precheckContactGuard('mera number 70158 84326', 'off')).toBeNull();
+  });
+
+  it('explains a block before the send in enforce mode', () => {
+    const refusal = precheckContactGuard('mera number 70158 84326', 'enforce');
+    expect(refusal).toEqual(expect.objectContaining({ error: 'CONTACT_INFO', category: 'phone' }));
+    expect(contactGuardNotice(refusal)).toMatch(/Phone numbers can't be shared/);
+  });
+
+  it('lets an ordinary message through in enforce mode', () => {
+    expect(precheckContactGuard('DOB 12/08/1995 4:35 am patna', 'enforce')).toBeNull();
+  });
+
+  it('checks the window over the sender’s own recent messages', () => {
+    const refusal = precheckContactGuard('84326', 'enforce', ['70158']);
+    expect(refusal).toEqual(expect.objectContaining({ error: 'CONTACT_INFO', category: 'window' }));
+  });
+
+  it('maps every refusal the server returns to a line that names it', () => {
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'phone', reason: 'reference' })).toMatch(/go to Help/);
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'phone', reason: 'date_like' })).toMatch(/9\/8\/1962/);
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'payment', warn: true })).toMatch(
+      /UPI IDs.*One more attempt pauses your messaging for 24 hours\./,
+    );
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'handle', surface: 'story_comment' })).toMatch(/Public posts/);
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', surface: 'profile', field: 'headline' })).toBe(
+      "Your headline can't include contact details, links or social usernames.",
+    );
+    expect(contactGuardNotice({ error: 'CONTACT_COOLDOWN' })).toMatch(/Too many blocked messages/);
+    expect(contactGuardNotice({ error: 'CONTACT_TOO_LONG' })).toMatch(/4,000/);
+    expect(contactGuardNotice({ error: 'IMAGES_DISABLED' })).toMatch(/Photos/);
+    expect(contactGuardNotice({ error: 'RATE_LIMITED' })).toBeNull();
+  });
+
+  it('reads the profile trigger’s raised refusal', () => {
+    expect(
+      contactGuardRefusalFromError({ code: 'P0011', details: '{"category":"link","field":"about"}' }),
+    ).toEqual(expect.objectContaining({ error: 'CONTACT_INFO', category: 'link', field: 'about', surface: 'profile' }));
+    expect(contactGuardRefusalFromError({ code: '23505', details: null })).toBeNull();
+  });
+});
+
+describe('the contact guard mode is a switch the admin console can publish', () => {
+  // The console validates every kill_switches draft against the registry and
+  // rejects a key it does not list, so the field is load-bearing (the
+  // stories_enabled test in contract.test.ts has the same reasoning).
+  const registry = require('../admin/lib/config-registry') as typeof import('../admin/lib/config-registry');
+
+  it('lists contact_guard_mode as off | shadow | enforce, shadow by default', () => {
+    const domain = registry.getDomain('kill_switches')!;
+    const field = domain.fields.find(f => f.key === 'contact_guard_mode');
+    expect(field).toMatchObject({ type: 'enum', default: 'shadow' });
+    expect((field as unknown as { options: { value: string }[] }).options.map(o => o.value)).toEqual([
+      'off',
+      'shadow',
+      'enforce',
+    ]);
+    const published = Object.fromEntries(domain.fields.map(f => [f.key, f.default]));
+    expect(registry.validatePayload(domain, published)).toEqual([]);
+  });
+
+  it('is published as shadow by 157, and read as shadow when unreadable', () => {
+    const migration = readFileSync(join(__dirname, '..', 'supabase/migrations/157_contact_guard_enforcement.sql'), 'utf8');
+    expect(migration).toContain("jsonb_build_object('contact_guard_mode', 'shadow')");
+    expect(migration).toMatch(/when 'off' then 'off'\s+when 'enforce' then 'enforce'\s+else 'shadow'/);
+    expect(contactGuardModeFrom('enforce')).toBe('enforce');
+    expect(contactGuardModeFrom('ENFORCE')).toBe('shadow');
+    expect(contactGuardModeFrom(undefined)).toBe('shadow');
+  });
+});
+
+/**
+ * The operator's contact-guard commands, run. moderate.mjs runs its CLI on
+ * import, so each command is lifted out of the source and evaluated alone
+ * with the network replaced by a recorder (storyMedia.test.ts does the same).
+ */
+describe('moderate.mjs resolves the contact-guard queues', () => {
+  const source = readFileSync(join(__dirname, '..', 'scripts/moderate.mjs'), 'utf8');
+  const lift = (start: string) => {
+    const from = source.indexOf(start);
+    expect(from).toBeGreaterThan(-1);
+    return source.slice(from, source.indexOf('\n}\n', from) + 3);
+  };
+  type Cmd = () => Promise<void>;
+  function load(entry: string, argv: string[], answers: unknown[], confirmed = true) {
+    const calls: { path: string; body?: unknown }[] = [];
+    const logs: string[] = [];
+    const call = async (path: string, options?: { body?: unknown }) => {
+      calls.push({ path, body: options?.body });
+      return answers.shift() ?? [];
+    };
+    const positional = argv.filter(a => !a.startsWith('--'));
+    const flag = (name: string) => argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+    const { runInNewContext } = require('vm') as typeof import('vm');
+    const fn = runInNewContext(`${lift(`async function ${entry}(`)}\n${entry};`, {
+      rest: call,
+      rpc: (fnName: string, body: unknown) => call(`rpc/${fnName}`, { body }),
+      positional,
+      flag,
+      confirm: async () => confirmed,
+      fail: (m: string) => {
+        throw new Error(m);
+      },
+      clip: (s: unknown) => String(s),
+      short: (s: string) => s.slice(0, 8),
+      console: { log: (s: string) => logs.push(s) },
+      process: { env: { USER: 'tester' } },
+      Number,
+      Date,
+    }) as Cmd;
+    return { fn, calls, logs };
+  }
+
+  it('bans through the audited function, after asking', async () => {
+    const run = load('contactResolve', ['u-1', '--action=ban'], [
+      [{ user_id: 'u-1', role: 'provider', display_name: 'Ada', review_state: 'removal_review', active_strikes: 3 }],
+      { was: 'removal_review', action: 'ban', suspended_until: '2999-01-01T00:00:00+00:00' },
+    ]);
+    await run.fn();
+    expect(run.calls[1]).toEqual({
+      path: 'rpc/contact_guard_resolve_review',
+      body: { p_user_id: 'u-1', p_action: 'ban', p_days: null, p_actor: 'ops:tester', p_note: null },
+    });
+  });
+
+  it('writes nothing when the operator says no', async () => {
+    const run = load('contactResolve', ['u-1', '--action=suspend', '--days=7'], [
+      [{ user_id: 'u-1', role: 'member', display_name: 'x', review_state: 'human_review', active_strikes: 5 }],
+    ], false);
+    await run.fn();
+    expect(run.calls.map(c => c.path)).toEqual(['contact_guard_review_queue?user_id=eq.u-1&select=*']);
+  });
+
+  it('refuses a suspension without a length', async () => {
+    await expect(load('contactResolve', ['u-1', '--action=suspend'], []).fn()).rejects.toThrow(/--days/);
+  });
+
+  it('strikes a story report once, and says so on a retry', async () => {
+    const first = load('contactStrike', ['r-1'], [{ strikes: 2, directory_hidden_until: 'soon', already: false }]);
+    await first.fn();
+    expect(first.calls[0]?.path).toBe('rpc/contact_guard_strike_from_report');
+    expect(first.logs[0]).toMatch(/strike 2 recorded.*hidden until soon/);
+    const again = load('contactStrike', ['r-1'], [{ event_id: 'e-1', already: true }]);
+    await again.fn();
+    expect(again.logs[0]).toMatch(/already struck/);
+  });
+});

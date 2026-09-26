@@ -99,6 +99,51 @@ COLUMN calls.upgrade_requested_by uuid null=YES default=-
 COLUMN calls.upgrade_resolved_at timestamp with time zone null=YES default=-
 COLUMN calls.upgrade_result text null=YES default=-
 COLUMN calls.upgrade_to_medium USER-DEFINED null=YES default=-
+COLUMN contact_guard_events.category text null=YES default=-
+COLUMN contact_guard_events.conversation_id uuid null=YES default=-
+COLUMN contact_guard_events.counts_as_strike boolean null=NO default=false
+COLUMN contact_guard_events.created_at timestamp with time zone null=NO default=now()
+COLUMN contact_guard_events.excerpt text null=NO default=-
+COLUMN contact_guard_events.field text null=YES default=-
+COLUMN contact_guard_events.id uuid null=NO default=gen_random_uuid()
+COLUMN contact_guard_events.mode text null=NO default=-
+COLUMN contact_guard_events.outcome text null=NO default=-
+COLUMN contact_guard_events.purge_after timestamp with time zone null=NO default=(now() + '90 days'::interval)
+COLUMN contact_guard_events.reason text null=YES default=-
+COLUMN contact_guard_events.row_ref uuid null=YES default=-
+COLUMN contact_guard_events.rules ARRAY null=NO default='{}'::text[]
+COLUMN contact_guard_events.spec_version text null=NO default=-
+COLUMN contact_guard_events.story_id uuid null=YES default=-
+COLUMN contact_guard_events.surface text null=NO default=-
+COLUMN contact_guard_events.tier text null=NO default=-
+COLUMN contact_guard_events.user_id uuid null=NO default=-
+COLUMN contact_guard_events.void_reason text null=YES default=-
+COLUMN contact_guard_events.voided_at timestamp with time zone null=YES default=-
+COLUMN contact_guard_events.voided_by text null=YES default=-
+COLUMN contact_guard_events.window_texts ARRAY null=YES default=-
+COLUMN contact_guard_restrictions.directory_hidden_until timestamp with time zone null=YES default=-
+COLUMN contact_guard_restrictions.paused_until timestamp with time zone null=YES default=-
+COLUMN contact_guard_restrictions.review_requested_at timestamp with time zone null=YES default=-
+COLUMN contact_guard_restrictions.review_state text null=YES default=-
+COLUMN contact_guard_restrictions.updated_at timestamp with time zone null=NO default=now()
+COLUMN contact_guard_restrictions.user_id uuid null=NO default=-
+COLUMN contact_guard_review_queue.active_strikes integer null=YES default=-
+COLUMN contact_guard_review_queue.categories ARRAY null=YES default=-
+COLUMN contact_guard_review_queue.directory_hidden_until timestamp with time zone null=YES default=-
+COLUMN contact_guard_review_queue.display_name text null=YES default=-
+COLUMN contact_guard_review_queue.last_event_at timestamp with time zone null=YES default=-
+COLUMN contact_guard_review_queue.paused_until timestamp with time zone null=YES default=-
+COLUMN contact_guard_review_queue.review_requested_at timestamp with time zone null=YES default=-
+COLUMN contact_guard_review_queue.review_state text null=YES default=-
+COLUMN contact_guard_review_queue.role text null=YES default=-
+COLUMN contact_guard_review_queue.suspended_until timestamp with time zone null=YES default=-
+COLUMN contact_guard_review_queue.user_id uuid null=YES default=-
+COLUMN contact_guard_strikes.created_at timestamp with time zone null=NO default=now()
+COLUMN contact_guard_strikes.event_id uuid null=YES default=-
+COLUMN contact_guard_strikes.expires_at timestamp with time zone null=NO default=(now() + '90 days'::interval)
+COLUMN contact_guard_strikes.id uuid null=NO default=gen_random_uuid()
+COLUMN contact_guard_strikes.user_id uuid null=NO default=-
+COLUMN contact_guard_strikes.voided_at timestamp with time zone null=YES default=-
 COLUMN conversation_labels.conversation_id uuid null=NO default=-
 COLUMN conversation_labels.custom_name text null=NO default=-
 COLUMN conversation_labels.updated_at timestamp with time zone null=NO default=now()
@@ -702,6 +747,20 @@ CONSTRAINT calls.calls_session_request_id_fkey FOREIGN KEY (session_request_id) 
 CONSTRAINT calls.calls_tokens_debited_check CHECK ((tokens_debited >= 0))
 CONSTRAINT calls.calls_upgrade_requested_by_fkey FOREIGN KEY (upgrade_requested_by) REFERENCES profiles(id)
 CONSTRAINT calls.calls_upgrade_result_check CHECK ((upgrade_result = ANY (ARRAY['accepted'::text, 'declined'::text, 'expired'::text, 'insufficient_balance'::text, 'video_disabled'::text, 'session_ended'::text])))
+CONSTRAINT contact_guard_events.contact_guard_events_excerpt_check CHECK ((length(excerpt) <= 4000))
+CONSTRAINT contact_guard_events.contact_guard_events_mode_check CHECK ((mode = ANY (ARRAY['shadow'::text, 'enforce'::text])))
+CONSTRAINT contact_guard_events.contact_guard_events_outcome_check CHECK ((outcome = ANY (ARRAY['blocked'::text, 'shadow'::text, 'flagged'::text])))
+CONSTRAINT contact_guard_events.contact_guard_events_pkey PRIMARY KEY (id)
+CONSTRAINT contact_guard_events.contact_guard_events_strike_is_a_block CHECK (((NOT counts_as_strike) OR (outcome = 'blocked'::text)))
+CONSTRAINT contact_guard_events.contact_guard_events_surface_check CHECK ((surface = ANY (ARRAY['chat_send'::text, 'chat_edit'::text, 'story_comment'::text, 'story_caption'::text, 'profile'::text, 'story_media'::text])))
+CONSTRAINT contact_guard_events.contact_guard_events_tier_check CHECK ((tier = ANY (ARRAY['hard'::text, 'window'::text, 'signal'::text, 'report'::text])))
+CONSTRAINT contact_guard_events.contact_guard_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT contact_guard_restrictions.contact_guard_restrictions_pkey PRIMARY KEY (user_id)
+CONSTRAINT contact_guard_restrictions.contact_guard_restrictions_review_state_check CHECK ((review_state = ANY (ARRAY['removal_review'::text, 'human_review'::text])))
+CONSTRAINT contact_guard_restrictions.contact_guard_restrictions_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT contact_guard_strikes.contact_guard_strikes_event_id_fkey FOREIGN KEY (event_id) REFERENCES contact_guard_events(id) ON DELETE SET NULL
+CONSTRAINT contact_guard_strikes.contact_guard_strikes_pkey PRIMARY KEY (id)
+CONSTRAINT contact_guard_strikes.contact_guard_strikes_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT conversation_labels.conversation_labels_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 CONSTRAINT conversation_labels.conversation_labels_custom_name_check CHECK (((char_length(btrim(custom_name)) >= 1) AND (char_length(btrim(custom_name)) <= 40)))
 CONSTRAINT conversation_labels.conversation_labels_pkey PRIMARY KEY (user_id, conversation_id)
@@ -1261,10 +1320,13 @@ FUNCTION composite_owner_is(name, name, name, text) returns text security=invoke
 FUNCTION composite_owner_is(name, name, text) returns text security=invoker
 FUNCTION confirm_chat_session(p_request_id uuid) returns uuid security=definer
 FUNCTION consume_and_link_pending_challenge(p_challenge_hash text, p_user_id uuid) returns void security=definer
+FUNCTION contact_guard_resolve_review(p_user_id uuid, p_action text, p_days integer, p_actor text, p_note text) returns jsonb security=definer
+FUNCTION contact_guard_strike_from_report(p_report_id uuid, p_actor text, p_note text) returns jsonb security=definer
 FUNCTION create_pending_challenge(p_provider text, p_subject text, p_phone text, p_challenge_hash text) returns void security=definer
 FUNCTION create_provider_payout_batch(p_provider_id uuid, p_ignore_minimum boolean) returns TABLE(batch_id uuid, total_tokens integer, total_paise integer, method text, beneficiary_id text) security=definer
 FUNCTION create_session_request(p_conversation_id uuid, p_channel session_channel) returns uuid security=definer
 FUNCTION create_story(p_story_id uuid, p_media_type text, p_media_path text, p_caption text, p_duration_ms integer) returns json security=definer
+FUNCTION create_story_core(p_story_id uuid, p_media_type text, p_media_path text, p_caption text, p_duration_ms integer) returns json security=definer
 FUNCTION credit_promo_tokens(p_user_id uuid, p_amount integer, p_reason text) returns integer security=definer
 FUNCTION credit_purchased_recharge(p_user_id uuid, p_amount integer, p_transaction_id uuid) returns void security=definer
 FUNCTION credit_user_token(p_user_id uuid, p_amount integer) returns json security=definer
@@ -1314,6 +1376,7 @@ FUNCTION domains_are(name, name[], text) returns text security=invoker
 FUNCTION domains_are(name[]) returns text security=invoker
 FUNCTION domains_are(name[], text) returns text security=invoker
 FUNCTION edit_message(p_message_id uuid, p_body text) returns jsonb security=definer
+FUNCTION edit_message_core(p_message_id uuid, p_body text) returns jsonb security=definer
 FUNCTION end_call(p_call_id uuid, p_reason text) returns json security=definer
 FUNCTION end_session(p_session_id uuid, p_end_reason text, p_report_reason report_reason, p_report_message_ids uuid[], p_report_statement text) returns void security=definer
 FUNCTION enforce_provider_channel() returns trigger security=definer
@@ -1948,6 +2011,7 @@ FUNCTION policy_roles_are(name, name, name, name[], text) returns text security=
 FUNCTION policy_roles_are(name, name, name[]) returns text security=invoker
 FUNCTION policy_roles_are(name, name, name[], text) returns text security=invoker
 FUNCTION post_story_comment(p_comment_id uuid, p_story_id uuid, p_body text) returns json security=definer
+FUNCTION post_story_comment_core(p_comment_id uuid, p_story_id uuid, p_body text) returns json security=definer
 FUNCTION presence_heartbeat(p_online boolean) returns void security=definer
 FUNCTION provider_busy_waits(p_provider_ids uuid[]) returns TABLE(provider_id uuid, wait_minutes integer) security=definer
 FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
@@ -2041,6 +2105,7 @@ FUNCTION schemas_are(name[], text) returns text security=invoker
 FUNCTION seed_conversation_openers(p_provider_id uuid) returns jsonb security=definer
 FUNCTION seed_expertise_for(p_id uuid, p_category text) returns text[] security=invoker
 FUNCTION send_message(p_conversation_id uuid, p_body text, p_reply_to_id uuid, p_voice_path text, p_voice_duration_ms integer, p_attachment_path text, p_attachment_width integer, p_attachment_height integer, p_voice_peaks real[]) returns json security=definer
+FUNCTION send_message_core(p_conversation_id uuid, p_body text, p_reply_to_id uuid, p_voice_path text, p_voice_duration_ms integer, p_attachment_path text, p_attachment_width integer, p_attachment_height integer, p_voice_peaks real[]) returns json security=definer
 FUNCTION send_message_idempotent(p_client_nonce uuid, p_conversation_id uuid, p_body text, p_reply_to_id uuid, p_voice_path text, p_voice_duration_ms integer, p_attachment_path text, p_attachment_width integer, p_attachment_height integer, p_voice_peaks real[]) returns jsonb security=definer
 FUNCTION sequence_owner_is(name, name) returns text security=invoker
 FUNCTION sequence_owner_is(name, name, name) returns text security=invoker
@@ -2217,6 +2282,13 @@ INDEX calls_one_live_per_caller_idx CREATE UNIQUE INDEX calls_one_live_per_calle
 INDEX calls_one_live_per_conversation_idx CREATE UNIQUE INDEX calls_one_live_per_conversation_idx ON public.calls USING btree (conversation_id) WHERE (status = ANY (ARRAY['ringing'::call_status, 'active'::call_status]))
 INDEX calls_pkey CREATE UNIQUE INDEX calls_pkey ON public.calls USING btree (id)
 INDEX calls_session_request_unique CREATE UNIQUE INDEX calls_session_request_unique ON public.calls USING btree (session_request_id) WHERE (session_request_id IS NOT NULL)
+INDEX contact_guard_events_conversation CREATE INDEX contact_guard_events_conversation ON public.contact_guard_events USING btree (conversation_id, created_at DESC) WHERE (conversation_id IS NOT NULL)
+INDEX contact_guard_events_pkey CREATE UNIQUE INDEX contact_guard_events_pkey ON public.contact_guard_events USING btree (id)
+INDEX contact_guard_events_purge CREATE INDEX contact_guard_events_purge ON public.contact_guard_events USING btree (purge_after)
+INDEX contact_guard_events_user_created CREATE INDEX contact_guard_events_user_created ON public.contact_guard_events USING btree (user_id, created_at DESC)
+INDEX contact_guard_restrictions_pkey CREATE UNIQUE INDEX contact_guard_restrictions_pkey ON public.contact_guard_restrictions USING btree (user_id)
+INDEX contact_guard_strikes_pkey CREATE UNIQUE INDEX contact_guard_strikes_pkey ON public.contact_guard_strikes USING btree (id)
+INDEX contact_guard_strikes_user_active CREATE INDEX contact_guard_strikes_user_active ON public.contact_guard_strikes USING btree (user_id, expires_at DESC)
 INDEX conversation_labels_pkey CREATE UNIQUE INDEX conversation_labels_pkey ON public.conversation_labels USING btree (user_id, conversation_id)
 INDEX conversation_opener_templates_pkey CREATE UNIQUE INDEX conversation_opener_templates_pkey ON public.conversation_opener_templates USING btree (step)
 INDEX conversation_thread_meta_pkey CREATE UNIQUE INDEX conversation_thread_meta_pkey ON public.conversation_thread_meta USING btree (conversation_id)
@@ -2374,6 +2446,9 @@ RLS call_media_test_allowlist enabled=true
 RLS call_quality_runs enabled=true
 RLS call_quality_samples enabled=true
 RLS calls enabled=true
+RLS contact_guard_events enabled=true
+RLS contact_guard_restrictions enabled=true
+RLS contact_guard_strikes enabled=true
 RLS conversation_labels enabled=true
 RLS conversation_opener_templates enabled=true
 RLS conversation_thread_meta enabled=true
@@ -2417,6 +2492,7 @@ RLS token_transactions enabled=true
 RLS user_favorites enabled=true
 TRIGGER calls.call_push_on_insert
 TRIGGER calls.calls_assign_media_backend
+TRIGGER contact_guard_events.contact_guard_events_append_only
 TRIGGER events.guard_event_shape
 TRIGGER messages.guard_message_columns
 TRIGGER messages.guard_message_edit_columns
@@ -2428,6 +2504,7 @@ TRIGGER messages.messages_touch_session_activity
 TRIGGER moderation_actions.moderation_actions_no_update
 TRIGGER paid_sessions.paid_sessions_accrue_on_end
 TRIGGER paid_sessions.paid_sessions_clear_chat_consent
+TRIGGER profiles.guard_profile_contact_fields
 TRIGGER profiles.guard_profile_phone_columns
 TRIGGER profiles.guard_profile_pii_columns
 TRIGGER profiles.guard_profile_presence_columns

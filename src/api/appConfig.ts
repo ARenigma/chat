@@ -22,6 +22,11 @@ import {
   FALLBACK_CLIENT_SUPPORT,
   type ClientSupportConfig,
 } from '../lib/clientSupport';
+import {
+  DEFAULT_CONTACT_GUARD_MODE,
+  contactGuardModeFrom,
+  type ContactGuardMode,
+} from '../lib/contactGuard';
 
 /*
  * The shape and the fallback live in `lib/clientSupport.ts`, not here, because
@@ -75,6 +80,12 @@ export interface KillSwitchesConfig {
   video_calls_enabled: boolean;
   new_registrations_enabled: boolean;
   mock_payments_allowed: boolean;
+  /**
+   * The contact guard (157): off | shadow | enforce. The server decides; the
+   * composer predicts a block only in enforce. Optional because a payload
+   * published before 157 does not carry it.
+   */
+  contact_guard_mode?: ContactGuardMode;
 }
 
 export interface ReportTaxonomyConfig {
@@ -141,6 +152,8 @@ export const FALLBACK_KILL_SWITCHES: KillSwitchesConfig = {
   video_calls_enabled: true,
   new_registrations_enabled: true,
   mock_payments_allowed: true,
+  // Shadow until the owner flips it: the composer predicts nothing, the server logs.
+  contact_guard_mode: DEFAULT_CONTACT_GUARD_MODE,
 };
 
 export const FALLBACK_REPORT_TAXONOMY: ReportTaxonomyConfig = {
@@ -297,6 +310,12 @@ export function useKillSwitches() {
     gcTime: GC_TIME,
     placeholderData: FALLBACK_KILL_SWITCHES,
   });
+}
+
+/** The contact guard's mode, shadow whenever the payload is missing or unreadable. */
+export function useContactGuardMode(): ContactGuardMode {
+  const { data } = useKillSwitches();
+  return contactGuardModeFrom(data?.contact_guard_mode);
 }
 
 /** Report taxonomy — auth required (user must be signed in to report). */

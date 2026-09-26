@@ -758,7 +758,7 @@ select ok(
   (select position(l in d) > 0
       and position(l in d) < position('select * into v_comment from public.story_comments where id = p_comment_id' in d)
       and position(l in d) < position('count(*) filter' in d)
-   from (select pg_get_functiondef('public.post_story_comment(uuid, uuid, text)'::regprocedure) as d,
+   from (select pg_get_functiondef('public.post_story_comment_core(uuid, uuid, text)'::regprocedure) as d,
                 'pg_advisory_xact_lock(hashtextextended(''story_comment:'' || v_uid::text, 0))' as l) f),
   '16. post_story_comment takes the author''s lock before the retry read and the count'
 );
@@ -766,7 +766,7 @@ select ok(
   (select position(l in d) > 0
       and position(l in d) < position('select * into v_existing from public.stories where id = p_story_id' in d)
       and position(l in d) < position('count(*)' in d)
-   from (select pg_get_functiondef('public.create_story(uuid, text, text, text, integer)'::regprocedure) as d,
+   from (select pg_get_functiondef('public.create_story_core(uuid, text, text, text, integer)'::regprocedure) as d,
                 'pg_advisory_xact_lock(hashtextextended(''story_cap:'' || v_uid::text, 0))' as l) f),
   '17. create_story takes the provider''s lock before the retry read and the count'
 );
@@ -917,7 +917,7 @@ select is(
   (select string_agg(f.name, ',' order by f.name)
    from (values ('mark_story_viewed', 'public.mark_story_viewed(uuid)'::regprocedure),
                 ('toggle_story_reaction', 'public.toggle_story_reaction(uuid, text)'::regprocedure),
-                ('post_story_comment', 'public.post_story_comment(uuid, uuid, text)'::regprocedure)) f(name, fn)
+                ('post_story_comment', 'public.post_story_comment_core(uuid, uuid, text)'::regprocedure)) f(name, fn)
    cross join lateral (select pg_get_functiondef(f.fn) as d) g
    where position('perform 1 from public.profiles where id = v_uid for key share' in g.d) = 0
       or position('perform 1 from public.profiles where id = v_uid for key share' in g.d)

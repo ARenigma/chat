@@ -40,7 +40,8 @@ import {
 import { track } from '../lib/telemetry';
 import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
-import { sendResultFrom } from '../lib/sendErrors';
+import { sendNotice, sendResultFrom } from '../lib/sendErrors';
+import { CONTACT_GUARD_NOTICE, contactGuardNotice } from '../lib/contactGuard';
 import { openRefill } from '../lib/routes/actions';
 
 /**
@@ -84,6 +85,7 @@ const NOTICE: Record<SendError, string> = {
   // Names the channel, not the person: they have not gone away, they are not
   // taking this one. The call buttons carry the same fact before it is tapped.
   CHANNEL_DISABLED_BY_PROVIDER: 'They are not taking chats right now.',
+  ...CONTACT_GUARD_NOTICE,
 };
 
 
@@ -447,7 +449,7 @@ export function useEditMessage(conversationId: string | undefined) {
       if (failed) {
         const code = result?.error;
         setNotice(
-          (code !== undefined ? EDIT_NOTICE[code] : undefined) ??
+          (contactGuardNotice(result) ?? (code !== undefined ? EDIT_NOTICE[code] : undefined)) ??
             'Could not edit. Check your connection.',
         );
         errorTick();
@@ -857,7 +859,7 @@ async function sendMessageWith(
      */
     setNotice(
       code !== undefined
-        ? NOTICE[code]
+        ? (sendNotice(result, NOTICE) ?? NOTICE[code])
         : error?.code === ''
           ? 'Could not send. Check your connection.'
           : 'Something went wrong on our side. Please try again.',

@@ -746,7 +746,17 @@ export type SendError =
    * structured error from `start_call`, and as a raised P0009 from the trigger
    * for a first text (`send_message` inserts the request directly).
    */
-  | 'CHANNEL_DISABLED_BY_PROVIDER';
+  | 'CHANNEL_DISABLED_BY_PROVIDER'
+  /**
+   * Migration 157, the contact guard, in enforce mode only. CONTACT_INFO
+   * carries `category` (and `reason` for a bare reference number), the
+   * others their own fields; src/lib/contactGuard.ts has the copy.
+   */
+  | 'CONTACT_INFO'
+  | 'CONTACT_RESTRICTED'
+  | 'CONTACT_COOLDOWN'
+  | 'CONTACT_TOO_LONG'
+  | 'IMAGES_DISABLED';
 
 /**
  * The call RPCs reuse `send_message`'s error vocabulary and add two of their own,
@@ -781,6 +791,13 @@ export type SendResult = {
   new_balance?: number | null;
   session_id?: string | null;
   error?: SendError;
+  /** The contact guard's refusal details (157); see ContactGuardRefusal. */
+  category?: 'phone' | 'email' | 'payment' | 'link' | 'handle' | 'window' | null;
+  reason?: 'reference' | 'date_like' | null;
+  strikes?: number | null;
+  warn?: boolean | null;
+  restricted_until?: string | null;
+  retry_after_s?: number | null;
 };
 
 /** `toggle_reaction` returns the resulting state, because which of add, replace or remove happened is not derivable from the arguments. */

@@ -183,7 +183,7 @@ describe('route selection for both roles', () => {
     // The member peer has a profile (a sheet over the chat); the wallet is the
     // screen's own `openWallet` fallback when no earnings opener is passed.
     expect(route).toContain("onOpenProfile={role === 'member' && route.name === 'Chat' ? onOpenProfile : undefined}");
-    expect(route).toContain("nav.push('ProviderDetail', { providerId: id })");
+    expect(route).toContain("nav.push('ProviderProfile', { providerId: id })");
     expect(v2('ChatScreenV2.tsx')).toContain('onOpenEarnings={onOpenEarnings ?? openWallet}');
   });
 });
