@@ -31,6 +31,7 @@
  *     hands its velocity to the spring (`sheetIn`/`sheetOut`, the app's
  *     sheet springs), distance OR velocity dismisses (emil-design-eng
  *     "momentum-based dismissal"). The backdrop dims from the same value.
+ *   - Hold: the chrome fades out (opacity, duration.fast) and back on release.
  *   - Reduced motion: no slide (a jump), the drag still tracks the finger
  *     (it is direct manipulation) but settles without the spring, the progress
  *     segment jumps instead of filling (StoryProgress).
@@ -259,9 +260,9 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
   });
   const gestures = useCompetingGestures(pan, hold, tap);
 
+  // Transform only: the card follows the finger; the backdrop fades beneath it.
   const stageStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: dragY.get() }],
-    borderRadius: interpolate(dragY.get(), [0, 120], [0, TOKENS.radius.xl], 'clamp'),
   }));
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: interpolate(dragY.get(), [0, height * 0.5], [1, 0], 'clamp'),
@@ -297,6 +298,19 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
     return <View style={styles.base} />;
   }
 
+  /*
+   * Hold to pause clears the chrome, so the held frame can be looked at: the
+   * feedback that the hold took (the bar stopping is too small to see under a
+   * thumb). A state-driven two-value change, so a Reanimated CSS transition
+   * (animate-expo step 3), opacity only, which reduced motion keeps (step 9).
+   * Only the HOLD hides it, not the sheet or the menu, which cover it anyway.
+   */
+  const chromeStyle = {
+    opacity: state.paused ? 0 : 1,
+    transitionProperty: 'opacity',
+    transitionDuration: DURATION.fast,
+  } as const;
+
   const entering = reduced
     ? undefined
     : (slideFrom.current === 'right' ? SlideInRight : SlideInLeft).duration(DURATION.base).easing(EASE_OUT_QUINT);
@@ -322,7 +336,7 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
           </Animated.View>
         </GestureDetector>
 
-          <View pointerEvents="box-none" style={[styles.top, { paddingTop: insets.top + TOKENS.space.xs }]}>
+          <Animated.View pointerEvents="box-none" style={[styles.top, chromeStyle, { paddingTop: insets.top + TOKENS.space.xs }]}>
             <StoryProgress
               count={group.stories.length}
               index={state.storyIndex}
@@ -372,9 +386,9 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
                 <Icon name="close" size={TOKENS.icon.lg} color={INK} />
               </Pressable>
             </View>
-          </View>
+          </Animated.View>
 
-          <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: insets.bottom + TOKENS.space.sm }]}>
+          <Animated.View pointerEvents="box-none" style={[styles.bottom, chromeStyle, { paddingBottom: insets.bottom + TOKENS.space.sm }]}>
             <Pressable
               onPress={() => setSheetOpen(true)}
               accessibilityLabel={own ? 'Comments' : 'Reply'}
@@ -399,7 +413,7 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
                 <Icon name="chat" size={TOKENS.icon.lg} color={INK} />
               </Pressable>
             ) : null}
-          </View>
+          </Animated.View>
       </Animated.View>
 
       <StoryReplySheet visible={sheetOpen} story={story} selfId={selfId} onClose={() => setSheetOpen(false)} />
