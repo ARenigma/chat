@@ -169,11 +169,15 @@ describe('notice tone', () => {
   });
 
   describe('a chat request that arrives while another rings', () => {
-    const request = (id: string, extra: { expiresAt?: string } = {}) => ({
+    // expiresAt is now a local ms timestamp (nav-migration §3, A8).
+    const FUTURE = Date.now() + 30_000;
+    const PAST = Date.now() - 1_000;
+    const request = (id: string, extra: { expiresAt?: number } = {}) => ({
       requestId: id,
       conversationId: `c-${id}`,
       peerId: `p-${id}`,
       peerName: `Member ${id}`,
+      expiresAt: FUTURE,
       ...extra,
     });
 
@@ -185,11 +189,11 @@ describe('notice tone', () => {
       s.setIncomingRequest(request('r2'));
       s.setIncomingRequest(request('r3'));
       expect(useStore.getState().incomingRequest?.requestId).toBe('r1');
-      useStore.getState().clearIncomingRequest();
+      useStore.getState().clearIncomingRequest('r1');
       expect(useStore.getState().incomingRequest?.requestId).toBe('r2');
-      useStore.getState().clearIncomingRequest();
+      useStore.getState().clearIncomingRequest('r2');
       expect(useStore.getState().incomingRequest?.requestId).toBe('r3');
-      useStore.getState().clearIncomingRequest();
+      useStore.getState().clearIncomingRequest('r3');
       expect(useStore.getState().incomingRequest).toBeNull();
     });
 
@@ -201,18 +205,29 @@ describe('notice tone', () => {
       s.setIncomingRequest(request('r2'));
       s.setIncomingRequest(request('r2'));
       expect(useStore.getState().queuedRequests.map(q => q.requestId)).toEqual(['r2']);
-      useStore.getState().clearIncomingRequest();
-      useStore.getState().clearIncomingRequest();
+      useStore.getState().clearIncomingRequest('r1');
+      useStore.getState().clearIncomingRequest('r2');
       expect(useStore.getState().incomingRequest).toBeNull();
     });
 
     it('skips a queued request that expired while it waited', () => {
       const s = useStore.getState();
       s.setIncomingRequest(request('r1'));
-      s.setIncomingRequest(request('r2', { expiresAt: new Date(Date.now() - 1_000).toISOString() }));
-      s.setIncomingRequest(request('r3', { expiresAt: new Date(Date.now() + 60_000).toISOString() }));
-      useStore.getState().clearIncomingRequest();
+      s.setIncomingRequest(request('r2', { expiresAt: PAST }));
+      s.setIncomingRequest(request('r3', { expiresAt: FUTURE + 30_000 }));
+      useStore.getState().clearIncomingRequest('r1');
       expect(useStore.getState().incomingRequest?.requestId).toBe('r3');
+    });
+
+    it('owner-checks the clear: a stale requestId does nothing', () => {
+      // A late callback from a request that already ran out must not end the
+      // ring of the one that replaced it.
+      const s = useStore.getState();
+      s.setIncomingRequest(request('r1'));
+      s.setIncomingRequest(request('r2'));
+      useStore.getState().clearIncomingRequest('r1'); // r1 leaves, r2 rings
+      useStore.getState().clearIncomingRequest('r1'); // stale — should be a no-op
+      expect(useStore.getState().incomingRequest?.requestId).toBe('r2');
     });
 
     it('never rings a request a second time once it has rung and left, answered or run out', () => {
@@ -220,14 +235,14 @@ describe('notice tone', () => {
       // resubscribe, including one the provider already answered.
       const s = useStore.getState();
       s.setIncomingRequest(request('r1'));
-      useStore.getState().clearIncomingRequest(); // answered
+      useStore.getState().clearIncomingRequest('r1'); // answered
       useStore.getState().setIncomingRequest(request('r1'));
       expect(useStore.getState().incomingRequest).toBeNull();
       // One promoted from the queue has rung too.
       useStore.getState().setIncomingRequest(request('r2'));
       useStore.getState().setIncomingRequest(request('r3'));
-      useStore.getState().clearIncomingRequest(); // r2 timed out, r3 rings
-      useStore.getState().clearIncomingRequest(); // r3 answered
+      useStore.getState().clearIncomingRequest('r2'); // r2 timed out, r3 rings
+      useStore.getState().clearIncomingRequest('r3'); // r3 answered
       useStore.getState().setIncomingRequest(request('r3'));
       useStore.getState().setIncomingRequest(request('r2'));
       expect(useStore.getState().incomingRequest).toBeNull();
@@ -243,7 +258,8 @@ describe('notice tone', () => {
       s.setIncomingRequest(request('r1'));
       s.setIncomingRequest(request('r2'));
       resetStore();
-      useStore.getState().clearIncomingRequest();
+      // After reset, any stale clear is a no-op.
+      useStore.getState().clearIncomingRequest('r1');
       expect(useStore.getState().incomingRequest).toBeNull();
     });
   });
@@ -253,6 +269,50 @@ describe('notice tone', () => {
     s.setNotice('Unblocked.', 'confirm');
     s.setNotice('Could not unblock right now.');
     expect(useStore.getState().noticeTone).toBe('error');
+  });
+});
+
+describe('activeCall (nav-migration §3)', () => {
+  beforeEach(resetStore);
+
+  it('starts null', () => {
+    expect(useStore.getState().activeCall).toBeNull();
+  });
+
+  it('beginCall sets the call and returns a seq', () => {
+    const seq = useStore.getState().beginCall({ direction: 'out', peerId: 'p1', callId: null });
+    const call = useStore.getState().activeCall;
+    expect(call).not.toBeNull();
+    expect(call?.seq).toBe(seq);
+    expect(call?.direction).toBe('out');
+    expect(call?.peerId).toBe('p1');
+    expect(call?.callId).toBeNull();
+  });
+
+  it('setActiveCallId updates the callId owner-checked', () => {
+    const seq = useStore.getState().beginCall({ direction: 'out', peerId: 'p1', callId: null });
+    useStore.getState().setActiveCallId(seq, 'call-abc');
+    expect(useStore.getState().activeCall?.callId).toBe('call-abc');
+
+    // A stale seq does nothing.
+    useStore.getState().setActiveCallId(seq + 99, 'call-xyz');
+    expect(useStore.getState().activeCall?.callId).toBe('call-abc');
+  });
+
+  it('endActiveCall clears owner-checked, stale seq is a no-op', () => {
+    const seq = useStore.getState().beginCall({ direction: 'in', peerId: 'p2', callId: 'cid' });
+    useStore.getState().endActiveCall(seq + 99); // stale — no-op
+    expect(useStore.getState().activeCall).not.toBeNull();
+    useStore.getState().endActiveCall(seq);
+    expect(useStore.getState().activeCall).toBeNull();
+  });
+
+  it('beginCall for a second call replaces the first (glare is the caller\'s job)', () => {
+    useStore.getState().beginCall({ direction: 'in', peerId: 'p1', callId: 'c1' });
+    const seq2 = useStore.getState().beginCall({ direction: 'out', peerId: 'p2', callId: null });
+    expect(useStore.getState().activeCall?.seq).toBe(seq2);
+    useStore.getState().endActiveCall(seq2);
+    expect(useStore.getState().activeCall).toBeNull();
   });
 });
 

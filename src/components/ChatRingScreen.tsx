@@ -255,7 +255,7 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
         release();
         // Silence is not a decline: the request lives its full 24 hours and the
         // thread is still waiting in their list.
-        clearIncoming();
+        clearIncoming(requestId);
         /*
          * A ring that runs out leaves the shade alone, watched or not.
          *
@@ -348,7 +348,7 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
     );
     function finish(): void {
       if (stillRinging(requestId)) {
-        clearIncoming();
+        clearIncoming(requestId);
       }
       if (!newerRequestRings(requestId, conversationId)) {
         clearIfUncovered(conversationId);
@@ -404,7 +404,7 @@ export function ChatRingScreen({ onOpenConversation, held = false }: Props) {
          */
         () => {
           if (stillRinging(requestId)) {
-            clearIncoming();
+            clearIncoming(requestId);
             clearRevealedChat(conversationId);
           }
           if (!newerRequestRings(requestId, conversationId)) {

@@ -142,7 +142,7 @@ import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
 import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
-import { ChatRingScreen } from './src/components/ChatRingScreen';
+import { ChatRingScreen, CHAT_RING_SECONDS } from './src/components/ChatRingScreen';
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
 
 initSentry();
@@ -1957,7 +1957,8 @@ function SignedIn({
         conversationId: request.conversationId,
         peerId: request.initiatorId,
         peerName,
-        expiresAt: request.expiresAt,
+        // Local receipt time: avoids device/server clock skew (A8, nav-migration §3).
+        expiresAt: Date.now() + CHAT_RING_SECONDS * 1000,
         createdAt: request.createdAt,
       });
     },

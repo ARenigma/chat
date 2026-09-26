@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { isLowBalance } from '../lib/tokenLedger';
+import type { ActiveCall } from '../lib/routes/actions';
 
 /**
  * Ephemeral UI state only, anything that survives a relaunch belongs to
@@ -51,8 +52,12 @@ export interface IncomingRequest {
   conversationId: string;
   peerId: string;
   peerName: string;
-  /** The row's `expires_at`, when the caller had it; a queued one past it never rings. */
-  expiresAt?: string;
+  /**
+   * Local receipt time plus CHAT_RING_SECONDS (ms timestamp). Using the local
+   * clock rather than the server's `expires_at` avoids device/server skew
+   * lengthening or shortening the ring. nav-migration §3 (A8).
+   */
+  expiresAt: number;
   /**
    * The row's server `created_at`, the same instant as the member message that
    * opened it (077). What a Decline is anchored to, so the late push of that
@@ -126,6 +131,13 @@ interface AppState {
    * Cleared in App.tsx once the member tree mounts and the route is set.
    */
   pendingProviderApply: boolean;
+  /**
+   * The call on screen right now. Set synchronously when the Call route is
+   * dispatched; cleared owner-checked on unmount. Prevents a second incoming
+   * ring from being routed over a live call, and holds other intents until the
+   * call ends. nav-migration §3.
+   */
+  activeCall: ActiveCall | null;
 
   setBalance: (balance: number | null) => void;
   setSending: (sending: boolean) => void;
@@ -141,7 +153,11 @@ interface AppState {
   requestReview: (sessionId: string, peerName: string) => void;
   clearReview: () => void;
   setIncomingRequest: (request: AppState['incomingRequest']) => void;
-  clearIncomingRequest: () => void;
+  /**
+   * Owner-checked: clears only when `requestId` is still the ringing request.
+   * Promotes the next queued request that has not expired.
+   */
+  clearIncomingRequest: (requestId: string) => void;
   openWallet: () => void;
   closeWallet: () => void;
   /**
@@ -159,7 +175,20 @@ interface AppState {
   clearUploadProgress: (id: string) => void;
   /** Leaving a conversation must not leak its presence into the next one. */
   resetConversation: () => void;
+  /**
+   * Mark a call as active. Returns the sequence number for owner-checked
+   * `setActiveCallId` and `endActiveCall`. nav-migration §3.
+   */
+  beginCall: (c: Omit<ActiveCall, 'seq'>) => number;
+  /** Update the callId once `start_call` returns. Owner-checked by `seq`. */
+  setActiveCallId: (seq: number, callId: string) => void;
+  /** Clear `activeCall`. Owner-checked: ignored when `seq` does not match. */
+  endActiveCall: (seq: number) => void;
 }
+
+// Monotonically increasing sequence number for owner-checking call state.
+// Module-level so `beginCall` can return it without threading state through set.
+let _nextCallSeq = 0;
 
 const INITIAL = {
   balance: null,
@@ -176,6 +205,7 @@ const INITIAL = {
   playing: null,
   uploadProgress: {} as Record<string, number>,
   pendingProviderApply: false,
+  activeCall: null,
 } satisfies Omit<
   AppState,
   | 'setBalance'
@@ -195,6 +225,9 @@ const INITIAL = {
   | 'setUploadProgress'
   | 'clearUploadProgress'
   | 'resetConversation'
+  | 'beginCall'
+  | 'setActiveCallId'
+  | 'endActiveCall'
 >;
 
 export const useStore = create<AppState>()(set => ({
@@ -246,7 +279,7 @@ export const useStore = create<AppState>()(set => ({
       // A request delivered after it expired (a late Realtime INSERT after a
       // reconnect) never rings: it would hold the ring slot for a dead request
       // and queue a live one behind it. The queue already drops expired ones.
-      if (request.expiresAt !== undefined && Date.parse(request.expiresAt) <= Date.now()) {
+      if (request.expiresAt <= Date.now()) {
         return state;
       }
       if (state.incomingRequest === null) {
@@ -258,17 +291,17 @@ export const useStore = create<AppState>()(set => ({
       return { queuedRequests: [...state.queuedRequests, request] };
     }),
   /*
-   * The ring leaves, and the oldest queued request that has not expired rings
-   * next. Whether it is still pending is the server's to say: an Accept of one
-   * answered meanwhile is refused (086) and ends that ring, and a Decline of
-   * it is a no-op (082).
+   * Owner-checked: only clears when `requestId` is still the ringing request,
+   * so a late callback from a request that already left cannot end the ring
+   * that replaced it. The oldest queued request that has not expired rings next.
    */
-  clearIncomingRequest: () =>
+  clearIncomingRequest: requestId =>
     set(state => {
+      if (state.incomingRequest?.requestId !== requestId) {
+        return state;
+      }
       const now = Date.now();
-      const live = state.queuedRequests.filter(
-        queued => queued.expiresAt === undefined || Date.parse(queued.expiresAt) > now,
-      );
+      const live = state.queuedRequests.filter(queued => queued.expiresAt > now);
       const next = live[0] ?? null;
       return {
         incomingRequest: next,
@@ -291,6 +324,20 @@ export const useStore = create<AppState>()(set => ({
   // playing over the next one, and the marker has to clear with the sound.
   resetConversation: () =>
     set({ sending: false, peerActivity: null, notice: null, playing: null, uploadProgress: {} }),
+
+  beginCall: c => {
+    const seq = _nextCallSeq++;
+    set({ activeCall: { seq, ...c } });
+    return seq;
+  },
+  setActiveCallId: (seq, callId) =>
+    set(state =>
+      state.activeCall?.seq === seq && state.activeCall !== null
+        ? { activeCall: { ...state.activeCall, callId } }
+        : state,
+    ),
+  endActiveCall: seq =>
+    set(state => (state.activeCall?.seq === seq ? { activeCall: null } : state)),
 }));
 
 /** Test helper; also used to reset state after account deletion. */
