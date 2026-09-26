@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { keys } from './chat';
 
-export const labelKeys = {
+const labelKeys = {
   all: ['conversation-labels'] as const,
 };
 

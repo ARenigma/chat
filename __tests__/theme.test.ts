@@ -1926,12 +1926,6 @@ describe('accent budget is enforced in code, not just documented', () => {
     //                   is active, which is a state rather than an ornament, and
     //                   it is the only thing distinguishing the live row from
     //                   the four dimmed ones besides opacity
-    //   EmptyMark   , the warm one of the two bubbles on an empty state. Same
-    //                   wash and same argument as Avatar's `tone="warm"`, which
-    //                   is where this mark's colour came from: it marks *your*
-    //                   side of a conversation that has not started yet. The
-    //                   other bubble is neutral precisely so the pair reads as
-    //                   two people rather than as a decorative shape
     //   ProviderHomeScreen, the same count, for a member waiting on a reply
     //   TabBar      , the active destination's glyph and label. Added with the
     //                   two-tab bar, and it is a state rather than a decoration:
@@ -2078,7 +2072,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * — and it appears once, for one second, at the end of one flow.
        */
       'CompletionRow.tsx',
-      'EmptyMark.tsx',
       /*
        * v13 Home. Two accent uses, both states/actions: the featured hero's warm
        * field (the one designed coral surface on the screen, same class as the
@@ -2285,7 +2278,6 @@ describe('accent budget is enforced in code, not just documented', () => {
      */
     const TRANSCRIPT: Record<string, readonly string[]> = {
       'ChatMessageCellV2.tsx': ["'rgba(255,255,255,0.35)'"],
-      'BubbleTime.tsx': [],
       'ChatComposerV2.tsx': [],
       'ThreadBubble.tsx': [],
     };

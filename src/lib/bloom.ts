@@ -236,7 +236,7 @@ export function bloomLayerBox(
  * both conventions, so this is the correct spelling on every API level rather
  * than a workaround for old ones.
  */
-export function fadeStop(color: string): string {
+function fadeStop(color: string): string {
   const hex = color.replace('#', '');
   const r = parseInt(hex.slice(0, 2), 16);
   const g = parseInt(hex.slice(2, 4), 16);
@@ -244,7 +244,7 @@ export function fadeStop(color: string): string {
   return `rgba(${r},${g},${b},0)`;
 }
 
-export function bloomGradient(
+function bloomGradient(
   color: string,
   startRadius: number,
   endRadius: number,

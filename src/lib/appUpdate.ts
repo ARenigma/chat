@@ -61,7 +61,7 @@ const UNAVAILABLE: UpdateStatus = {
   availableVersionCode: 0,
 };
 
-export function updatesSupported(): boolean {
+function updatesSupported(): boolean {
   return Platform.OS === 'android' && NATIVE !== undefined;
 }
 
@@ -84,7 +84,7 @@ async function status(): Promise<UpdateStatus> {
  * flows are Play's own full-screen and background UI, so there is nothing for us
  * to draw.
  */
-export async function runUpdateCheck(): Promise<UpdateAction> {
+async function runUpdateCheck(): Promise<UpdateAction> {
   const current = await status();
   if (__DEV__) {
     // Dev-only, and it earns its place: off Play everything here resolves to

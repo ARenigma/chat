@@ -38,10 +38,10 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 
 /** M3 Small Top App Bar container height (dp), excluding safe area inset. */
-export const TOP_APP_BAR_HEIGHT = 64;
+const TOP_APP_BAR_HEIGHT = 64;
 /** Medium flexible expanded heights (dp), excluding safe area inset. */
-export const TOP_APP_BAR_MEDIUM_HEIGHT = 112;
-export const TOP_APP_BAR_MEDIUM_SUBTITLE_HEIGHT = 128;
+const TOP_APP_BAR_MEDIUM_HEIGHT = 112;
+const TOP_APP_BAR_MEDIUM_SUBTITLE_HEIGHT = 128;
 /** Scroll distance over which the medium bar collapses to the action row. */
 const COLLAPSE_DISTANCE = 96;
 

@@ -34,7 +34,7 @@ export function ProviderPushGateProvider({ children }: { children: React.ReactNo
   return <PushOkContext.Provider value={pushOk}>{children}</PushOkContext.Provider>;
 }
 
-export function useProviderPushOk(): boolean {
+function useProviderPushOk(): boolean {
   return useContext(PushOkContext);
 }
 

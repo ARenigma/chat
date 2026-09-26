@@ -280,7 +280,7 @@ export function useAnnounceChatOpen(
  * call site at all, which is how a "Notify" button that never called the RPC
  * shipped and stayed invisible.
  */
-export function useNotifyPeer(conversationId: string | undefined) {
+function useNotifyPeer(conversationId: string | undefined) {
   return useMutation<ChatOpenAlert, Error, void>({
     mutationFn: async () => {
       if (conversationId === undefined) {

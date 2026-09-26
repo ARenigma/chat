@@ -142,7 +142,7 @@ export interface ChatV2RowInput {
 }
 
 /** The centred pill's id, so the controller and the cell agree on one string. */
-export const CHAT_V2_NOTICE_ID = 'chat-v2-notice';
+const CHAT_V2_NOTICE_ID = 'chat-v2-notice';
 
 /**
  * What a deleted message says to each side of it. The author is told what THEY

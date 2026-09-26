@@ -26,9 +26,9 @@ export const WIDTH_MEDIUM_MIN = 600;
 /** Width at which the window becomes expanded. */
 export const WIDTH_EXPANDED_MIN = 840;
 /** Height at which the window leaves compact. */
-export const HEIGHT_MEDIUM_MIN = 480;
+const HEIGHT_MEDIUM_MIN = 480;
 /** Height at which the window becomes expanded. */
-export const HEIGHT_EXPANDED_MIN = 900;
+const HEIGHT_EXPANDED_MIN = 900;
 
 /** Phone-column width used on medium and expanded windows. */
 export const CONTENT_COLUMN_MAX = 600;

@@ -20,7 +20,7 @@ const BAR_MIN = 3;
 const BAR_MAX = 22;
 
 /** 128pt at the defaults, which fits a bubble beside a button and a duration. */
-export const WAVEFORM_WIDTH = VOICE_BARS * (BAR_WIDTH + BAR_GAP);
+const WAVEFORM_WIDTH = VOICE_BARS * (BAR_WIDTH + BAR_GAP);
 
 interface Props {
   /** 0..1 per bar. Any length: `padBars` makes it the drawn width. */

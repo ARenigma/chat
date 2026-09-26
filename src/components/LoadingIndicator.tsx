@@ -22,7 +22,7 @@ import {
 import { useTheme } from '../theme/ThemeProvider';
 
 /** Canonical M3 contained-loading-indicator diameter. */
-export const LOADING_CONTAINER_SIZE = 48;
+const LOADING_CONTAINER_SIZE = 48;
 
 /** Canonical active shape diameter inside the 48dp container. */
 export const LOADING_INDICATOR_SIZE = 38;

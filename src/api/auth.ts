@@ -144,7 +144,7 @@ export const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'supabase';
  * If this is ever flipped back off, sign-in still works — it goes straight to
  * the browser, which needs none of the above.
  */
-export const CREDENTIAL_MANAGER_ENABLED = true;
+const CREDENTIAL_MANAGER_ENABLED = true;
 
 /**
  * The OTP flow has a state the OAuth flow does not: a code is in the air and

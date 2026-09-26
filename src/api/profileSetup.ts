@@ -158,7 +158,7 @@ export function needsProfileSetup(profile: Profile | undefined): boolean {
  * was consumed) — so passing it through is not decoration, it is the
  * cancellation.
  */
-export async function checkDisplayName(
+async function checkDisplayName(
   name: string,
   signal?: AbortSignal,
 ): Promise<DisplayNameCheck> {
@@ -188,7 +188,7 @@ export async function checkDisplayName(
  * the second after the member stops, which is where the verdict has to be to
  * feel live rather than submitted.
  */
-export const USERNAME_CHECK_DEBOUNCE_MS = 450;
+const USERNAME_CHECK_DEBOUNCE_MS = 450;
 
 export function useCheckDisplayName(name: string, enabled: boolean) {
   const trimmed = name.trim();
