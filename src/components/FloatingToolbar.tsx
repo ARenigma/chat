@@ -182,8 +182,9 @@ function FloatingToolbarView({
                 // filled active nav icon. The favourites heart is included: the
                 // earlier "keep the heart outline in nav" decision was reversed
                 // and the heart now fills when active, here and on a favourited
-                // profile. Heroicons ships a real solid twin, so this is a genuine
-                // filled glyph, not the old over-drawn outline.
+                // profile. All four tab glyphs have a Phosphor `-fill` entry in
+                // design/icons.json's `active` map, so this is a genuine filled
+                // glyph, not the old over-drawn outline.
                 // https://m3.material.io/components/navigation-bar/guidelines
                 active={on}
                 // 20 * the 1.2 icon scale = ~24px, the Material 3 nav icon size.

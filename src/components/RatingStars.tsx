@@ -99,11 +99,12 @@ function RatingStarsView({ score, accessibilityLabel, testID }: Props) {
   const clamped = Math.max(0, Math.min(STAR_COUNT, score));
   const filledWidth = (clamped / STAR_COUNT) * STARS_WIDTH;
 
-  // `filled` picks the SOLID star face (Heroicons ships a real solid twin now),
-  // so the overlaid row is genuinely filled stars rather than a coloured
-  // outline. The empty row stays outline. Both rows have identical geometry —
-  // same glyph box, same advance — so the fractional width clip still reveals
-  // exactly `score / 5` of the filled row over the empty one.
+  // `filled` picks Phosphor's `star-fill` glyph (the `active` entry for `star`
+  // in design/icons.json), so the overlaid row is genuinely filled stars rather
+  // than a coloured outline. The empty row stays regular weight. Both glyphs
+  // are in the one face at the same em box and advance, so the fractional
+  // width clip still reveals exactly `score / 5` of the filled row over the
+  // empty one.
   const row = (color: string, key: string, filled: boolean) => (
     <View style={styles.row}>
       {Array.from({ length: STAR_COUNT }, (_, i) => (

@@ -72,10 +72,11 @@
  *    the cause and the compensation the wrong way round, and the visible cost was
  *    a pill 8dp wider than the reference's with both glyphs 4dp too far out.
  * 2. "size=20 because Icon.tsx renders at round(size * 1.2), so 20 -> a 24dp
- *    box." The em box was 24dp; the MARK inside it was not. A Lucide glyph inks a
- *    fraction of its em (Icon.tsx's own header measures the set and explains why),
- *    and `search` (uniE151) inks 19.97 of 24 grid units, so at a 24dp em the
- *    magnifier drew 20dp wide against the reference's 13.94dp — 43% oversized.
+ *    box." The em box was 24dp; the MARK inside it was not. A glyph inks a
+ *    fraction of its em (Icon.tsx's ICON_SCALE docblock explains why), and
+ *    `search` inked 19.97 of 24 em units (Lucide then; Phosphor's
+ *    `magnifying-glass` inks 19.99 now), so at a 24dp em the magnifier drew
+ *    20dp wide against the reference's 13.94dp — 43% oversized.
  *    Matching a 24dp FRAME to a 24dp em matched the wrong two things: the
  *    reference's 24dp is a `createFrame` used for positioning, and its mark is
  *    less than 14dp inside it.
@@ -265,17 +266,19 @@ const GLYPH_SLOT = GLYPH_INSET * 2 + GLYPH_BOX;
  *
  * Ours has to be worked back through two steps. `Icon` renders at
  * `Math.round(size * ICON_SCALE)` with `ICON_SCALE = 1.2` (`Icon.tsx`), and a
- * Lucide glyph inks a fraction of its em rather than filling it — `search`
- * (uniE151) inks 19.97 of the 24 grid units the em maps onto, measured with a
- * fontTools outline-bounds pen over `assets/fonts/Lucide.ttf`, which is the
- * method and the caveat Icon.tsx's own header records (the glyf header's
- * xMin/yMin are zeroed by lucide-static and must not be trusted). So:
+ * glyph inks a fraction of its em rather than filling it — Phosphor's
+ * `magnifying-glass` inks 19.99 of 24 em units in `assets/fonts/Phosphor.ttf`
+ * (208.2 of Phosphor's 256 grid, mapped through the generator's 250-unit
+ * EM_WINDOW), measured with a fontTools BoundsPen over the outline rather than
+ * read from the glyf header. So:
  *
- *   size 14 -> em round(16.8) = 17 -> ink 17 * 19.97/24 = 14.15dp
+ *   size 14 -> em round(16.8) = 17 -> ink 17 * 19.99/24 = 14.16dp
  *
  * against the reference's 13.94dp: 0.2dp out, which is a fifth of a pixel at
- * mdpi. The neighbouring steps are worse — size 15 gives an 18dp em and 14.98dp
- * of ink, size 20 (what this was) gives a 24dp em and 19.97dp, 43% oversized.
+ * mdpi. The neighbouring steps are worse — size 15 gives an 18dp em and 14.99dp
+ * of ink, size 20 (what this was) gives a 24dp em and 19.99dp, 43% oversized.
+ * The Lucide glyph this was first measured on inked 19.97, so the Phosphor move
+ * did not shift this size.
  *
  * This is the one number in this file that is a JUDGEMENT as much as a
  * measurement, so it is flagged as one: matching the reference's ink means
@@ -295,15 +298,19 @@ const SEARCH_GLYPH_SIZE = 14;
  * (`FragmentSearchField.java:139`) means the 24dp frame at `:159` never scales
  * it either.
  *
- * Lucide's `close` (uniE1B2) inks 13.97 of 24 grid units, so:
+ * Phosphor's `x` inks 15.36 of 24 em units (160.3 of its 256 grid through the
+ * 250-unit EM_WINDOW, same BoundsPen method as above), so:
  *
- *   size 17 -> em round(20.4) = 20 -> ink 20 * 13.97/24 = 11.64dp
+ *   size 15 -> em round(18) = 18 -> ink 18 * 15.36/24 = 11.52dp
  *
- * which sits inside the 11-12dp the reference's own buckets disagree over. It
- * was size 20 (a 24dp em, 13.97dp of ink) — closer than the magnifier was, but
- * still the larger end of a range it should have been inside.
+ * which sits in the middle of the 11-12dp the reference's own buckets disagree
+ * over. CHANGED 2026-09-26 from 17 at the Phosphor move, and only because the
+ * cross is a bigger drawing, not because the target moved: Lucide's `x` inked
+ * 13.97 of 24, so 17 gave 11.64dp; Phosphor's inks 10% more of its em, so 17
+ * would give 12.80dp and 16 would give 12.16dp, both past the reference's
+ * largest bucket. It was size 20 before that (a 24dp em, 13.97dp of ink).
  */
-const CLEAR_GLYPH_SIZE = 17;
+const CLEAR_GLYPH_SIZE = 15;
 
 /**
  * The clear glyph's reveal, taken whole rather than approximated.

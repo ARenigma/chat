@@ -595,15 +595,15 @@ function ProviderRowView({
             {/* The certified badge, Clarity's.
                 ONE GLYPH. It was first built as our own `check` inside a filled
                 accent disc — two shapes stacked to approximate a shape the icon
-                set already had. Amit: "certified icon should be like clarity..
-                lucide deosnthav eit or what?" It does: `badge-check` is the
-                scalloped rosette with the check inside, which is the mark both
-                references draw. Added to design/icons.json and regenerated
-                rather than hand-edited (RULE 4).
+                set already had. Amit: "certified icon should be like
+                clarity". The scalloped rosette with the check inside is the
+                mark both references draw; Phosphor names it `seal-check`.
+                Added to design/icons.json and regenerated rather than
+                hand-edited (RULE 4).
 
-                Outline rather than the references' solid fill, because every
-                other mark in this app is Lucide outline and one filled badge
-                would read as a different system.
+                Regular weight rather than the references' solid fill, because
+                every other mark on the card is regular weight and one filled
+                badge would read as a different system.
 
                 Every card has one, and that is correct rather than lazy:
                 `provider_directory` filters on `identity_verified_at is not
@@ -616,7 +616,7 @@ function ProviderRowView({
             {/* `icon.xs`, not `icon.md`. Amit, on the device: "verified badge
                 -- reduce size to be in line with name height".
 
-                The badge was `icon.md` (20), and `Icon` draws a Lucide glyph at
+                The badge was `icon.md` (20), and `Icon` draws its glyph at
                 `Math.round(size * ICON_SCALE)` — 1.2 — so it inked 24dp beside
                 a name whose FONT is 16dp. It was matching the name's LINE BOX
                 (24dp) rather than its letters, which is why it read as

@@ -1071,7 +1071,8 @@ function TabButton({
       highlight="dim"
       style={styles.tab}>
       <View>
-        {/* The SOLID face when selected, not the same outline in a lighter ink.
+        {/* The FILL glyph when selected (each tab icon has a `-fill` entry in
+            design/icons.json's `active` map), not the same outline in a lighter ink.
             Colour alone is the failure mode this repo has now hit twice, and M3
             names the fix for this exact control: "the icon of the active
             destination is filled".

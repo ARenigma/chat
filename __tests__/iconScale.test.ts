@@ -229,8 +229,8 @@ const EXEMPT: Record<string, string> = {
    * one component, which is a stronger claim than a step on a scale and
    * predates it. the reference app's magnifier inks 13.94dp inside its 24dp frame and
    * its clear cross 11-12dp, both measured at `ScaleType.CENTER` where the
-   * frame never scales the mark; SEARCH_GLYPH_SIZE = 14 lands 14.15dp of Lucide
-   * ink and CLEAR_GLYPH_SIZE = 17 lands 11.64dp. The full arithmetic and the
+   * frame never scales the mark; SEARCH_GLYPH_SIZE = 14 lands 14.16dp of
+   * Phosphor ink and CLEAR_GLYPH_SIZE = 15 lands 11.52dp. The full arithmetic and the
    * File.java:line citations are in SearchBar.tsx's own docblocks.
    *
    * Snapping these to `icon.sm` (16) would be a regression, not a cleanup: it
@@ -422,7 +422,7 @@ describe('the icon scale is the only source of icon sizes', () => {
   it('leaves the SearchBar glyphs matched to the reference ink', () => {
     const bar = readFileSync(join(SRC, 'components/SearchBar.tsx'), 'utf8');
     expect(bar).toContain('const SEARCH_GLYPH_SIZE = 14;');
-    expect(bar).toContain('const CLEAR_GLYPH_SIZE = 17;');
+    expect(bar).toContain('const CLEAR_GLYPH_SIZE = 15;');
   });
 
   /**
@@ -435,10 +435,17 @@ describe('the icon scale is the only source of icon sizes', () => {
   it('still renders a step as approximately its own dp of ink', () => {
     const icon = readFileSync(join(SRC, 'components/Icon.tsx'), 'utf8');
     expect(icon).toContain('const ICON_SCALE = 1.2;');
-    // Lucide inks ~19.97 of the 24 grid units the em maps onto (measured with an
-    // outline-bounds pen over assets/fonts/Lucide.ttf; see Icon.tsx's header for
-    // why the glyf header must not be trusted). So ink = round(size * 1.2) *
+    // A full-bleed Phosphor glyph inks ~19.97 of 24 em units: 208 of its 256
+    // grid, mapped through the generator's 250-unit EM_WINDOW (median over the
+    // set, fontTools BoundsPen over assets/fonts/Phosphor.ttf; the glyf header's
+    // xMin/yMin are zeroed by svg2ttf and must not be trusted). That is the same
+    // 19.97 the scale was first set against in Lucide, by construction — see
+    // EM_WINDOW in scripts/gen-icons-font.mjs. So ink = round(size * 1.2) *
     // 19.97/24, and every step must land within 3% of its own nominal dp.
+    const window = /const EM_WINDOW = \{ origin: (\d+), size: (\d+) \}/.exec(
+      readFileSync(join(ROOT, 'scripts/gen-icons-font.mjs'), 'utf8'),
+    );
+    expect(window?.slice(1)).toEqual(['3', '250']);
     for (const value of Object.values(TOKENS.icon)) {
       const ink = (Math.round(value * 1.2) * 19.97) / 24;
       expect(Math.abs(ink / value - 1)).toBeLessThan(0.03);

@@ -360,12 +360,12 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               nothing renders it, and the RPC contract is left alone so the
               admin side can keep it.
 
-              The earned stars are the SOLID face, not the outline one in a
+              The earned stars are the FILL glyph, not the outline one in a
               different colour. That paragraph used to say the opposite, and it
-              was true when it was written: Lucide ships one stroked `star` and
-              a static font cannot fake a fill, so colour carried the whole
-              state. The Heroicons migration ships a matched outline+solid pair
-              at one codepoint, which is what `active` on `Icon` selects, and
+              was true when it was written: the set then had one stroked `star`
+              and a static font cannot fake a fill, so colour carried the whole
+              state. The icon font now carries `star-fill` beside `star`, which
+              is what `active` on `Icon` selects, and
               this block was left behind on the colour-only path while
               `RatingStars` (the directory row) moved over. A rating read as
               five outlines in two tints here and as four solid stars plus an

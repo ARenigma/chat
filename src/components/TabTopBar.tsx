@@ -211,8 +211,8 @@ export function TabTopBar({
                   magnifier inked 66px at density 2.75 = exactly 24.00dp,
                   against the wallet glyph beside it at ~18dp. `size` is NOT the
                   rendered size: Icon.tsx multiplies by ICON_SCALE (1.2) and
-                  Lucide inks 19.97 of its 24-unit grid, so 20 -> em round(24)
-                  -> ink 19.97dp. */}
+                  the magnifier inks 19.99 of 24 em units (Phosphor, through the
+                  generator's EM_WINDOW), so 20 -> em round(24) -> ink 19.99dp. */}
               <Icon name="search" size={TOKENS.icon.md} color={theme.color.text.secondary} />
             </Pressable>
             {walletTourId === undefined ? (
