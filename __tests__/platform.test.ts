@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { TOKENS } from '../src/theme/tokens';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
@@ -3017,5 +3018,132 @@ describe('worklet default parameters', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+/*
+ * nav-migration step 5: the shell, built and NOT mounted (ADR-0032). The bar is
+ * Bluesky's (src/view/shell/bottom-bar/BottomBar.tsx) with the owner's M3 pill
+ * kept; these pins are what step 7 mounts, so a regression fails here before it
+ * reaches a device.
+ */
+describe('step 5 shell: the bottom bar (not mounted)', () => {
+  const BAR = 'src/shell/bottom-bar/BottomBar.tsx';
+  const STYLES = 'src/shell/bottom-bar/BottomBarStyles.ts';
+  const OFFSET = 'src/shell/useBottomBarOffset.ts';
+  const bar = code(BAR);
+  const styles = code(STYLES);
+  const block = (src: string, name: string): string => {
+    const at = src.indexOf(`${name}: {`);
+    expect({ name, found: at > -1 }).toEqual({ name, found: true });
+    return src.slice(at, src.indexOf('}', at));
+  };
+
+  it('is a tablist of tab-role slots that announce selected', () => {
+    // TalkBack says "Home, tab, selected, 1 of 4" only with both roles.
+    // https://developer.android.com/guide/topics/ui/accessibility/principles
+    expect(bar).toContain('accessibilityRole="tablist"');
+    expect(bar).toContain('accessibilityRole="tab"');
+    expect(bar).toMatch(/selected=\{selected\}/);
+    expect(bar).toMatch(/getTabState\(state, tab\.name\) !== TabState\.Outside/);
+  });
+
+  it('keeps the nav-* testIDs the flows and benchmarks look up', () => {
+    for (const id of ['nav-home', 'nav-favourites', 'nav-call', 'nav-settings', 'nav-chats', 'nav-saved']) {
+      expect(bar).toContain(`testID: '${id}'`);
+    }
+    expect(bar).toContain('testID={tab.testID}');
+  });
+
+  it('makes each slot a real 48dp target: 12 + the 32 pill + 4', () => {
+    // hitSlop cannot extend past a parent on Android, so the box itself is 48.
+    // https://developer.android.com/guide/topics/ui/accessibility/apps
+    const slot = block(styles, 'slot');
+    expect(slot).toContain('height: INTERACTION.minTarget');
+    expect(slot).toContain('paddingTop: TOKENS.space.sm');
+    expect(styles).toContain('export const INDICATOR_HEIGHT = 32;');
+    expect(TOKENS.space.sm + 32 + TOKENS.space['2xs']).toBe(TOKENS.interaction.minTarget);
+    expect(bar).toContain('size={INTERACTION.minTarget}');
+  });
+
+  it('pads the bar and the offset with ONE clamp of the navigation inset', () => {
+    expect(TOKENS.layout.bottomBarInsetMin).toBe(15);
+    expect(TOKENS.layout.bottomBarInsetMax).toBe(60);
+    expect(styles).toMatch(/export function clampBottomInset\(/);
+    expect(bar).toContain('paddingBottom: clampBottomInset(insets.bottom)');
+    const offset = code(OFFSET);
+    expect(offset).toContain(
+      'INTERACTION.minTarget + clampBottomInset(bottom) + StyleSheet.hairlineWidth',
+    );
+    // Nobody else re-derives it.
+    for (const f of [BAR, OFFSET]) {
+      expect(code(f)).not.toMatch(/bottomBarInset(Min|Max)|Math\.(min|max)\(\s*insets/);
+    }
+  });
+
+  it('animates the indicator by width and opacity on springs, never scaleX', () => {
+    // Absolute and childless, so width is the sanctioned exception, and it keeps
+    // the full corner scaleX would smear (animate-expo step 4).
+    expect(bar).toContain("width.set(springTo(selected ? INDICATOR_WIDTH : 0, 'spatialFast'))");
+    expect(bar).toMatch(/opacity\.set\(springTo\(selected \? 1 : 0, 'effectsDefault', undefined, ReduceMotion\.Never\)\)/);
+    expect(bar).toContain('width: Math.max(0, width.get())');
+    expect(bar).not.toMatch(/scaleX/);
+    const indicator = block(styles, 'indicator');
+    expect(indicator).toContain("position: 'absolute'");
+    expect(indicator).toContain('backgroundColor: t.color.bg.navIndicator');
+  });
+
+  it('pops the tapped tab\'s own stack and dedupes every navigation', () => {
+    expect(bar).toMatch(/navigation\.dispatch\(\{ \.\.\.StackActions\.popToTop\(\), target \}\)/);
+    expect(bar).toContain('useDedupe(250)');
+    expect(bar).toMatch(/dedupe\(\(\) => navigation\.navigate\(`\$\{tab\}Tab`\)\)/);
+    expect(bar).toContain('emitSoftReset()');
+    // The soft reset is the only re-tap path.
+    expect(bar).not.toMatch(/tabPress|useScrollToTop/);
+  });
+
+  it('answers a touch with the tab press alone: no ripple, no state layer, no haptic', () => {
+    expect(bar).toContain('press="tab"');
+    expect(bar).toContain('highlight="none"');
+    expect(bar).not.toMatch(/ripple|android_ripple|haptic|Frost/i);
+  });
+
+  it('keeps the tour anchors and the md icon with the filled glyph', () => {
+    expect(bar).toContain('<TourAnchor id={tab.tourId}');
+    expect(bar).toContain("tourId: 'home'");
+    expect(bar).toContain("tourId: 'favourites'");
+    expect(bar).toContain('size={TOKENS.icon.md}');
+    expect(bar).toContain('active={selected}');
+    expect(bar).toContain('placement="badgedBox"');
+  });
+
+  it('takes the hidden bar out of the accessibility tree and out of touch', () => {
+    expect(bar).toContain("importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}");
+    expect(bar).toContain('accessibilityElementsHidden={hidden}');
+    expect(bar).toContain("pointerEvents={hidden ? 'none' : 'auto'}");
+    expect(bar).toContain('useMinimalShellHidden()');
+  });
+
+  it('hides on a critically damped, clamped shell spring', () => {
+    const meta = TOKENS.motion.springMeta.shell;
+    expect(meta.overshoots).toBe(false);
+    expect(meta.ratio).toBeGreaterThanOrEqual(1);
+    expect(meta.settleMs).toBeLessThanOrEqual(150);
+    expect(TOKENS.motion.spring.shell).toMatchObject({ overshootClamping: true });
+    const mode = code('src/shell/minimalMode.tsx');
+    expect(mode).toContain("springTo(hide ? 1 : 0, 'shell', undefined, ReduceMotion.Never)");
+    // Reduced motion keeps the fade and drops the translate.
+    const transform = code('src/shell/useMinimalShellTransform.ts');
+    expect(transform).toMatch(/if \(reduced\) \{\s*return \{ opacity \};/);
+  });
+
+  it('gives Layout.Screen the minimal shell and skips its first-mount animations', () => {
+    const screen = code('src/components/Layout/Screen.tsx');
+    expect(screen).toContain('useEnableMinimalShellModeForScreen({ enabled: minimalShell })');
+    expect(screen).toContain('<LayoutAnimationConfig skipEntering skipExiting>');
+  });
+
+  it('is not mounted yet: nothing outside src/shell and Layout imports it', () => {
+    expect(read('App.tsx')).not.toMatch(/from '\.\/src\/shell|components\/Layout'/);
   });
 });
