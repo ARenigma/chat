@@ -1939,6 +1939,7 @@ FUNCTION policy_roles_are(name, name, name, name[], text) returns text security=
 FUNCTION policy_roles_are(name, name, name[]) returns text security=invoker
 FUNCTION policy_roles_are(name, name, name[], text) returns text security=invoker
 FUNCTION post_story_comment(p_comment_id uuid, p_story_id uuid, p_body text) returns json security=definer
+FUNCTION provider_busy_waits(p_provider_ids uuid[]) returns TABLE(provider_id uuid, wait_minutes integer) security=definer
 FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
 FUNCTION provider_offers_channel(p_provider_id uuid, p_channel session_channel) returns boolean security=definer
 FUNCTION provider_photos_single_primary() returns trigger security=definer
