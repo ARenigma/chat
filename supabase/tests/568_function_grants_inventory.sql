@@ -140,9 +140,15 @@ select throws_ok(
   'profiles.role is not client-writable',
   '6. an invoker trigger still fires on a client write, and still refuses'
 );
-select lives_ok(
-  $$ update public.profiles set preferred_languages = array['en']
-     where id = 'd5680000-0000-4568-8000-000000000001' $$,
+-- Counted, so a profile that was never created (handle_new_user makes it on
+-- the auth.users insert) cannot pass this as an update of nothing.
+with u as (
+  update public.profiles set preferred_languages = array['en']
+  where id = 'd5680000-0000-4568-8000-000000000001'
+  returning 1)
+select is(
+  (select count(*)::int from u),
+  1,
   '7. and a permitted client write passes through the same triggers'
 );
 
