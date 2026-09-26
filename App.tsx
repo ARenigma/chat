@@ -55,6 +55,13 @@ import {
 } from './src/lib/push';
 import { clearCall } from './src/lib/conversations';
 import {
+  clearIntents,
+  enqueueIntent,
+  setCallHooks,
+  setIntentApplier,
+  setIntentOwner,
+} from './src/lib/intents';
+import {
   memberParent,
   providerParent,
   transitionFor,
@@ -146,6 +153,10 @@ import { ChatRingScreen, CHAT_RING_SECONDS } from './src/components/ChatRingScre
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
 
 initSentry();
+// Wire live call API into the intent queue. Called once at module init so
+// intents.ts can busy-decline and clear notifications without importing the
+// native modules directly (which break Jest). nav-migration §3.
+setCallHooks({ endCall, clearCall });
 
 /**
  * A pushed screen's layer: enters on the M3 forward/back transition, leaves on
@@ -612,40 +623,14 @@ function Root() {
   const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
   const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
   /*
-   * A ring announced from outside the React tree: the notification's Answer
-   * intent, the body tap, or an FCM push. It is HELD here rather than routed
-   * here, because which tree it belongs to depends on the role and `useRole`
-   * lives in `SignedIn`. Calling `setRoute` from this effect was the defect: the
-   * provider tree renders `providerRoute` and nothing else, so every notification
-   * a provider answered set a route their tree does not draw.
-   */
-  const [pendingIncoming, setPendingIncoming] = useState<PendingIncoming | null>(null);
-  const clearPendingIncoming = useCallback(() => setPendingIncoming(null), []);
-  /*
-   * A message notification tapped, held the same way and for the same reason
-   * as `pendingIncoming` above (2026-09-17 audit): `companionchat://peer/<id>`
-   * is a role-agnostic deep link, and routing it from the effect that consumes
-   * it — before `useRole` (in `SignedIn`) has resolved — meant a provider's
-   * tap set a member-tree route their tree does not draw, and a member's tap
-   * on a cold start raced the boot effect's own `setRoute({name:'home'})` for
-   * whichever finished last.
-   */
-  const [pendingPeer, setPendingPeer] = useState<string | null>(null);
-  const clearPendingPeer = useCallback(() => setPendingPeer(null), []);
-  const [pendingV2Peer, setPendingV2Peer] = useState<{
-    providerId: string;
-    benchmarkReadOnly: boolean;
-  } | null>(null);
-  const clearPendingV2Peer = useCallback(() => setPendingV2Peer(null), []);
-  /*
-   * The signed-out screen, with nothing of the leaving account's held here: a
-   * notification tap, a ring or a V2 link still waiting for a role would
-   * otherwise be applied inside whichever account signs in next.
+   * The signed-out screen. clearIntents() drops any held deep links or rings
+   * that belong to the leaving account; setIntentOwner(null) ensures any intent
+   * that arrives before the next sign-in is tagged null and dropped at flush.
+   * nav-migration §3.
    */
   const toSignedOut = useCallback(() => {
-    setPendingPeer(null);
-    setPendingV2Peer(null);
-    setPendingIncoming(null);
+    clearIntents();
+    setIntentOwner(null);
     setBoot({ phase: 'signedOut' });
   }, []);
   const [exitDialogVisible, setExitDialogVisible] = useState(false);
@@ -781,13 +766,13 @@ function Root() {
          * used to be checked right here via `initialNotificationPeer()`
          * (2026-09-17 audit: that path never once fired — see push.ts for
          * why — and worse, calling `setRoute` unconditionally the line above
-         * raced the deep-link effect below for every REAL notification tap,
-         * which arrives as `companionchat://peer/<id>`. That effect now holds
-         * the tap in `pendingPeer` instead of routing directly, and
-         * `SignedIn` applies it once `role` is known — the same fix already
-         * in place for an incoming call's `pendingIncoming`, and for the same
-         * reason: the deep link only ever knew about the member tree.
+         * raced the deep-link effect below for every REAL notification tap).
+         * Deep-link intents are now enqueued and held until SignedIn registers
+         * an applier once the role resolves. nav-migration §3.
          */
+        // Adopt any BOOT-tagged intents (cold-start taps) for this account
+        // and allow the queue to flush once the navigator applier is set.
+        setIntentOwner(session.user.id);
         setRoute({ name: 'home' });
         // "Become a partner" before auth → provider onboarding, and it SKIPS the
         // member first-run (username/age/policy) entirely. Member and provider are
@@ -943,8 +928,9 @@ function Root() {
           __DEV__ || allowBenchmarkRoutes,
         );
         if (v2Peer !== null) {
-          setPendingV2Peer({
-            providerId: v2Peer,
+          enqueueIntent({
+            type: 'openChatV2',
+            peerId: v2Peer,
             benchmarkReadOnly: benchmarkReadOnlyLaunch,
           });
         }
@@ -963,14 +949,12 @@ function Root() {
        *
        * `isUuid` gates it because a deep-link URL is remote input: any value
        * could arrive on this scheme, and it must not reach a query unchecked.
-       * Held in `pendingPeer` rather than routed directly, for the same reason
-       * `pendingIncoming` is held below: `role` is not known here, and a bare
-       * `setRoute` always writes the member tree, so a provider's own tap set a
-       * route their tree never draws. `SignedIn` applies it once `role`
-       * resolves. A peer link that arrives with no stored session never gets
-       * here: the gate at the top of `consume` drops it, because the id
-       * belongs to an account that is not the current one, and Root's state
-       * would otherwise carry it into the next sign-in.
+       * Enqueued rather than routed directly: `role` is not known at this
+       * point, and `SignedIn` registers the intent applier once `useRole`
+       * resolves, at which point the queue flushes to the correct tree.
+       * A peer link that arrives with no stored session never gets here:
+       * the gate at the top of `consume` drops it, because the id belongs to
+       * an account that is not the current one. nav-migration §3.
        */
       /*
        * An incoming-call deep link, checked first. `companionchat://call/<peerId>
@@ -988,8 +972,8 @@ function Root() {
        *
        * Answer still routes into the screen rather than calling answer_call here:
        * that screen owns the lease and the media, and answering without it would
-       * put a connected call behind a UI that does not exist yet. It routes via
-       * `pendingIncoming`, which is where the role decides which tree gets it.
+       * put a connected call behind a UI that does not exist yet. It is enqueued
+       * into the intent queue, which routes it once the role is known.
        *
        * Parsed with regex, not URLSearchParams, which Hermes does not ship.
        */
@@ -1001,7 +985,7 @@ function Root() {
           void endCall(callId);
           return;
         }
-        setPendingIncoming({ peerId: callPeer, callId, medium });
+        enqueueIntent({ type: 'incomingCall', peerId: callPeer, callId, medium });
         return;
       }
       if (url.startsWith('companionchat://call/')) {
@@ -1027,13 +1011,13 @@ function Root() {
       /*
        * HELD, not routed (2026-09-17 audit) — `role` is not known here and a
        * bare `setRoute` always writes the MEMBER tree. A provider's own tap on
-       * a message notification set a route their tree never draws. `SignedIn`
-       * applies `pendingPeer` once `role` resolves, choosing the tree.
+       * a message notification set a route their tree never draws. Enqueued
+       * so the intent queue applies it once `role` resolves. nav-migration §3.
        * parsePeerUrl strips query strings so a harness-augmented URI routes.
        */
       const parsedPeer = parsePeerUrl(url);
       if (parsedPeer !== null) {
-        setPendingPeer(parsedPeer);
+        enqueueIntent({ type: 'openChat', peerId: parsedPeer });
         return;
       }
       if (url.startsWith('companionchat://peer/')) {
@@ -1591,12 +1575,6 @@ function Root() {
         backToHome={backToHome}
         setRoute={setRoute}
         setProviderRoute={setProviderRoute}
-        pendingIncoming={pendingIncoming}
-        onIncomingHandled={clearPendingIncoming}
-        pendingPeer={pendingPeer}
-        onPeerHandled={clearPendingPeer}
-        pendingV2Peer={pendingV2Peer}
-        onV2PeerHandled={clearPendingV2Peer}
         onSignedOut={toSignedOut}
         /*
          * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
@@ -1650,13 +1628,6 @@ function Root() {
   );
 }
 
-/** A ring the app learned about outside the React tree, before the role is known. */
-interface PendingIncoming {
-  readonly peerId: string;
-  readonly callId: string;
-  readonly medium: 'voice' | 'video';
-}
-
 interface SignedInProps {
   route: MemberRoute;
   providerRoute: ProviderRoute;
@@ -1667,17 +1638,6 @@ interface SignedInProps {
   backToHome: () => void;
   setRoute: (r: MemberRoute) => void;
   setProviderRoute: (r: ProviderRoute) => void;
-  pendingIncoming: PendingIncoming | null;
-  onIncomingHandled: () => void;
-  /** A tapped message notification's peer id, held until `role` resolves. */
-  pendingPeer: string | null;
-  onPeerHandled: () => void;
-  /** V2 entry, held until role resolution confirms the member tree. */
-  pendingV2Peer: {
-    providerId: string;
-    benchmarkReadOnly: boolean;
-  } | null;
-  onV2PeerHandled: () => void;
   onSignedOut: () => void;
   /** Re-checks policy/permission gates the moment provider onboarding
    *  completes, closing the gap the provider-intent boot skip leaves open
@@ -1698,12 +1658,6 @@ function SignedIn({
   backToHome,
   setRoute,
   setProviderRoute,
-  pendingIncoming,
-  onIncomingHandled,
-  pendingPeer,
-  onPeerHandled,
-  pendingV2Peer,
-  onV2PeerHandled,
   onSignedOut,
   onProviderOnboarded,
 }: SignedInProps) {
@@ -1830,22 +1784,13 @@ function SignedIn({
   const homeLayer = useHomeRevealStyle();
 
   /*
-   * The one place a ring becomes a route, whichever of the three announcements
-   * carried it: the Realtime INSERT, the FCM push, or the notification's Answer
-   * intent. One function because the role branch is the thing that drifted —
-   * the deep link only ever knew about the member tree.
-   *
-   * The seen-set is not belt and braces. A call is announced twice by design
-   * (Realtime AND a push), and pushing the route for the second announcement
-   * remounts CallScreen, whose unmount cleanup ends the call that is already up.
+   * The one place a ring becomes a route, applied by the intent queue's applier.
+   * routedCalls dedup is now in intents.ts (module-level, survives role remounts).
+   * Glare (busy-decline, own-dial-race) is also in intents.ts via glareDecision.
+   * nav-migration §3.
    */
-  const routedCallsRef = useRef<Set<string>>(new Set());
   const routeIncomingCall = useCallback(
     (peerId: string, callId: string, medium: 'voice' | 'video') => {
-      if (routedCallsRef.current.has(callId)) {
-        return;
-      }
-      routedCallsRef.current.add(callId);
       if (role === 'provider') {
         pushProvider({ name: 'call', peerId, direction: 'in', callId, medium });
       } else {
@@ -1855,75 +1800,18 @@ function SignedIn({
     [role, pushProvider, pushRoute],
   );
 
-  // A ring, foreground: route the incoming call to the right tree's call screen.
-  // Declared before the early return so the hook order is stable.
+  // Realtime ring: enqueue and let the intent queue apply glare + dedup.
+  // Declared before the early return so hook order is stable.
   const onIncoming = useCallback(
     (incoming: IncomingCall) => {
-      /*
-       * GLARE: a second ring arriving while a call is already on screen.
-       *
-       * This used to route unconditionally, and the consequence was worse than
-       * a missed ring: pushing a call route replaces the live CallScreen, whose
-       * unmount cleanup calls `endCall` on the call in progress. So an incoming
-       * ring **dropped the active paid call** and started ringing the new one.
-       *
-       * the reference app declines the second call outright rather than disturbing the
-       * first (MessagesController.java:20468, "Auto-declining call X because
-       * there's already active one", sending BUSY). Same behaviour here, via
-       * the existing `endCall`: the server derives `declined` for a callee
-       * ending a ringing call (migration 011:1163 — it does not trust a
-       * client-supplied outcome), so the caller learns immediately instead of
-       * ringing out.
-       *
-       * Read through the refs, not `route`/`providerRoute`, so this callback
-       * stays stable across navigations — the same reason `onBack` uses them.
-       *
-       * The callId comparison is what keeps that from eating the CALL ON SCREEN.
-       * This path also receives the ring a push has already routed, and a guard
-       * that only asked "is a call open" declined the open one.
-       */
-      const current =
-        role === 'provider' ? currentProviderRouteRef.current : currentRouteRef.current;
-      if (current.name === 'call') {
-        if (current.callId !== incoming.callId) {
-          /*
-           * M23 (2026-09-17 audit): the screen already on top may be OUR OWN
-           * outgoing attempt to this exact peer, still waiting on `start_call`
-           * (callId null — see CallScreen.tsx's outgoing-call effect). That is
-           * not a second, unrelated call to decline; it is the other half of
-           * a simultaneous-dial race, and `start_call` (migration 120) is
-           * about to tell that screen so via ALREADY_RINGING. Declining here
-           * would end the peer's call before that dialog ever has a chance to
-           * show — this realtime path is typically faster than the RPC
-           * round-trip start_call is itself waiting on.
-           */
-          const currentPeerId =
-            role === 'provider'
-              ? (current as ProviderRoute & { name: 'call' }).peerId
-              : (current as MemberRoute & { name: 'call' }).providerId;
-          const isOwnRaceAgainstSamePeer =
-            current.direction === 'out' &&
-            current.callId === null &&
-            currentPeerId === incoming.callerId;
-          if (!isOwnRaceAgainstSamePeer) {
-            void endCall(incoming.callId);
-          }
-        }
-        return;
-      }
-      /*
-       * The pushed CallStyle notification is cleared as the screen takes the
-       * ring over, which is the only path that ever cleared it before. Not while
-       * backgrounded: there the notification is the ring, and removing it would
-       * leave nothing to answer.
-       * https://developer.android.com/develop/ui/views/notifications/call-style
-       */
-      if (AppState.currentState === 'active') {
-        void clearCall(incoming.callId);
-      }
-      routeIncomingCall(incoming.callerId, incoming.callId, incoming.medium);
+      enqueueIntent({
+        type: 'incomingCall',
+        peerId: incoming.callerId,
+        callId: incoming.callId,
+        medium: incoming.medium,
+      });
     },
-    [role, routeIncomingCall],
+    [],
   );
   useIncomingCalls(selfId, onIncoming);
 
@@ -2004,90 +1892,86 @@ function SignedIn({
   }, []);
 
   /*
-   * A ring that arrived before the role did. `useRole` resolves after the deep
-   * link is consumed on a cold start, so dispatching early would send a
-   * provider's answer into the member tree.
+   * Intent applier: registered once the role is known (isPending === false).
+   * The queue may have held intents while the role was resolving; flush fires
+   * immediately on setIntentApplier. On unmount (sign-out) the applier is
+   * cleared so the queue re-enters the hold state. nav-migration §3.
+   *
+   * The applier routes each intent to the correct tree (member vs. provider),
+   * replacing the three separate pending-state effects that existed before.
+   * chatRequest: closeAllActiveElements is done in intents.ts before the
+   * applier is called, so the applier itself is a no-op — ChatRingScreen
+   * presents itself from the store's incomingRequest field.
    */
+  const intentApplier = useCallback(
+    (intent: import('./src/lib/intents').NavIntent) => {
+      switch (intent.type) {
+        case 'incomingCall':
+          routeIncomingCall(intent.peerId, intent.callId, intent.medium);
+          break;
+        case 'openChat':
+          if (role === 'provider') {
+            pushProvider({ name: 'chat', peerId: intent.peerId });
+          } else {
+            pushRoute({ name: 'chat', providerId: intent.peerId, from: 'home' });
+          }
+          break;
+        case 'openChatV2':
+          /*
+           * Both trees, because V2 serves both sides of a thread and the
+           * provider side is where the shapes differ — no profile card, an
+           * earnings pill instead of a balance, and a peer id
+           * `open_conversation` would reject.
+           */
+          if (role === 'member') {
+            pushRoute({
+              name: 'chatV2',
+              providerId: intent.peerId,
+              benchmarkReadOnly: intent.benchmarkReadOnly,
+            });
+          } else {
+            pushProvider({
+              name: 'chatV2',
+              peerId: intent.peerId,
+              benchmarkReadOnly: intent.benchmarkReadOnly,
+            });
+          }
+          break;
+        case 'chatRequest':
+          // ChatRingScreen renders from the store; no navigation push needed.
+          break;
+      }
+    },
+    [role, routeIncomingCall, pushProvider, pushRoute],
+  );
+
   useEffect(() => {
-    if (pendingIncoming === null || isPending) {
+    if (isPending) {
+      // Role not yet resolved: hold all intents until the role is known.
       return;
     }
-    onIncomingHandled();
-    routeIncomingCall(pendingIncoming.peerId, pendingIncoming.callId, pendingIncoming.medium);
-  }, [pendingIncoming, isPending, onIncomingHandled, routeIncomingCall]);
+    setIntentApplier(intentApplier);
+    return () => setIntentApplier(null);
+  }, [isPending, intentApplier]);
 
   /*
-   * A message notification tapped before the role was known (2026-09-17
-   * audit) — exact mirror of the `pendingIncoming` effect above, and for the
-   * same reason: `companionchat://peer/<id>` does not know which tree it
-   * belongs to, only `role` (resolved here, not in the effect that consumed
-   * the deep link) does. Routed via each tree's own chat destination shape —
-   * `pushProvider({name:'chat', peerId})` is the same call
-   * `onOpenConversation` uses from provider home.
-   */
-  useEffect(() => {
-    if (pendingPeer === null || isPending) {
-      return;
-    }
-    onPeerHandled();
-    if (role === 'provider') {
-      pushProvider({ name: 'chat', peerId: pendingPeer });
-    } else {
-      pushRoute({ name: 'chat', providerId: pendingPeer, from: 'home' });
-    }
-  }, [pendingPeer, isPending, onPeerHandled, role, pushProvider, pushRoute]);
-
-  useEffect(() => {
-    if (pendingV2Peer === null || isPending || role === undefined) {
-      return;
-    }
-    onV2PeerHandled();
-    /*
-     * Both trees, because V2 serves both sides of a thread and the provider
-     * side is where the shapes differ — no profile card, an earnings pill
-     * instead of a balance, and a peer id `open_conversation` would reject.
-     * A link only the member tree honoured left that half unexercised right up
-     * to the cutover.
-     */
-    if (role === 'member') {
-      pushRoute({
-        name: 'chatV2',
-        providerId: pendingV2Peer.providerId,
-        benchmarkReadOnly: pendingV2Peer.benchmarkReadOnly,
-      });
-    } else {
-      pushProvider({
-        name: 'chatV2',
-        peerId: pendingV2Peer.providerId,
-        benchmarkReadOnly: pendingV2Peer.benchmarkReadOnly,
-      });
-    }
-  }, [
-    pendingV2Peer,
-    isPending,
-    onV2PeerHandled,
-    role,
-    pushProvider,
-    pushRoute,
-  ]);
-
-  /*
-   * Foreground pushes. A call rings through the same entry point as a Realtime
-   * ring; a nudge becomes a notice rather than a notification over an app the
-   * person is already looking at.
+   * Foreground pushes. A call enqueues through the intent queue (glare +
+   * dedup handled there); a nudge becomes a notice over an app the person is
+   * already looking at.
    */
   useEffect(
     () =>
       onForegroundPush({
         onCall: push =>
-          routeIncomingCall(
-            push.peerId,
-            push.callId,
-            push.medium === 'video' ? 'video' : 'voice',
-          ),
+          enqueueIntent({
+            type: 'incomingCall',
+            peerId: push.peerId,
+            callId: push.callId,
+            medium: push.medium === 'video' ? 'video' : 'voice',
+          }),
         onEngagement: push => setNotice(push.body || push.title, 'confirm'),
       }),
-    [routeIncomingCall, setNotice],
+    [setNotice],
   );
 
   // No retry handler here on purpose: the profile query owns its own retries, and
