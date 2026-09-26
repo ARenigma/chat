@@ -491,6 +491,8 @@ describe('startup is profiled, not guessed', () => {
     'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/StartupBenchmark.kt';
   const JOURNEY_BENCHMARK =
     'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/CriticalJourneyBenchmark.kt';
+  const FEEL_BENCHMARK =
+    'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/FeelBenchmark.kt';
 
   it('generates a startup profile, not only a baseline profile', () => {
     /*
@@ -575,9 +577,16 @@ describe('startup is profiled, not guessed', () => {
     expect(benchmark).toContain('fun openChatFrames()');
     expect(benchmark).toContain('startupMode = null');
     expect(benchmark).toContain('setupBlock = {');
+    /*
+     * Home is a category pager since 2026-09-27 (owner decision), one list per
+     * page, so the list's testID carries the page's category and the benchmarks
+     * drive the DEFAULT page's list, the one on screen at launch.
+     */
     expect(read('src/screens/HomeScreen.tsx')).toContain(
-      'testID="home-scroll"',
+      'testID={`home-scroll-${category}`}',
     );
+    expect(benchmark).toContain('By.res("home-scroll-listener")');
+    expect(read(FEEL_BENCHMARK)).toContain('requireObject("home-scroll-listener")');
   });
 
   it('keeps the recording module out of the shipped app', () => {

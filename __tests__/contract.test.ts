@@ -6870,11 +6870,19 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
      * inside one. Pinned rather than scrolled away with the content, or the
      * filter control leaves the screen the moment you use the screen.
      */
+    /*
+     * REPINNED 2026-09-27 for the pager (owner decision: Bluesky's mechanics).
+     * The strip is still above everything that scrolls — now above the PAGER,
+     * whose pages each hold a list — rather than above one list's header. And
+     * the rail is split per PAGE: each category's page gets its own rail, so
+     * the filter reads the page's `category` rather than the settled
+     * `exploreCategory`, which no longer filters anything.
+     */
     expect(home.indexOf('testID="explore-tabs"')).toBeLessThan(
-      home.indexOf('ListHeaderComponent={ExploreHeader}'),
+      home.indexOf('<ProviderPager\n'),
     );
     expect(home).toContain(
-      '(categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === exploreCategory',
+      '(categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === category',
     );
     // A peer with no directory row keeps their thread under the default tab: a
     // conversation you have had is not something a filter may hide from you.
@@ -6889,8 +6897,10 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
      * filter has to run INSIDE the sort, or a language match could promote a
      * provider from the other tab into this one's hero.
      */
+    // Per page since 2026-09-27: the same nesting, inside the `pages` memo,
+    // with the page's own `category`.
     expect(home).toMatch(
-      /const directory = useMemo\(\s*\(\) =>\s*sortByLanguageMatch\([\s\S]{0,600}?filterProviders\(allProviders, \{ \.\.\.NO_FILTER, category: exploreCategory \}\)/,
+      /const pages = useMemo\([\s\S]{0,200}?PROVIDER_CATEGORIES\.map\(category => \{\s*const directory = sortByLanguageMatch\([\s\S]{0,600}?filterProviders\(allProviders, \{ \.\.\.NO_FILTER, category \}\)/,
     );
     // Both tabs always render: an empty Astrologers tab is an honest "nobody
     // yet", and hiding it would make the strip appear under a member the day

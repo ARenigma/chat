@@ -58,10 +58,12 @@ class CriticalJourneyBenchmark {
     @Test
     fun homeScrollFrames() =
         measure(
-            requiredObject = By.res("home-scroll"),
+            // Home is a category pager (one list per page); this is the
+            // default page's list, the one on screen at launch.
+            requiredObject = By.res("home-scroll-listener"),
         ) { list ->
             check(list.isScrollable) {
-                "home-scroll is not scrollable; seed a production-sized provider directory"
+                "home-scroll-listener is not scrollable; seed a production-sized provider directory"
             }
             list.setGestureMargin(device.displayWidth / 5)
             list.fling(Direction.DOWN)

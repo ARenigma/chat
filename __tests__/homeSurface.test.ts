@@ -824,69 +824,54 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
     expect(tabs).not.toContain('paddingBottom');
   });
 
-  it('has ONE indicator that moves, not one per tab that switches colour', () => {
+  it('has ONE indicator that the pager moves, not one per tab that switches colour', () => {
     /*
-     * The answer to "is this standard animation?" is yes, and the class that
-     * does it is called `SlidingTabIndicator`. `animateIndicatorToPosition`
-     * (TabLayout.java:3334) — "Animate the position of the indicator from its
-     * current position to a new position. This is typically used when a tab
-     * destination is tapped." — runs a `ValueAnimator` (:3379-3386) and feeds
-     * every frame to `TabIndicatorInterpolator.updateIndicatorForOffset`, which
-     * LERPS THE LEFT AND RIGHT BOUNDS INDEPENDENTLY between the two tabs
-     * (TabIndicatorInterpolator.java). Position and width both animate.
+     * Still one absolutely-positioned bar for the whole strip, never a static
+     * style swap per tab (the original defect was a state change expressed as a
+     * style swap). What moves it CHANGED on 2026-09-27 (owner decision, Amit:
+     * Bluesky's pager mechanics exactly): it was a timed tween toward the tapped
+     * index with TabLayout's elastic edges; it is now Bluesky's TabBar
+     * `indicatorStyle`, a full-width view whose `translateX` and `scaleX` are
+     * interpolated from the pager's drag progress.
      *
-     * So: the two static styles are gone, and what replaced them is one
-     * absolutely-positioned Animated.View whose width and translateX come from a
-     * worklet. Asserted as the ABSENCE of the switch and the PRESENCE of the
-     * animated style, because the defect was that a state change was expressed
-     * as a style swap.
+     * REPINNED, and why each old pin went: `transform: [{ translateX: left }]`
+     * and `width: Math.max(right - left, 0)` described the lerped-edges
+     * indicator; `not.toContain('right:')` asserted the old `left`+`width`
+     * geometry. Bluesky's bar spans the strip (`left: 0, right: 0`) and is
+     * scaled, never resized, so no frame of a drag runs layout. It is square,
+     * so `scaleX` has no radius to smear (animate-expo's reason to prefer
+     * `width` for a pill does not apply).
      */
     expect(home).not.toContain('tabRule');
     expect(home).not.toContain('tabRuleOn');
     expect(home).toContain('style={[styles.tabIndicator, tabIndicatorStyle]}');
     expect(home).toContain('const tabIndicatorStyle = useAnimatedStyle(');
-    // Exactly one indicator view in the strip, whatever the tab count.
-    expect(home.match(/styles\.tabIndicator/g)?.length).toBe(1);
-    const indicator = home.slice(
-      home.indexOf('    tabIndicator: {'),
-      home.length,
-    );
+    expect(home.match(/styles\.tabIndicator\b/g)?.length).toBe(1);
+    const indicator = home.slice(home.indexOf('    tabIndicator: {'), home.length);
     expect(indicator).toContain("position: 'absolute'");
     expect(indicator).toContain('left: 0');
+    expect(indicator).toContain('right: 0');
     expect(indicator).toContain('bottom: 0');
-    // The offset rides on a transform, not on an animated `left`, so a tab
-    // change does not re-run layout for every frame of the move.
     const style = home.slice(
       home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
-      home.length,
+      home.indexOf('  return (', home.indexOf('const tabIndicatorStyle = useAnimatedStyle(')),
     );
-    expect(style).toContain('transform: [{ translateX: left }]');
-    expect(indicator).not.toContain('right:');
+    expect(style).toMatch(
+      /translateX: interpolate\(p, TAB_INDICES, centres, Extrapolation\.CLAMP\)/,
+    );
+    expect(style).toMatch(/scaleX: interpolate\(p, TAB_INDICES, scales, Extrapolation\.CLAMP\)/);
+    // No animated layout property on the bar.
+    expect(style).not.toMatch(/\bwidth:|\bleft:|\bmarginLeft:/);
   });
 
-  it('sizes the indicator to the LABEL, which is the M3 PRIMARY tab rule', () => {
+  it('sizes the indicator to the LABEL, floored at Bluesky\'s 45', () => {
     /*
-     * The one place the two M3 tab flavours disagree, and the source settles it:
-     * `Base.Widget.Material3.TabLayout` (primary) sets
-     * `<item name="tabIndicatorFullWidth">false</item>` while
-     * `Base.Widget.Material3.TabLayout.Secondary` sets it `true`
-     * (material-components-android
-     * lib/java/com/google/android/material/tabs/res/values/styles.xml). With it
-     * false, `calculateIndicatorWidthForTab` returns
-     * `calculateTabViewContentBounds(tab, MIN_INDICATOR_WIDTH)` — the LABEL's
-     * bounds, floored at 24dp — rather than the tab's own left/right
-     * (TabIndicatorInterpolator.java).
-     *
-     * This strip is primary tabs (title-weight labels, no icons, documented as
-     * such at the call site), so THE TAB IS FULL WIDTH AND THE INDICATOR IS NOT.
-     * They are two separate settings in the reference and conflating them is the
-     * easy mistake here — it would have been one line shorter to stretch the bar
-     * across each half.
-     *
-     * The floor is read as a value. It was Material's 24; since ADR-0033
-     * (Amit, 2026-09-26: "just import from bluesky for everything") it is
-     * Bluesky's pager floor, `minIndicatorWidth = 45` (TabBar.tsx:256), and
-     * the label-width rule above is the same in both.
+     * M3 PRIMARY tabs size the indicator to the label (`tabIndicatorFullWidth`
+     * false in `Base.Widget.Material3.TabLayout`), and so does Bluesky: its
+     * `getScaleX` is `min(max(minIndicatorWidth, textWidth), maxIndicatorWidth)
+     * / contentSize` with `minIndicatorWidth = 45` (TabBar.tsx). Here the cap is
+     * the tab's half of the strip, and the divisor is the strip width because
+     * the bar spans it. The tab stays full width; the indicator does not.
      */
     expect(home).toContain('const TAB_INDICATOR_MIN_WIDTH = 45');
     expect(Number(/const TAB_INDICATOR_MIN_WIDTH = (\d+)/.exec(home)?.[1])).toBe(45);
@@ -894,98 +879,185 @@ describe('the type tabs are a Material tab row, division and indicator both', ()
       home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
       home.length,
     );
-    // The label's measured width, floored, is what sets the bar's edges.
-    expect(style).toContain('tabLabelWidths.value');
+    expect(style).toContain('tabLabelWidths.get()');
     expect(style).toContain(
-      'Math.max(widths[index] ?? 0, TAB_INDICATOR_MIN_WIDTH)',
+      'Math.min(Math.max(widths[i] ?? 0, TAB_INDICATOR_MIN_WIDTH), slot) / width',
     );
-    // And the width is animated rather than being a constant dash: the two
-    // labels differ ("Listeners" against "Astrologers"), so even a rigid move
-    // has to resize.
-    expect(style).toContain('width: Math.max(right - left, 0)');
-    // The labels are measured — without this the indicator would silently be
-    // the 24dp floor forever.
-    expect(home).toContain('onTabLabelLayout(index, e.nativeEvent.layout.width)');
+    // The centre of each tab, relative to the full-width bar's own centre.
+    expect(style).toContain('(i + 0.5) * slot - width / 2');
+    // The labels and the strip are measured — without this the indicator
+    // would be stuck on the seeds.
+    expect(home).toContain('onLabelLayout(index, e.nativeEvent.layout.width)');
     expect(home).toContain('onTabStripLayout(e.nativeEvent.layout.width)');
 
-    /*
-     * 2dp and square: Bluesky's pager indicator is a `borderBottomWidth: 2`
-     * line with no radius (TabBar.tsx:370), adopted wholesale under ADR-0033
-     * (Amit, 2026-09-26: "just import from bluesky for everything"). It was
-     * Material's 3dp top-rounded `m3_tabs_rounded_line_indicator`. It still
-     * draws inside the 3dp slot the label padding reserves.
-     */
+    // 2dp and square (Bluesky's `borderBottomWidth: 2`, ADR-0033), inside the
+    // 3dp slot the label padding reserves.
     expect(Number(/const TAB_INDICATOR_HEIGHT = (\d+)/.exec(home)?.[1])).toBe(2);
-    const indicator = home.slice(
-      home.indexOf('    tabIndicator: {'),
-      home.length,
-    );
+    const indicator = home.slice(home.indexOf('    tabIndicator: {'), home.length);
     expect(indicator).toContain('height: TAB_INDICATOR_HEIGHT');
     expect(indicator).not.toMatch(/Radius/);
   });
 
-  it('takes the timing from tokens and the shape from the elastic interpolator', () => {
+  it('has no timing of its own: the page scroll is the only clock', () => {
     /*
-     * Duration: `Base.Widget.Material3.TabLayout` sets
-     * `<item name="tabIndicatorAnimationDuration">?attr/motionDurationLong2</item>`
-     * (the tabs component's res/values/styles.xml), `motionDurationLong2` maps to
-     * `@integer/m3_sys_motion_duration_long2` (theme/res/values/themes_base.xml)
-     * and that integer is 500 (motion/res/values/tokens.xml). `M3.duration.long2`
-     * is 500 — asserted as a value, so this is not the repo grepping its own
-     * comment, and it is the first consumer of a token the map had reserved.
+     * REPLACES "takes the timing from tokens and the shape from the elastic
+     * interpolator". That test pinned a 500ms `withTiming` (M3
+     * `motionDurationLong2`) on M3 standard easing and the sine lead/trail of
+     * `ElasticTabIndicatorInterpolator` — correct for a TAPPED TabLayout with
+     * nothing under it to follow, and the old motion.ts note itself named the
+     * exception: with a pager, TabLayout drives the indicator "from the pager's
+     * own offset instead" (`setIndicatorPositionFromTabPosition`). A tap now
+     * calls `ViewPager2.setCurrentItem(item, true)` and the indicator follows
+     * that scroll. A second, separately-timed tween would lag or lead the page.
      *
-     * Shape: the same style asks for
-     * `<item name="tabIndicatorAnimationMode">elastic</item>`, and
-     * `ElasticTabIndicatorInterpolator` gives the two edges different easings so
-     * the bar stretches across the gap and gathers in on arrival —
-     * `decInterp` = `Math.sin((fraction * Math.PI) / 2.0)` for the edge being
-     * travelled toward, `accInterp` = `1.0 - Math.cos((fraction * Math.PI) /
-     * 2.0)` for the edge being left. Both are exact here; a sine did not have to
-     * be approximated into a bezier. The functions are asserted as CODE, not as
-     * a claim about code, because getting the two the wrong way round inverts the
-     * stretch into a squash and no still frame would show it.
-     *
-     * Easing: the reference's TIME curve is `motionEasingEmphasizedInterpolator`
-     * (TabLayout.java:663-665), and M3's `emphasized` is a two-segment PATH —
-     * `path(M 0,0 C 0.05,0 0.133333,0.06 0.166666,0.4 C 0.208333,0.82 0.25,1
-     * 1,1)` — not a single cubic bezier, so `Easing.bezier` cannot express it and
-     * design/tokens.json carries only its decelerate and accelerate halves.
-     * `M3.easing.standard`, cubic-bezier(0.2, 0, 0, 1), is the closest exact M3
-     * token the map holds. That is a stated departure, and this gate pins it so a
-     * later pass that adds a real `emphasized` token has to come back here.
+     * So the tokens and helpers are gone, and must stay gone: a timer in this
+     * strip would be exactly that second clock.
      */
-    expect(TOKENS.motion.m3.duration.long2).toBe(500);
-    expect(TOKENS.motion.m3.easing.standard).toEqual([0.2, 0, 0, 1]);
-    const tabs = motion.slice(motion.indexOf('export const TAB_INDICATOR'));
-    expect(tabs).toMatch(
-      /TAB_INDICATOR = \{\s*duration: M3\.duration\.long2,\s*easing: M3_STANDARD,\s*reduceMotion: ReduceMotion\.System,/,
+    expect(motion).not.toContain('export const TAB_INDICATOR');
+    expect(motion).not.toContain('tabIndicatorTo');
+    expect(motion).not.toContain('tabIndicatorLead');
+    expect(motion).not.toContain('tabIndicatorTrail');
+    expect(home).not.toMatch(/withTiming|withSpring|withDelay|duration:|easing:/);
+    expect(home).not.toMatch(/\buseEffect\b/);
+  });
+
+  it('crossfades the two registered inks on the drag, never dims the secondary one', () => {
+    /*
+     * Bluesky interpolates each label's OPACITY over [index - 1, index,
+     * index + 1] (0.7 / 1 / 0.7). Amit's inks are text.secondary inactive and
+     * text.primary active (2026-09-26). text.secondary at 0.7 measures under
+     * 4.5:1 in both themes (asserted as values below), so the drag is carried
+     * as a crossfade of the two registered inks on Bluesky's input range:
+     * a text.primary copy over the text.secondary label, opacities 0/1/0 and
+     * 1/0/1. Opacity, because it is Reanimated's synchronous UI-prop path and
+     * text `color` is not.
+     */
+    const label = home.slice(home.indexOf('function TabLabel('), home.indexOf('const makeStyles'));
+    expect(label.match(/\[index - 1, index, index \+ 1\]/g)?.length).toBe(2);
+    expect(label).toContain('[0, 1, 0]');
+    expect(label).toContain('[1, 0, 1]');
+    expect(label).toMatch(/progress\.get\(\)/);
+    expect(label).not.toMatch(/interpolateColor|color:/);
+    // The overlay is decoration for TalkBack, which reads the Pressable's label.
+    expect(label).toContain('importantForAccessibility="no"');
+    expect(label).toContain('styles.tabLabelOn, styles.tabLabelLayer');
+
+    const mix = (fg: string, bg: string, a: number): string =>
+      '#' +
+      [1, 3, 5]
+        .map(i =>
+          Math.round(
+            parseInt(fg.slice(i, i + 2), 16) * a + parseInt(bg.slice(i, i + 2), 16) * (1 - a),
+          )
+            .toString(16)
+            .padStart(2, '0'),
+        )
+        .join('');
+    for (const theme of [LIGHT, DARK]) {
+      const { primary, secondary } = theme.color.text;
+      const base = theme.color.bg.base;
+      // Why Bluesky's literal 0.7 on top of the secondary ink was rejected.
+      expect(contrast(mix(secondary, base, 0.7), base)).toBeLessThan(4.5);
+      // And the crossfade clears the floor on every frame of a drag.
+      for (let step = 0; step <= 20; step++) {
+        const a = step / 20;
+        const composite = mix(primary, mix(secondary, base, 1 - a), a);
+        expect(contrast(composite, base)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+});
+
+describe('the category tabs sit on a native pager, driven on the UI thread', () => {
+  /*
+   * Owner decision (Amit, 2026-09-26/27): switching Listeners / Astrologers
+   * follows Bluesky's mechanics exactly — a horizontal pager you can swipe, the
+   * tab indicator tracking the drag in real time, a tapped tab animating the
+   * page, the label ink following the drag. Bluesky's Pager.tsx is
+   * react-native-pager-view (androidx.viewpager2) with a Reanimated worklet on
+   * its page events.
+   */
+  const pager = withoutComments(read('src/components/ProviderPager.tsx'));
+  const tabs = withoutComments(read('src/components/ProviderTypeTabs.tsx'));
+  const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+  const favourites = withoutComments(read('src/screens/FavouritesScreen.tsx'));
+  const pkg = JSON.parse(read('package.json')) as { dependencies: Record<string, string> };
+
+  it('is react-native-pager-view, pinned to the version Bluesky runs', () => {
+    // Exact, not a range: 8.x/9.x swap ViewPager2 for a Compose pager.
+    expect(pkg.dependencies['react-native-pager-view']).toBe('6.8.0');
+    expect(pager).toContain("import PagerView, { type PagerViewProps } from 'react-native-pager-view'");
+    expect(pager).toContain('Animated.createAnimatedComponent(PagerView)');
+    expect(pager).toContain('offscreenPageLimit={1}');
+  });
+
+  it('is the pager on both screens that carry the tabs', () => {
+    for (const screen of [home, favourites]) {
+      expect(screen).toContain('<ProviderPager\n');
+      expect(screen).toContain('dragProgress={categoryProgress}');
+      expect(screen).toContain('progress={categoryProgress}');
+      expect(screen).toContain('onSelect={selectCategory}');
+      expect(screen).toContain('PROVIDER_CATEGORIES.map(');
+    }
+    // One list per page, each with its own testID.
+    expect(home).toContain('testID={`home-scroll-${category}`}');
+    expect(favourites).toContain('testID={`favourites-scroll-${category}`}');
+    // Search is its own surface: the pager lives in the directory layer only.
+    const directoryLayer = home.slice(home.indexOf('key="directory"'), home.indexOf('</ProviderPager>'));
+    expect(directoryLayer).toContain('<ProviderPager\n');
+    const searchLayer = home.slice(home.indexOf('key="search-results"'), home.indexOf('key="directory"'));
+    expect(searchLayer).not.toContain('ProviderPager');
+  });
+
+  it('writes the drag progress on the UI thread, from position + offset', () => {
+    const worklet = pager.slice(pager.indexOf('useEvent<PagerEvent>('), pager.indexOf("['onPageScroll', 'onPageSelected']"));
+    expect(worklet).toContain("'worklet'");
+    expect(worklet).toContain("event.eventName.endsWith('onPageScroll')");
+    expect(worklet).toContain('dragProgress.set((event.offset ?? 0) + (event.position ?? 0))');
+  });
+
+  it('reads that progress in the indicator and labels, and only in worklets', () => {
+    const indicator = tabs.slice(
+      tabs.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
+      tabs.indexOf('  return (', tabs.indexOf('const tabIndicatorStyle = useAnimatedStyle(')),
     );
-    expect(motion).toMatch(
-      /const M3_STANDARD = Easing\.bezier\(\s*M3\.easing\.standard\[0\]/,
+    expect(indicator).toContain('const p = progress.get()');
+    // Every read of `progress` is inside a `useAnimatedStyle`.
+    const reads = tabs.match(/progress\.get\(\)/g)?.length ?? 0;
+    expect(reads).toBe(3);
+    expect(tabs.match(/useAnimatedStyle\(/g)?.length).toBe(3);
+  });
+
+  it('crosses to the JS thread once per page change, never per scroll frame', () => {
+    const worklet = pager.slice(pager.indexOf('useEvent<PagerEvent>('), pager.indexOf("['onPageScroll', 'onPageSelected']"));
+    const scrollBranch = worklet.slice(
+      worklet.indexOf("endsWith('onPageScroll')"),
+      worklet.indexOf("endsWith('onPageSelected')"),
     );
-    expect(tabs).toContain('return withTiming(index, TAB_INDICATOR)');
-    expect(tabs).toMatch(
-      /export function tabIndicatorLead[\s\S]*?return Math\.sin\(\(fraction \* Math\.PI\) \/ 2\);/,
+    const selectedBranch = worklet.slice(worklet.indexOf("endsWith('onPageSelected')"));
+    expect(scrollBranch).not.toContain('scheduleOnRN');
+    expect(selectedBranch).toContain('scheduleOnRN(notifySelected');
+    expect(pager.match(/scheduleOnRN\(/g)?.length).toBe(1);
+    // Built once; the JS callback behind it is a stable identity.
+    expect(pager).not.toMatch(/useEvent<PagerEvent>\([\s\S]*?\],\s*true\s*\)/);
+    // No React state in the strip or the pager, and no JS scroll handler.
+    for (const source of [tabs, pager]) {
+      expect(source).not.toMatch(/useState|setState/);
+    }
+    for (const screen of [home, favourites]) {
+      expect(screen).not.toMatch(/onPageScroll=/);
+    }
+  });
+
+  it('taps the pager rather than the category, and jumps under reduced motion', () => {
+    // Bluesky's onTabBarSelect → pagerView.setPage(index).
+    expect(home).toContain('pagerRef.current.setPage(index)');
+    expect(favourites).toContain('pagerRef.current?.setPage(PROVIDER_CATEGORIES.indexOf(c))');
+    // ViewPager2.setCurrentItem(item, false) under "Remove animations".
+    expect(pager).toContain('const reducedMotion = useReducedMotion()');
+    expect(pager).toMatch(
+      /if \(reducedMotion\) \{\s*pagerView\.current\?\.setPageWithoutAnimation\(index\);\s*\} else \{\s*pagerView\.current\?\.setPage\(index\);/,
     );
-    expect(tabs).toMatch(
-      /export function tabIndicatorTrail[\s\S]*?return 1 - Math\.cos\(\(fraction \* Math\.PI\) \/ 2\);/,
-    );
-    // The leading edge is the one being travelled toward, in BOTH directions.
-    const style = home.slice(
-      home.indexOf('const tabIndicatorStyle = useAnimatedStyle('),
-      home.length,
-    );
-    expect(style).toContain('const movingRight = to.left > from.left');
-    expect(style).toMatch(
-      /leftFraction = movingRight\s*\?\s*tabIndicatorTrail\(fraction\)\s*:\s*tabIndicatorLead\(fraction\)/,
-    );
-    expect(style).toMatch(
-      /rightFraction = movingRight\s*\?\s*tabIndicatorLead\(fraction\)\s*:\s*tabIndicatorTrail\(fraction\)/,
-    );
-    // No hand-written duration or curve at the call site: HomeScreen holds the
-    // geometry, motion.ts holds every number that is about time.
-    expect(style).not.toMatch(/duration:|easing:|withTiming|withSpring/);
-    expect(home).toContain('tabSlide.value = tabIndicatorTo(tabIndex)');
   });
 });
 

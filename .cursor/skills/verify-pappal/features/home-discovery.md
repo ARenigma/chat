@@ -24,7 +24,7 @@ npm run control -- snapshot --out artifacts/verification/home.xml
 ```
 
 Use `scripts/v2-device-gates.mjs --serial <serial> --provider <uuid>` for the
-geometry/inset contract. Stable IDs include `home-scroll`, `search-filters`,
+geometry/inset contract. Stable IDs include `home-scroll-listener` / `home-scroll-astrologer` (one list per pager page), `home-pager`, `explore-tabs-listener` / `explore-tabs-astrologer`, `search-filters`,
 `chats-see-all`, `detail-favorite`, `hero-pager`, and `favourites`.
 
 Proof is the selected filter/provider reflected in the visible results and the
