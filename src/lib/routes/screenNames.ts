@@ -35,6 +35,7 @@ export const LEGACY_KIND: Record<string, LegacyKind> = {
   Call: 'call',
   Blocked: 'blocked',
   Usage: 'usage',
+  StoryViewer: 'storyViewer',
 
   // Member-only pushed screens
   ChatsList: 'chatsList',
@@ -51,6 +52,7 @@ export const LEGACY_KIND: Record<string, LegacyKind> = {
   // Provider-only pushed screens
   ChatRequest: 'chatRequest',
   Payout: 'payout',
+  StoryCreate: 'storyCreate',
 
   // Tab keys (bottom-tabs reports these as the focused route while at root)
   HomeTab: 'home',

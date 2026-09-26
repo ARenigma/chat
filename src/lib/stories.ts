@@ -357,6 +357,18 @@ export function canComment(viewerId: string | undefined, story: Pick<Story, 'pro
   return viewerId !== undefined && viewerId !== story.provider_id;
 }
 
+/** "now", "12m", "3h": how long ago a story went up. Stories live 24h, so never days. */
+export function storyAge(createdAt: string, nowMs: number): string {
+  const minutes = Math.max(0, Math.floor((nowMs - Date.parse(createdAt)) / 60_000));
+  if (minutes < 1) {
+    return 'now';
+  }
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  return `${Math.min(23, Math.floor(minutes / 60))}h`;
+}
+
 /** Whether the viewer is the story's provider: delete, insights and comment hearts. */
 export function isOwnStory(viewerId: string | undefined, story: Pick<Story, 'provider_id'>): boolean {
   return viewerId !== undefined && viewerId === story.provider_id;

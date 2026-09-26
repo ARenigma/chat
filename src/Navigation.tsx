@@ -118,6 +118,8 @@ import {
   SavedRoute,
 } from './screens/routes/ProviderRoutes';
 import { SignedInActionsContext, type SignedInActions } from './screens/routes/signedIn';
+import { StoryCreateRoute, StoryViewerRoute } from './screens/routes/StoryRoutes';
+import { STORY_BASE } from './screens/StoryViewerScreen';
 import { BottomBar, MEMBER_TABS, PROVIDER_TABS } from './shell/bottom-bar/BottomBar';
 import { MemberShell, ProviderShell } from './shell';
 import { useStore } from './store/useStore';
@@ -169,6 +171,18 @@ function stackOptions(background: string, reduced: boolean): NativeStackNavigati
 /** The Call surface is dark in both themes: its push never flashes the theme background. */
 const CALL_OPTIONS: NativeStackNavigationOptions = { contentStyle: { backgroundColor: CALL_BASE } };
 
+/**
+ * The story viewer: a full-screen push on black, faded in both motion modes.
+ * A fade, not the platform slide: stories open from a face in a rail, and a
+ * sideways slide would say "a page to the right" where the viewer is a layer
+ * over this one (spatial consistency, animate-expo step 2). A fade is also
+ * already what reduced motion asks for, so one option serves both.
+ */
+const STORY_VIEWER_OPTIONS: NativeStackNavigationOptions = {
+  animation: 'fade',
+  contentStyle: { backgroundColor: STORY_BASE },
+};
+
 /** The two tall native sheets (owner 2026-09-26; see the header's REVERSAL). */
 function sheetOptions(background: string): NativeStackNavigationOptions {
   return {
@@ -204,6 +218,7 @@ function memberScreens(Stack: typeof HomeStack, background: string) {
       <Stack.Screen name="Invoices" getComponent={() => InvoicesRoute} />
       <Stack.Screen name="Transactions" getComponent={() => TransactionsRoute} />
       <Stack.Screen name="HomeSuggestion" getComponent={() => HomeSuggestionRoute} />
+      <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
     </>
   );
 }
@@ -219,6 +234,8 @@ function providerScreens(Stack: typeof ChatsStack) {
       <Stack.Screen name="Payout" getComponent={() => PayoutRoute} />
       <Stack.Screen name="Blocked" getComponent={() => BlockedRoute} />
       <Stack.Screen name="Usage" getComponent={() => UsageRoute} />
+      <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
+      <Stack.Screen name="StoryCreate" getComponent={() => StoryCreateRoute} />
     </>
   );
 }
@@ -504,7 +521,7 @@ export function RoutesContainer({ role, actions, initialState, onStateChange }: 
 }
 
 /** Routes that are never restored: a call, a ring and a prompt are moments, not places. */
-const NEVER_RESTORED: ReadonlySet<string> = new Set(['Call', 'ChatRequest', 'HomeSuggestion']);
+const NEVER_RESTORED: ReadonlySet<string> = new Set(['Call', 'ChatRequest', 'HomeSuggestion', 'StoryViewer', 'StoryCreate']);
 
 /**
  * A saved state with the moments stripped out (nav-migration §3, re-gate

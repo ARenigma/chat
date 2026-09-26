@@ -32,6 +32,12 @@ type CommonParams = {
   };
   Blocked: undefined;
   Usage: undefined;
+  /**
+   * Full-screen stories, both trees: a member plays listed providers' stories
+   * in rail order; a provider plays their own. The order is fixed at open
+   * (ids, not rows, so the params stay serialisable).
+   */
+  StoryViewer: { providerIds: string[]; startProviderId: string };
 };
 
 export type MemberScreenParams = CommonParams & {
@@ -49,6 +55,8 @@ export type MemberScreenParams = CommonParams & {
 export type ProviderScreenParams = CommonParams & {
   ChatRequest: { requestId: string };
   Payout: undefined;
+  /** Pick, preview, caption, post. Provider tree only: members never post. */
+  StoryCreate: undefined;
 };
 
 export type MemberTabParams = {

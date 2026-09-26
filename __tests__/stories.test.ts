@@ -13,6 +13,7 @@ import {
   storyExtForMime,
   storyMediaPath,
   storyMimeForPath,
+  storyAge,
   storyNotice,
   viewerReducer,
   type StoryDraft,
@@ -218,5 +219,14 @@ describe('who may do what', () => {
     expect(storyNotice('STORIES_DISABLED')).toMatch(/paused/);
     expect(storyNotice('TOO_LONG')).toMatch(/30 seconds/);
     expect(storyNotice('nonsense')).toBe(storyNotice('BAD_REQUEST'));
+  });
+});
+
+describe('the posted-at stamp', () => {
+  it('reads now, minutes, then hours, never days', () => {
+    expect(storyAge(new Date(NOW - 20_000).toISOString(), NOW)).toBe('now');
+    expect(storyAge(new Date(NOW - 12 * 60_000).toISOString(), NOW)).toBe('12m');
+    expect(storyAge(new Date(NOW - 3 * 3600_000).toISOString(), NOW)).toBe('3h');
+    expect(storyAge(new Date(NOW - 30 * 3600_000).toISOString(), NOW)).toBe('23h');
   });
 });

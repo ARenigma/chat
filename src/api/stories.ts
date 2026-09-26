@@ -173,8 +173,19 @@ export async function postStoryComment(
   return data as PostStoryCommentResult;
 }
 
-export async function deleteStoryComment(commentId: string): Promise<{ success: boolean; error?: string }> {
-  const { data, error } = await supabase.rpc('delete_story_comment', { p_comment_id: commentId });
+/**
+ * The author removes their own; the provider removes one on their story, and
+ * with a reason the report is filed first in the same transaction (150).
+ */
+export async function deleteStoryComment(
+  commentId: string,
+  report?: { reason: ReportReason; reportId: string },
+): Promise<{ success: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc('delete_story_comment', {
+    p_comment_id: commentId,
+    p_report_reason: report?.reason ?? null,
+    p_report_id: report?.reportId ?? null,
+  });
   if (error) {
     return { success: false, error: 'BAD_REQUEST' };
   }
@@ -365,7 +376,12 @@ export function useSeenStoryIds(enabled = true) {
   });
 }
 
-/** The signed URL, re-minted a little before it lapses. */
+/**
+ * The signed URL. A mount after 40s mints a new one (the signature lasts 60);
+ * a mounted story keeps its URL, with no refetch on focus, because a new URL
+ * under a playing clip would restart it. A 30s MP4 is buffered long before
+ * its signature lapses.
+ */
 export function useStoryMedia(storyId: string | undefined) {
   return useQuery<StoryMediaUrl>({
     queryKey: storyKeys.media(storyId ?? ''),
@@ -373,6 +389,7 @@ export function useStoryMedia(storyId: string | undefined) {
     enabled: storyId !== undefined,
     staleTime: 40_000,
     gcTime: 50_000,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 }
@@ -449,7 +466,8 @@ export function useDeleteStoryComment(storyId: string | undefined) {
   const qc = useQueryClient();
   const setNotice = useStore(s => s.setNotice);
   return useMutation({
-    mutationFn: deleteStoryComment,
+    mutationFn: ({ commentId, report }: { commentId: string; report?: { reason: ReportReason; reportId: string } }) =>
+      deleteStoryComment(commentId, report),
     onSuccess: result => {
       if (!result.success) {
         setNotice(storyRefusalLine(result));

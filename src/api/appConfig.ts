@@ -86,6 +86,12 @@ export interface KillSwitchesConfig {
    * published before 157 does not carry it.
    */
   contact_guard_mode?: ContactGuardMode;
+  /**
+   * Stories (143): off stops adding stories, comments and reactions; viewing
+   * and deleting continue. Optional: a payload published before 143 does not
+   * carry it, and absent means on, as `stories_enabled()` reads it.
+   */
+  stories_enabled?: boolean;
 }
 
 export interface ReportTaxonomyConfig {
