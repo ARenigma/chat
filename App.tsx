@@ -2152,10 +2152,6 @@ function SignedIn({
           a sideways jump. */}
       <TabLayer active={route.name === 'settings'} style={styles.tabLayer}>
         <SettingsSheet
-          onBack={backToHome}
-          // A fixed bottom-nav tab on the member tree: the Home tab is the way
-          // back, so no app-bar back action (WhatsApp's model).
-          showBack={false}
           onDeleted={() => {
             backToHome();
             onSignedOut();

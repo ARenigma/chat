@@ -200,7 +200,7 @@ describe('the bright accent carries no label', () => {
       why: "the provider's primary call action, 12dp Bold beside a 22dp glyph",
     },
     {
-      file: 'src/screens/ProviderHomeScreen.tsx',
+      file: 'src/screens/ProviderYouScreen.tsx',
       fill: 'earnCard',
       label: 'earnLabel',
       why: 'the provider earnings card, which carries three labels at once',
@@ -252,7 +252,7 @@ describe('the bright accent carries no label', () => {
      * four of the first five wrong while the fifth was being fixed, and this one
      * is on a screen the same change set is already editing.
      */
-    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
+    const home = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
     const block = styleBlock(home, 'photoBadge');
     expect(block).toContain('bg.accentStrong');
     expect(block).not.toMatch(/bg\.accent(?!Strong|Tint)/);
@@ -283,7 +283,7 @@ describe('the bright accent carries no label', () => {
      * one label on this card whose floor an alpha could plausibly be argued back
      * onto, so it is pinned with its siblings.
      */
-    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
+    const home = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
     for (const style of ['earnLabel', 'earnValue', 'earnSub']) {
       const block = styleBlock(home, style);
       expect(block).toMatch(/text\.onAccent/);
@@ -336,7 +336,7 @@ describe('the bright accent carries no label', () => {
      * Both glyphs move with the label or they would be white on white in light
      * mode, which is the same class of mistake as the one being fixed.
      */
-    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
+    const home = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
     const row = styleBlock(home, 'payoutRow');
     expect(row).toContain('bg.base');
     expect(row).not.toMatch(/bg\.accent/);

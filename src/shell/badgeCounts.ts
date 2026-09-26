@@ -23,7 +23,7 @@ export function totalUnread(threads: Threads): number {
 /**
  * Provider Chats: people waiting, i.e. WORK threads (I am not the member) with
  * anything unread. Their own member-side threads are not somebody waiting on
- * them (ProviderHomeScreen's `waiting`, which step 6 moves onto this).
+ * them (the provider Chats badge; ProviderHomeScreen reads it since step 6).
  */
 export function waitingCount(threads: Threads): number {
   return (threads ?? []).filter(

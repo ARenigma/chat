@@ -1044,7 +1044,7 @@ describe('review collection remains deferred', () => {
   });
 
   it('keeps the provider work list to actual work', () => {
-    const home = read('src/screens/ProviderHomeScreen.tsx');
+    const home = read('src/screens/ProviderChatsScreen.tsx');
     expect(home).toContain('!t.i_am_member');
     // ...while still letting them open the threads they are the member of,
     // because role picks the whole navigation tree and nothing else would.
@@ -3151,7 +3151,7 @@ describe('voice notes are recorded, uploaded and sent through the one send path'
     // Ephemeral inbox rows expose a kind label without any message body.
     // InboxScreen.tsx dropped: v13 HomeScreen shows a horizontal avatar rail with no
     // thread-preview body, so last_kind is not read there.
-    for (const screen of ['src/screens/ProviderHomeScreen.tsx']) {
+    for (const screen of ['src/screens/ProviderChatsScreen.tsx']) {
       expect(read(screen)).toContain("last_preview_kind === 'voice'");
     }
   });
@@ -3582,7 +3582,10 @@ describe('the app speaks one date language', () => {
     // a month-old thread read as '31d'.
     // InboxScreen.tsx dropped: v13 HomeScreen renders no timestamps (avatar rail only),
     // so it is out of scope for the listStamp / ago() consolidation check.
-    for (const file of ['src/screens/ProviderHomeScreen.tsx']) {
+    for (const file of [
+      'src/screens/ProviderChatsScreen.tsx',
+      'src/screens/ProviderSavedScreen.tsx',
+    ]) {
       const source = withoutComments(read(file));
       expect(source).not.toMatch(/function ago\(/);
       expect(source).toContain('listStamp(');
@@ -4252,7 +4255,9 @@ describe('no screen reads a listing switch as a presence dot', () => {
     // the dot cannot be drawn from a raw column because the header never sees
     // one.
     'src/chat-v2/useChatV2Controller.ts',
-    'src/screens/ProviderHomeScreen.tsx',
+    // The provider inbox, split in navigation step 6: both lists draw the dot.
+    'src/screens/ProviderChatsScreen.tsx',
+    'src/screens/ProviderSavedScreen.tsx',
   ];
 
   it.each(sites)('derives the dot in %s from readPresence', file => {
@@ -4481,10 +4486,21 @@ describe('availability is the one control, and presence is gone', () => {
   it('stops the availability card claiming presence or the word hidden', () => {
     // Two controls saying 'hidden' and meaning different things is how somebody
     // ends up unreachable while believing they are only invisible.
-    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
-    expect(home).not.toContain('You are hidden.');
-    expect(home).not.toContain('Available Now');
-    expect(home).toContain('Open to New Conversations');
+    // The vocabulary lives in one module since the provider split; both
+    // switches (Chats header, You card) read it and neither spells its own.
+    const vocab = withoutComments(read('src/lib/providerAvailability.ts'));
+    expect(vocab).not.toContain('You are hidden.');
+    expect(vocab).not.toContain('Available Now');
+    expect(vocab).toContain('Open to New Conversations');
+    for (const file of [
+      'src/screens/ProviderChatsScreen.tsx',
+      'src/screens/ProviderYouScreen.tsx',
+    ]) {
+      const screen = withoutComments(read(file));
+      expect(screen).toContain('AVAILABILITY[available');
+      expect(screen).not.toContain('You are hidden.');
+      expect(screen).not.toContain('Available Now');
+    }
   });
 
   it('SettingsSheet legal URLs come from legalUrl, not hard-coded strings', () => {
@@ -6721,7 +6737,7 @@ describe('a provider offers the channels they choose, and at least one — invoi
   });
 
   it('gives the provider the switches next to the availability switch', () => {
-    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
+    const home = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
     expect(home).toContain('testID="provider-channels"');
     for (const key of ['chat_enabled', 'audio_enabled', 'video_enabled']) {
       expect(home).toContain(`testID={\`channel-toggle-\${row.key}\`}`);
@@ -8206,7 +8222,8 @@ describe('rename chat — private per-user conversation labels', () => {
   it('both inboxes show the private label over the peer name', () => {
     for (const file of [
       'src/screens/ChatsListScreen.tsx',
-      'src/screens/ProviderHomeScreen.tsx',
+      'src/screens/ProviderChatsScreen.tsx',
+      'src/screens/ProviderSavedScreen.tsx',
     ]) {
       const src = read(file);
       expect(src).toContain('useConversationLabels');
@@ -8957,5 +8974,47 @@ describe('nav route-library dependency contracts', () => {
     const licenses = read('THIRD_PARTY_LICENSES.md');
     expect(licenses).toMatch(/bluesky-social\/social-app/i);
     expect(licenses).toContain('f80c43eabe3dfbe0fa3f111f361f48ebfa0fa8ab');
+  });
+});
+
+/**
+ * Navigation step 6: screen preparation in the old tree.
+ *
+ * Each screen the navigator will register (step 7) is shaped as a route screen
+ * first, while the old tree still hosts it, so the switch commit only moves
+ * mounts. These pins hold the seams that step 7 relies on.
+ */
+describe('navigation step 6: provider split', () => {
+  it('composes the three provider tabs behind one push gate', () => {
+    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
+    for (const screen of ['ProviderChatsScreen', 'ProviderSavedScreen', 'ProviderYouScreen']) {
+      expect(home).toMatch(new RegExp(`<${screen}[\\s/>]`));
+    }
+    expect(home).toContain('<ProviderPushGateProvider>');
+    expect(home).toContain('<ProviderPushGate />');
+    // The badge reads the shell's reducer, not a second copy of it.
+    expect(home).toContain('useProviderWaitingCount()');
+    // Nothing tab-specific is left in the host.
+    expect(home).not.toMatch(/useSetAvailability|useProviderPhotos|<SettingsSheet|<FlashList/);
+  });
+
+  it('keeps the photo-remove confirmation with the only thing that opens it', () => {
+    const you = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
+    expect(you).toContain('testID="photo-remove-confirm"');
+    expect(you).toContain('setPendingDelete(p)');
+    // You passes the settings scroll its foot offset; the mode flags are gone.
+    expect(you).toMatch(/<SettingsSheet\s+bottomOffset=\{bottomOffset\}/);
+  });
+
+  it('holds both availability switches on one in-flight write', () => {
+    expect(read('src/api/provider.ts')).toContain('mutationKey: SET_AVAILABILITY_KEY');
+    expect(read('src/lib/providerAvailability.ts')).toContain(
+      'useIsMutating({ mutationKey: SET_AVAILABILITY_KEY })',
+    );
+    for (const file of ['src/screens/ProviderChatsScreen.tsx', 'src/screens/ProviderYouScreen.tsx']) {
+      const src = withoutComments(read(file));
+      expect(src).toContain('useAvailabilityToggle()');
+      expect(src).not.toContain('setAvailability.isPending');
+    }
   });
 });

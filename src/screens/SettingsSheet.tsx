@@ -16,7 +16,6 @@ import { Button } from '../components/Button';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
-import { TopAppBar } from '../components/TopAppBar';
 import { TabTopBar } from '../components/TabTopBar';
 import { Divider } from '../components/Divider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -35,15 +34,6 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
 
 interface Props {
-  /** Back to the tree's home. Settings is a mounted screen, not a sheet. */
-  onBack: () => void;
-  /**
-   * Whether to draw a back action in the header. False on the member tree, where
-   * Settings is a fixed bottom-nav tab (the Home tab is the way back, like
-   * WhatsApp); true on the provider tree, which has no bottom nav. Hardware back
-   * pops it either way.
-   */
-  showBack?: boolean;
   onDeleted: () => void;
   onSignedOut: () => void;
   /** Absent on the provider tree, a provider does not apply again. */
@@ -71,12 +61,16 @@ interface Props {
    */
   topSection?: React.ReactNode;
   /**
-   * Docked inside another screen's own bottom nav (the provider "You" tab) rather
-   * than the member tree's overlay toolbar. The host nav already reserves the
-   * bottom safe-area inset, so the scroll clears itself with plain breathing room
-   * instead of the toolbar's height. Ignored when `showBack` is true.
+   * What the scroll clears at its foot, chosen by the host rather than by a
+   * mode flag. The provider You tab passes it (its own bottom nav already owns
+   * the safe-area inset, so plain breathing room); the member tree passes
+   * nothing and gets the overlay toolbar's exact height.
+   *
+   * Replaced `showBack`/`embedded` in navigation step 6. Settings is a tab root
+   * on both trees, so the pushed "back arrow over the cover" case had no caller
+   * left, and one number is all the two remaining cases differ by.
    */
-  embedded?: boolean;
+  bottomOffset?: number;
 }
 
 /**
@@ -166,8 +160,6 @@ function SettingsRowContent({
  * should be.
  */
 export function SettingsSheet({
-  onBack,
-  showBack = true,
   onDeleted,
   onSignedOut,
   onBlocked,
@@ -175,7 +167,7 @@ export function SettingsSheet({
   onInvoices,
   onUsage,
   topSection,
-  embedded = false,
+  bottomOffset,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -330,81 +322,41 @@ export function SettingsSheet({
        * pappal to fav to settings but weight of fav and setting should be
        * regular not bold like brand"). No type tabs — Settings has no
        * Listener/Astrologer split — and no back arrow, because this is a tab's
-       * first screen. `showBack` is the PUSHED case (the provider tree), which
-       * keeps the cover's own back button below instead.
+       * first screen on both trees.
        */}
-      {showBack ? null : (
-        <TabTopBar
-          title="Settings"
-          searching={searching}
-          onSearchOpen={() => setSearching(true)}
-          onSearchClose={() => {
-            setQuery('');
-            setSearching(false);
-          }}
-          query={query}
-          onQueryChange={setQuery}
-          searchPlaceholder="Search settings"
-          testID="settings"
-        />
-      )}
+    <TabTopBar
+        title="Settings"
+        searching={searching}
+        onSearchOpen={() => setSearching(true)}
+        onSearchClose={() => {
+          setQuery('');
+          setSearching(false);
+        }}
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder="Search settings"
+        testID="settings"
+      />
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         {...SCROLL_PHYSICS}
         contentContainerStyle={[
           styles.scroll,
-          // Clear the frosted bottom nav on the member tree (its exact height, so
-          // content scrolls under the glass and clears it), or just the safe inset
-          // on the provider tree, which has no nav.
+          // The host's offset when it gives one (the provider You tab, whose
+          // own nav owns the inset), else the member's overlay toolbar: its
+          // exact height, so content scrolls under the glass and clears it.
           {
-            // Three cases: pushed (its own screen, just clear the gesture nav),
-            // embedded in a host tab whose bottom nav already owns the inset
-            // (plain breathing room), or the member's overlay toolbar (clear its
-            // exact height so content scrolls under the glass).
-            paddingBottom: embedded
-              ? TOKENS.space['3xl']
-              : insets.bottom +
-                (showBack
-                  ? TOKENS.space['3xl']
-                  : NAV_BAR_HEIGHT + TOKENS.space.md),
+            paddingBottom:
+              bottomOffset ?? insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.md,
           },
         ]}
       >
-        {/* WhatsApp's profile-shortcut variant puts a compact app bar over the
-            cover. This back action is intentional even on the member tree: the
-            user selected that variant after the first profile-first pass.
-            https://developer.android.com/develop/ui/compose/components/app-bars */}
         {needle !== '' ? null : (
           <View style={styles.profileHero}>
             {/* No cover image any more (Amit, on device: the WhatsApp half-doodle
               cover was dated). A calm centred-avatar header instead — the pattern
               the reference app / iOS Settings / Notion use: the identity sits on the page
-              itself, not on a wallpaper band. The back action, on the PUSHED case
-              only, is a plain top app bar above it rather than an arrow floating
-              on a cover. */}
-            {showBack ? (
-              <View style={{ paddingTop: insets.top }}>
-                <TopAppBar
-                  title=""
-                  transparent
-                  testID="settings-app-bar"
-                  leading={
-                    <Pressable
-                      onPress={onBack}
-                      testID="settings-back"
-                      accessibilityLabel="Back"
-                      press="none"
-                      highlight="dim"
-                      size={48}
-                      shape="circle"
-                      style={styles.backButton}
-                    >
-                      <Icon name="back" size={TOKENS.icon.md} />
-                    </Pressable>
-                  }
-                />
-              </View>
-            ) : null}
+              itself, not on a wallpaper band. */}
             <View style={styles.profileIdentity}>
               {/* Both roles can now change their photo (Amit, 2026-09-02): tap the
                 avatar to open the photo sheet rather than launching the picker
@@ -892,12 +844,6 @@ const makeStyles = (t: Theme) =>
     root: {
       flex: 1,
       backgroundColor: t.color.bg.base,
-    },
-    backButton: {
-      width: 48,
-      height: 48,
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     scroll: {
       paddingHorizontal: TOKENS.space.xl,

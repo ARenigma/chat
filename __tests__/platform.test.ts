@@ -1053,13 +1053,16 @@ describe('device coverage matrix', () => {
     expect(settings).toContain('profileMetaText');
 
     // Coverless centred-avatar header (Amit, on device: the WhatsApp half-doodle
-    // cover was dated). No ChatWallpaper band; the identity sits on the page. The
-    // pushed case still gets a compact transparent M3 bar with a real 48dp Back.
-    expect(settings).toContain('<TopAppBar');
-    expect(settings).toContain('title=""');
-    expect(settings).toContain('transparent');
-    expect(settings).toContain('testID="settings-back"');
-    expect(settings).toContain('size={48}');
+    // cover was dated). No ChatWallpaper band; the identity sits on the page.
+    // INVERTED in navigation step 6: the pushed case (a transparent bar with a
+    // 48dp Back over the hero) had no caller left once the provider You tab
+    // stopped passing `showBack`. Settings is a tab root on both trees, and
+    // under the navigator Up is the stack's own header, never a second arrow.
+    expect(settings).not.toContain('<TopAppBar');
+    expect(settings).not.toContain('testID="settings-back"');
+    // Props, not prose: the file's own tombstone names what left.
+    expect(settings).not.toMatch(/showBack[?]?:|embedded[?]?:|showBack=|embedded=/);
+    expect(settings).toContain('bottomOffset ??');
     expect(settings).not.toContain('<ChatWallpaper />');
   });
 

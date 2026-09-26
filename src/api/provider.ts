@@ -361,11 +361,21 @@ export function useSetProviderExpertise() {
  * the Notify route, on is online offering the channels in `useSetChannels`. See
  * src/lib/presence.ts for why collapsing the two is not the overload 012 fixed.
  */
+/**
+ * Keyed so `useIsMutating` can see a write in flight from EITHER availability
+ * switch. Since the provider split the Chats header and the You card each hold
+ * their own `useSetAvailability()` observer, and a switch that stays enabled
+ * while the other screen's write is pending is a double write the single
+ * instance used to prevent.
+ */
+export const SET_AVAILABILITY_KEY = ['setAvailability'] as const;
+
 export function useSetAvailability() {
   const queryClient = useQueryClient();
   const setNotice = useStore(s => s.setNotice);
 
   return useMutation<void, Error, boolean>({
+    mutationKey: SET_AVAILABILITY_KEY,
     mutationFn: async available => {
       const { data } = await supabase.auth.getUser();
       const me = data.user?.id;

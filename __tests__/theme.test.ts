@@ -1368,7 +1368,11 @@ describe('spacing lives in tokens', () => {
     'src/components/VoiceNote.tsx': ['paddingVertical: 1'],
     'src/screens/HomeScreen.tsx': ['padding: 3'],
     'src/screens/PolicyGateScreen.tsx': ['gap: 6'],
-    'src/screens/ProviderHomeScreen.tsx': ['gap: 3', 'paddingHorizontal: 5'],
+    // The provider inbox row (rowBody gap 3, unread pill 5) is on both lists
+    // since the step-6 split; the host keeps the tab badge's 5.
+    'src/screens/ProviderChatsScreen.tsx': ['gap: 3', 'paddingHorizontal: 5'],
+    'src/screens/ProviderHomeScreen.tsx': ['paddingHorizontal: 5'],
+    'src/screens/ProviderSavedScreen.tsx': ['gap: 3', 'paddingHorizontal: 5'],
     'src/screens/RechargeScreen.tsx': ['paddingVertical: 3'],
   };
 
@@ -2222,8 +2226,16 @@ describe('accent budget is enforced in code, not just documented', () => {
        * favourite-when-set, plus the hero's warm field — actions and a live
        * state, the priced entry points to a conversation.
        */
+      /*
+       * The provider's own surface, split in navigation step 6: the wordmark
+       * and unread pills (Chats), the unread pill (Saved), the earnings card
+       * and payout row (You), the tab badge (the host), and the push gate's
+       * one action. The same uses the single file carried before the split.
+       */
+      'ProviderChatsScreen.tsx',
       'ProviderDetailScreen.tsx',
       'ProviderHomeScreen.tsx',
+      'ProviderPushGate.tsx',
       /*
        * The explore row, which JOINED this list on 2026-09-08 when it grew a
        * "Chat" CTA — and it is the exemption in this file most worth reading,
@@ -2244,6 +2256,7 @@ describe('accent budget is enforced in code, not just documented', () => {
        * cannot widen from an action to an endorsement without failing.
        */
       'ProviderRow.tsx',
+      'ProviderSavedScreen.tsx',
       /*
        * The Listener/Astrologer tab strip, extracted from HomeScreen on
        * 2026-09-08 (see the module docblock) so Favourites could carry the same
@@ -2252,6 +2265,7 @@ describe('accent budget is enforced in code, not just documented', () => {
        * navigation state, not a description of any one provider.
        */
       'ProviderTypeTabs.tsx',
+      'ProviderYouScreen.tsx',
       /*
        * Recharge (v10 layout, ADR-0019). The coral is the selected amount card,
        * the daily-credit strip and the payment icon — a selection state and the
