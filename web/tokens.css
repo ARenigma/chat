@@ -4,7 +4,7 @@
  * from. If the site and the app ever look like different products, this file is
  * stale, not wrong.
  *
- * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, drawn from one ramp whose step 500 is the logo, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
+ * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, drawn from one ramp whose step 500 is the logo, sage is presence, and the wallet balance takes a hue only at its two ends (green at an hour or more, red under ten minutes) and is neutral between. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
  */
 
 :root {
@@ -27,7 +27,6 @@
   --bg-listener: #D8E8FF;
   --bg-astrologer: #EBE0FF;
   --bg-positive: #DCE8E3;
-  --bg-token: #F2EFC0;
   --bg-token-healthy: #0B5F36;
   --bg-token-critical: #B3261E;
   --text-primary: #1C1C1E;
@@ -41,7 +40,6 @@
   --text-on-state: #FFFFFF;
   --text-on-inverse: #FFFFFF;
   --text-positive: #1F4A3F;
-  --text-token: #4A4708;
   --text-rating: #B7791F;
   --text-on-listener: #0B4A8F;
   --text-on-astrologer: #5B21B6;
@@ -158,7 +156,6 @@
   --bg-listener: #20507F;
   --bg-astrologer: #452F70;
   --bg-positive: #16302A;
-  --bg-token: #3A3705;
   --bg-token-healthy: #0E7A45;
   --bg-token-critical: #8C1D18;
   --text-primary: #FFFFFF;
@@ -172,7 +169,6 @@
   --text-on-state: #0A1F14;
   --text-on-inverse: #151E27;
   --text-positive: #A8D8C8;
-  --text-token: #E4E26A;
   --text-rating: #F6C453;
   --text-on-listener: #CFE4FF;
   --text-on-astrologer: #E5D4FF;

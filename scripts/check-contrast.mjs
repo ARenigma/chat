@@ -355,11 +355,26 @@ const PAIRS = [
     exempt:
       'same as the Listener fill above: a visibility floor for the fill itself, not a text target',
   },
+  /*
+   * The wallet pill between ten minutes and an hour: NEUTRAL since 2026-09-26
+   * (Amit), the page colour with a 1dp outline and primary ink, where it used
+   * to be a lime fill (text/token on bg/token). Its label is the balance, so
+   * the ink takes 4.5; the outline is registered at the input-outline floor
+   * because the figure inside, not the stroke, is what a member reads.
+   */
   {
-    fg: 'text/token',
-    bg: 'bg/token',
+    fg: 'text/primary',
+    bg: 'bg/base',
     target: 4.5,
-    what: 'the balance pill (lime mid)',
+    what: 'the neutral (10m to 1h) wallet pill balance',
+  },
+  {
+    fg: 'border/strong',
+    bg: 'bg/base',
+    target: 1.5,
+    what: 'the neutral wallet pill outline',
+    exempt:
+      'the same outline recipe as an input: the balance inside carries the meaning at 17.01:1 / 16.84:1, the stroke only draws the pill',
   },
   {
     fg: 'text/onTokenStrong',

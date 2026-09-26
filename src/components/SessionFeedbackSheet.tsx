@@ -272,7 +272,7 @@ export function SessionFeedbackSheet() {
                 name="star"
                 active={on}
                 size={TOKENS.icon['2xl']}
-                color={on ? theme.color.text.token : theme.color.border.strong}
+                color={on ? theme.color.text.rating : theme.color.border.strong}
               />
             </Pressable>
           );

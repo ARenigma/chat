@@ -1324,7 +1324,6 @@ describe('spacing lives in tokens', () => {
       'paddingVertical: 1',
       'paddingHorizontal: 5',
     ],
-    'src/components/TokenCounter.tsx': ['paddingVertical: 5'],
     /*
      * The last four are the WhatsApp bubble box, read from the APK on
      * 2026-09-08 (com.whatsapp 2.26.34.81, pulled off the Redmi over adb).
@@ -1884,11 +1883,13 @@ describe('accessibility budget', () => {
     expect(
       contrast(DARK.color.text.positive, DARK.color.bg.positive),
     ).toBeGreaterThanOrEqual(4.5);
+    // The wallet's middle state is neutral since 2026-09-26: primary ink on the
+    // page, where it used to be text/token on a lime bg/token (both retired).
     expect(
-      contrast(LIGHT.color.text.token, LIGHT.color.bg.token),
+      contrast(LIGHT.color.text.primary, LIGHT.color.bg.base),
     ).toBeGreaterThanOrEqual(4.5);
     expect(
-      contrast(DARK.color.text.token, DARK.color.bg.token),
+      contrast(DARK.color.text.primary, DARK.color.bg.base),
     ).toBeGreaterThanOrEqual(4.5);
     expect(
       contrast(LIGHT.color.text.onTokenStrong, LIGHT.color.bg.tokenHealthy),
@@ -2002,7 +2003,7 @@ describe('accent budget is enforced in code, not just documented', () => {
     //   Turn        , the member's own bubble
     //   TypingIndicator, the three dots
     //   TokenCounter is out of the coral budget: wallet tones use tokenHealthy /
-    //   token / tokenCritical, not accentTint.
+    //   a neutral outline / tokenCritical, not accentTint.
     //
     // Nothing here is a page, a header, a divider or a provider's avatar. This
     // assertion exists to force the argument to be made, not to forbid it.

@@ -521,10 +521,13 @@ li {
 }
 
 /* ── Token pill ─────────────────────────────────────────────────────────────── */
+/* Neutral, like the app's wallet pill between its green and red ends: the
+   page colour, a 1px outline, primary ink. The lime fill it had is retired. */
 .token-pill {
   display: inline-block;
-  background: var(--bg-token);
-  color: var(--text-token);
+  background: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
   border-radius: var(--radius-pill);
   padding: 3px 10px;
   font-family: var(--face-label);
@@ -628,8 +631,8 @@ li {
 
 /* ── Placeholder callout ────────────────────────────────────────────────────── */
 .placeholder {
-  background: var(--bg-token);
-  color: var(--text-token);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
   border-radius: var(--radius-xs);
   padding: 1px 7px;
   font-style: italic;

@@ -318,8 +318,8 @@ export function rateLabel(ratePerMin: number): string {
  * Talk-time thresholds for the wallet pill (minutes at the given rate).
  *
  * Product (2026-08-29): deep green at ≥1 hour left, red under 10 minutes,
- * lime yellow otherwise. Derived from balance ÷ rate so a rate change moves
- * the colours with it.
+ * neutral otherwise (the lime middle was retired 2026-09-26). Derived from
+ * balance ÷ rate so a rate change moves the colours with it.
  */
 export const HEALTHY_TALK_MINUTES = 60;
 export const CRITICAL_TALK_MINUTES = 10;

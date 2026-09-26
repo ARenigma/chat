@@ -25,7 +25,10 @@ interface Props {
  * The balance, visible at all times.
  *
  * Tone is talk-time, not a raw token count (2026-08-29): deep green when an hour
- * or more remains at the chat rate, red under ten minutes, lime yellow otherwise.
+ * or more remains at the chat rate, red under ten minutes, and NEUTRAL between
+ * (Amit, 2026-09-26): the page colour, a 1dp border/strong outline and primary
+ * ink. The lime fill it replaced was a third wallet hue that meant nothing the
+ * number did not already say; only the two ends are states worth a colour.
  * The flinch still fires only on the transition into critical so navigation
  * remounts do not twitch the pill. Earnings never flinch: a zero payout is not
  * an urgent wallet state.
@@ -98,19 +101,35 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
 
 function inkForTone(tone: WalletTone, theme: Theme): string {
   if (tone === 'ok') {
-    return theme.color.text.token;
+    return theme.color.text.primary;
   }
   return theme.color.text.onTokenStrong;
 }
 
+/*
+ * Every tone draws the same 1dp border (see `pill`); only its colour changes.
+ * The filled tones paint it in their own fill so it disappears into them, which
+ * keeps the box the same size in all three states: a stroke that existed only
+ * on the neutral pill would shift the figure by a dp each time the balance
+ * crossed a threshold, and in a header that re-renders on every charge.
+ */
 function pillStyle(tone: WalletTone, theme: Theme) {
   if (tone === 'healthy') {
-    return { backgroundColor: theme.color.bg.tokenHealthy };
+    return {
+      backgroundColor: theme.color.bg.tokenHealthy,
+      borderColor: theme.color.bg.tokenHealthy,
+    };
   }
   if (tone === 'critical') {
-    return { backgroundColor: theme.color.bg.tokenCritical };
+    return {
+      backgroundColor: theme.color.bg.tokenCritical,
+      borderColor: theme.color.bg.tokenCritical,
+    };
   }
-  return { backgroundColor: theme.color.bg.token };
+  return {
+    backgroundColor: theme.color.bg.base,
+    borderColor: theme.color.border.strong,
+  };
 }
 
 export const TokenCounter = memo(TokenCounterView);
@@ -122,7 +141,10 @@ const makeStyles = (_t: Theme) =>
       alignItems: 'center',
       gap: TOKENS.space['2xs'],
       paddingHorizontal: TOKENS.space.sm,
-      paddingVertical: 5,
+      // 4 + the 1dp border = the 5dp this pill always had, so the neutral
+      // outline did not make the header band taller.
+      paddingVertical: TOKENS.space['2xs'],
+      borderWidth: 1,
       // radius.xs, not a capsule: a filled pill in a header band is a Material chip.
       borderRadius: TOKENS.radius.xs,
       borderCurve: 'continuous',

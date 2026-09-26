@@ -5,7 +5,7 @@
  * the provenance note in that file).
  * Regenerate with `npm run tokens`. `npm run tokens:check` fails on drift.
  *
- * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, drawn from one ramp whose step 500 is the logo, sage is presence, citrus is the token balance. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
+ * System: Signal on Neutral, iOS system greys carry the chrome, and hue is reserved for meaning: coral is the one call to act, drawn from one ramp whose step 500 is the logo, sage is presence, and the wallet balance takes a hue only at its two ends (green at an hour or more, red under ten minutes) and is neutral between. Nothing else gets a hue. Renamed from "Warm Signal", which described a warm paper base that no longer exists, a system whose name asserts a fact about its own palette has to be renamed when that fact changes.
  *
  * Accent budget: the coral is for ACTIONS AND STATES ONLY, send, own bubble,
  * unread count, avatar wash, low-balance count, typing dots. Never a page
@@ -39,7 +39,6 @@ export const LIGHT = {
       listener: '#D8E8FF',
       astrologer: '#EBE0FF',
       positive: '#DCE8E3',
-      token: '#F2EFC0',
       tokenHealthy: '#0B5F36',
       tokenCritical: '#B3261E',
     },
@@ -55,7 +54,6 @@ export const LIGHT = {
       onState: '#FFFFFF',
       onInverse: '#FFFFFF',
       positive: '#1F4A3F',
-      token: '#4A4708',
       rating: '#B7791F',
       onListener: '#0B4A8F',
       onAstrologer: '#5B21B6',
@@ -716,7 +714,6 @@ export const DARK = {
       listener: '#20507F',
       astrologer: '#452F70',
       positive: '#16302A',
-      token: '#3A3705',
       tokenHealthy: '#0E7A45',
       tokenCritical: '#8C1D18',
     },
@@ -732,7 +729,6 @@ export const DARK = {
       onState: '#0A1F14',
       onInverse: '#151E27',
       positive: '#A8D8C8',
-      token: '#E4E26A',
       rating: '#F6C453',
       onListener: '#CFE4FF',
       onAstrologer: '#E5D4FF',

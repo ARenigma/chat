@@ -436,7 +436,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                         name="star"
                         active={n <= r.rating}
                         size={TOKENS.icon.xs}
-                        color={n <= r.rating ? theme.color.text.token : theme.color.border.strong}
+                        color={n <= r.rating ? theme.color.text.rating : theme.color.border.strong}
                       />
                     ))}
                   </View>
