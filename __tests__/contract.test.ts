@@ -6324,9 +6324,10 @@ describe('post-release UI regressions', () => {
     // destination shows its filled glyph — Material 3's active nav icon — and the
     // favourites heart is no longer the exception. So the guard that special-
     // cased it is gone and every tab passes plain `active={on}`.
-    const toolbar = read('src/components/FloatingToolbar.tsx');
-    expect(toolbar).toContain('active={on}');
-    expect(toolbar).not.toContain("tab.key !== 'favourites'");
+    // Retargeted to the bottom bar in navigation step 8 (FloatingToolbar deleted).
+    const bar = read('src/shell/bottom-bar/BottomBar.tsx');
+    expect(bar).toContain('active={selected}');
+    expect(bar).not.toMatch(/!== 'favourites'|!== 'Favourites'/);
   });
 
   it('aligns the visible profile consent box without shrinking its target', () => {
@@ -6563,10 +6564,10 @@ describe('deferred composer panels', () => {
  * action that produces a sendable note.
  */
 describe('ambient beats (tab-select, emoji-pick, picker-open) are silent', () => {
-  it('FloatingToolbar fires no tick on tab select', () => {
+  it('the bottom bar fires no tick on tab select', () => {
     expect(
-      withoutComments(read('src/components/FloatingToolbar.tsx')),
-    ).not.toContain('tick()');
+      withoutComments(read('src/shell/bottom-bar/BottomBar.tsx')),
+    ).not.toMatch(/\btick\(\)/);
   });
 
   it('Composer fires no tick when the gallery or camera picker opens', () => {
@@ -7183,23 +7184,11 @@ describe('search opens the way the reference app opens it, and the week has a ca
     // The nav row lives in `TabTopBar` since 2026-09-08 — one bar for every
     // tab, so it cannot drift between them.
     const bar = read('src/components/TabTopBar.tsx');
-    /*
-     * `entering={enter}` / `exiting={exit}`, not the animations by name: the
-     * first render passes neither, because a subtree that mounts inside
-     * `TabLayer`'s `display: 'none'` never runs its entering animation and
-     * would stay at FadeIn's opacity 0 forever (device-found on Favourites —
-     * see the comment on `mounted` in TabTopBar.tsx). Every render after the
-     * first uses `searchIn` / `searchOut`, which is when the crossfade is
-     * wanted, and that binding is what these two lines pin.
-     */
-    expect(bar).toContain('entering={enter}');
-    expect(bar).toContain('exiting={exit}');
-    expect(bar).toContain(
-      'const enter = mounted.current ? searchIn : undefined',
-    );
-    expect(bar).toContain(
-      'const exit = mounted.current ? searchOut : undefined',
-    );
+    // By name since navigation step 8: `Layout.Screen`'s LayoutAnimationConfig
+    // skipEntering covers the first mount, so no first-render skip is needed.
+    expect(bar).toContain('entering={searchIn}');
+    expect(bar).toContain('exiting={searchOut}');
+    expect(bar).not.toContain('mounted.current');
     /*
      * ONE `navRow` now, not two. The search state has its own `searchRow`
      * (2026-09-07): the field is MATCH_PARENT with 7dp side margins in the
@@ -9511,7 +9500,6 @@ describe('navigation step 7: the graph is the §2 table', () => {
   it('replaces NAV_BAR_HEIGHT with the bar offset everywhere', () => {
     const { sourceFiles: files } = { sourceFiles };
     const users = files()
-      .filter(f => f !== 'src/components/FloatingToolbar.tsx')
       .filter(f => /NAV_BAR_HEIGHT/.test(withoutComments(read(f))));
     expect(users).toEqual([]);
     for (const file of ['HomeScreen', 'FavouritesScreen', 'SettingsSheet', 'ChatsListScreen', 'TransactionHistoryScreen', 'InvoicesScreen', 'UsageLedgerScreen', 'BlockedUsersScreen', 'ProviderBankScreen']) {

@@ -80,6 +80,12 @@ const TAB_INDICES = PROVIDER_CATEGORIES.map((_, i) => i);
  * nothing to draw until the strip's own `onLayout` round-tripped — a pixel scan
  * of its first frame found no underline anywhere in the row.
  *
+ * Kept under react-navigation (nav-migration §5, step 8) for the navigator's
+ * reason: the bottom tabs are `lazy`, so Favourites still mounts this strip
+ * fresh on its first visit, and a detached tab's first layout has not been
+ * measured on the S22 yet. Delete both seeds only once a device frame shows
+ * the underline correct on that first visit without them.
+ *
  *   `INITIAL_STRIP_WIDTH` — the strip has no horizontal margin of its own and
  *   neither screen pads its root, so the strip's true width IS the window
  *   width, read synchronously. It is a same-frame seed that `onLayout`

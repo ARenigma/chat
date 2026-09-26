@@ -1109,11 +1109,15 @@ describe('device coverage matrix', () => {
    * touch". https://m3.material.io/foundations/interaction/states/state-layers
    */
   it('clips tab press feedback to a pill indicator, not the full slot', () => {
-    const bar = read('src/components/FloatingToolbar.tsx');
-    expect(bar).toContain('borderRadius: 16');
-    expect(bar).toContain('styles.indicator');
-    expect(bar).toMatch(/style=\{styles\.slot\}/);
-    expect(bar).toContain('size={48}');
+    // Retargeted to the bottom bar in navigation step 8. The slot paints no
+    // state layer at all (`highlight="none"`, the Bluesky bar), so the only
+    // tonal fill is the 64x32 full-corner pill.
+    const bar = read('src/shell/bottom-bar/BottomBar.tsx');
+    const styles = read('src/shell/bottom-bar/BottomBarStyles.ts');
+    expect(bar).toContain('highlight="none"');
+    expect(bar).toContain('style={styles.slot}');
+    expect(bar).toContain('size={INTERACTION.minTarget}');
+    expect(styles).toMatch(/indicator:\s*\{[\s\S]*?borderRadius: TOKENS\.radius\.md/);
   });
 
   /**
@@ -2332,7 +2336,7 @@ describe('hardware back reaches the app', () => {
     // route adapters (src/screens/routes/), which is fed by the Activity's legacy
     // onBackPressed. Opting into the predictive-back callback is the W6 item and
     // must be done with its own reading of the docs, not slipped in with a
-    // manifest edit. src/lib/backGuard.ts is deleted in step 8 of the migration.
+    // manifest edit (docs/android-audit.md W6).
     // https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
     expect(read(MANIFEST)).not.toMatch(
       /enableOnBackInvokedCallback\s*=\s*"true"/,
@@ -2356,7 +2360,7 @@ describe('hardware back reaches the app', () => {
  *   https://developer.android.com/topic/performance/benchmarking/macrobenchmark-metrics
  */
 /**
- * W5#5 — renderToHardwareTextureAndroid on PushedLayer and Sheet.
+ * W5#5 — renderToHardwareTextureAndroid on the old JS push layer and Sheet.
  *
  * The promotion was considered for both surfaces and deliberately not applied.
  * The decision is recorded in each file rather than silently omitted — this
@@ -2366,8 +2370,10 @@ describe('hardware back reaches the app', () => {
  * Condition for revisiting: a `framestats.mjs` run on the S22 (not the
  * SwiftShader emulator — see BloomField.tsx:325) that shows push/pop or
  * sheet-open frames exceed the 8.33 ms budget. If they do, implement as a
- * Reanimated-driven toggle tied to the `transitioning` shared value in
- * motion.ts, never as a permanently-on prop.
+ * Reanimated-driven toggle tied to the sheet's own open progress, never as a
+ * permanently-on prop. (A push is a native fragment transition since
+ * navigation step 7, so there is no JS push layer left to promote, and the
+ * `transitioning` lock was deleted in step 8.)
  * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
  */
 describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
@@ -2375,59 +2381,11 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     // The toggle promoted PushedLayer, the JS push layer, to a texture while it
     // moved. Navigation step 7 deleted the layer: a push is a native fragment
     // transition now, composited by the platform, so there is no JS view left
-    // to promote. The motion.ts exports go in step 8 with their ban.
+    // to promote. The motion.ts exports went in step 8 with their ban
+    // (navBan.test.ts).
     const app = read('App.tsx');
     expect(app).not.toContain('renderToHardwareTextureAndroid');
     expect(app).not.toContain('textureWhileMoving');
-  });
-
-  it('starts on geometry, and says why it no longer waits for DATA', () => {
-    /*
-     * The reference app does not start on layout, it starts when the first
-     * message batch has rendered (ChatActivity.java:27014 -> :20613 ->
-     * resumeDelayedFragmentAnimation), with a 200ms ceiling
-     * (ActionBarLayout.java:2270-2282). This app copied that as
-     * `holdScreenEnter`, and it was DELETED on 2026-09-19 — V1's transcript
-     * was its only caller, so with that screen gone the gate could never be
-     * raised and every screen took the immediate path through a subscription,
-     * a timer and an unmount disposer that could not fire.
-     *
-     * The deletion is asserted, not just the absence, because "no caller" is
-     * a claim about the whole repo and a half-removed mechanism is worse than
-     * either state: `isScreenEnterHeld()` returning a constant false is
-     * exactly the dead-lock shape the `transitioning` writer below exists to
-     * avoid.
-     */
-    const motionCode = code('src/theme/motion.ts');
-    for (const gone of [
-      'holdScreenEnter',
-      'isScreenEnterHeld',
-      'onScreenEnterReady',
-      'ENTER_HOLD_CEILING_MS',
-      '_entryHolds',
-      'cancelWait',
-    ]) {
-      expect(motionCode).not.toContain(gone);
-    }
-    // ...and the reasoning is recorded where the gate used to be, with the
-    // pointer that makes it recoverable.
-    expect(read('src/theme/motion.ts')).toContain('git log -S holdScreenEnter');
-  });
-
-  it('gives the mount its own frame, and guards against a second start', () => {
-    const motion = read('src/theme/motion.ts');
-    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
-    // The ramp itself is still deferred one frame, so the animation's first
-    // frame is never the same frame as the screen's first React commit.
-    expect(hook).toContain('requestAnimationFrame(() => {');
-    // The re-entry guard is set before the ramp is reached, or a second
-    // onLayout in the same frame would start a second animation.
-    const guardAt = hook.indexOf('started.value = true;');
-    const rampAt = hook.indexOf('    ramp();');
-    expect(guardAt).toBeGreaterThan(-1);
-    expect(rampAt).toBeGreaterThan(guardAt);
-    // The early return is what makes the guard mean anything.
-    expect(hook).toMatch(/if \(started\.value\) \{\s*\n\s*return;/);
   });
 
   it('never defers an identity, whatever else is deferred', () => {
@@ -2461,39 +2419,6 @@ describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
     const motionCode = code('src/theme/motion.ts');
     expect(motionCode).not.toContain('useAfterTransition');
     expect(motionCode).not.toContain('onTransitionSettled');
-  });
-
-  it('cannot strand the texture promotion, which is the lock that is left', () => {
-    /*
-     * With the hold gone, `transitioning` has exactly one writer and one
-     * reader, and the failure mode worth guarding is the cheap one: a lock
-     * raised and never lowered holds App's pushed layer on a hardware texture
-     * — roughly 8MB of GPU memory — for the rest of the session.
-     *
-     * So the lower has to be unconditional. It is the FADE's completion
-     * callback rather than the spring's, because `spatialDefault` settles
-     * asymptotically and would hold the lock long past the point anything is
-     * visibly moving.
-     */
-    const motion = read('src/theme/motion.ts');
-    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
-    expect(hook).toContain('setTransitioning(true);');
-    expect(hook).toMatch(
-      /withTiming\([\s\S]{0,300}\(\) => \{\s*runOnJS\(setTransitioning\)\(false\);\s*\},/,
-    );
-    // One writer in the whole app, so a new pushed screen cannot forget to
-    // raise it and cannot forget to lower it either.
-    /*
-     * Both spellings, because the lower goes through `runOnJS` — it is called
-     * from a Reanimated completion callback on the UI thread. A pattern that
-     * only knew the direct form would have counted one writer and passed
-     * while the release was missing, which is the exact bug this guards.
-     */
-    const writers = code('src/theme/motion.ts').match(
-      /setTransitioning\)?\((true|false)\)/g,
-    );
-    expect(writers).toEqual(['setTransitioning(true)', 'setTransitioning)(false)']);
-    expect(code('App.tsx')).not.toContain('setTransitioning');
   });
 
   it('Sheet.tsx documents the hardware-texture decision', () => {

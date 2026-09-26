@@ -8,9 +8,6 @@ import {
   FadeOutDown,
   FadeOutUp,
   ReduceMotion,
-  makeMutable,
-  runOnJS,
-  type SharedValue,
   type WithSpringConfig,
   useAnimatedStyle,
   useSharedValue,
@@ -73,17 +70,6 @@ const EMPH_DECEL = Easing.bezier(
   M3.easing.emphasizedDecelerate[1],
   M3.easing.emphasizedDecelerate[2],
   M3.easing.emphasizedDecelerate[3],
-);
-/**
- * the reference app's push/pop curve — Android `DecelerateInterpolator(1.5f)`, a cubic
- * ease-out — for the 150ms screen fade only. See the token note for why
- * M3's emphasized-decelerate cannot carry a fade that short.
- */
-const SCREEN_DECEL = Easing.bezier(
-  M3.easing.decelerate[0],
-  M3.easing.decelerate[1],
-  M3.easing.decelerate[2],
-  M3.easing.decelerate[3],
 );
 /**
  * the reference app's EASE_OUT_QUINT (0.23,1,0.32,1) — the curve it reveals the send
@@ -204,38 +190,6 @@ export function pressOut(): number {
   });
 }
 
-/**
- * True while a screen transition is running.
- *
- * ONE reader, and it is the reason this exists at all: App.tsx's pushed layer
- * sets `renderToHardwareTextureAndroid` from it, so the layer is promoted to
- * a texture for the duration of the slide and demoted the moment it settles.
- * Mutation is through `setTransitioning`, and `useScreenEnter` is its only
- * caller. Reading from any component or hook is safe.
- *
- * W5 #6 also built a SUBSCRIBE half here — `onTransitionSettled`, and a
- * `useAfterTransition` hook over it — so that expensive invisible work could
- * be deferred past the slide. Every one of its five call sites was V1's (the
- * chat wallpaper mount, the message-insert scroll, the emoji panel's grid,
- * the transcript's photo decode), and all five left with that screen on
- * 2026-09-19. The subscribe half went with them rather than staying as a
- * primitive with no subscriber: `git log -S onTransitionSettled` has it if a
- * future surface earns it back.
- */
-export const transitioning = makeMutable<boolean>(false);
-
-/**
- * Mark a transition as started or finished.
- *
- * Call with `true` when a screen push/pop, sheet open or panel swap begins,
- * and with `false` in the animation's completion callback once it has settled.
- * `useScreenEnter` is the only caller in either direction, which is what makes
- * it impossible for a new pushed screen to forget.
- */
-export function setTransitioning(active: boolean): void {
-  transitioning.value = active;
-}
-
 const EMPH_ACCEL = Easing.bezier(
   M3.easing.emphasizedAccelerate[0],
   M3.easing.emphasizedAccelerate[1],
@@ -262,21 +216,6 @@ export const INTERACTION = TOKENS.interaction;
 export type SpringName = keyof typeof SPRING;
 export type M3SpringName = keyof typeof M3.spring;
 export type AnySpringName = keyof typeof ALL_SPRINGS;
-
-/**
- * Forward vs back, read at the moment a screen builder runs.
- *
- * A shared value rather than a prop because the disappearing view's `exiting`
- * animation is built at unmount, after its props are gone; and the entering
- * view must know whether it is a push (slide from the right) or a back (slide
- * from the left) without the route state machine re-rendering it to tell it.
- * The navigation helpers in `App.tsx` set this immediately before changing the
- * route, and the builders below read it inside their worklet.
- */
-export const navDirection = makeMutable<'forward' | 'back'>('forward');
-export function setNavDirection(direction: 'forward' | 'back'): void {
-  navDirection.value = direction;
-}
 
 /**
  * `withSpring` with a named token, and optionally the velocity a gesture ended
@@ -577,8 +516,8 @@ function contentLeave(away: number, duration: number, delay: number) {
  * reference has no equivalent of (its list is simply there). Stated rather than
  * hidden, per RULE 1 §6: it is the same 180ms EASE_OUT arrival, it reads as the
  * content landing rather than as a second mechanism, and the alternative — a
- * module-level "are we closing search" flag read at build time, the
- * `navDirection` trick — is more machinery than the difference is worth.
+ * module-level "are we closing search" flag read at build time — is more
+ * machinery than the difference is worth.
  */
 export const searchResultsIn = contentArrive(
   SEARCH_RESULTS_AWAY,
@@ -781,27 +720,6 @@ function stagger(base: number, index: number, cap: number): number {
 }
 
 /**
- * A screen pushed onto the stack, or the one revealed when it pops.
- *
- * The M3 forward/back pattern: a short slide under a fade-through, never a
- * full-width push. Direction comes from `navDirection` read at build time, so
- * one builder serves both — a push enters from the right, a back enters from the
- * left.
- *
- * The geometry is the reference app's, measured from `ActionBarLayout.java` (see the
- * `distance.push` and `duration.short3` token notes): 48dp of travel under a
- * 150ms alpha ramp on a decelerate curve, push and pop symmetric. The first cut
- * used M3's medium2 (300ms) and 24dp and read as slow and wobbly on a device;
- * this is the snap a chat app is judged against. `spatialDefault` (k=700, ζ=0.9)
- * settles in ~168ms, the closest M3 spring to that 150ms, and M3's
- * emphasized-decelerate is the same family of curve as Android's
- * `DecelerateInterpolator`.
- *
- * Opacity is `Never` so the fade always runs, and the slide is `System` (via
- * `springTo`) so it collapses to a pure fade under reduce-motion — which is
- * exactly "reduced motion → fades only".
- */
-/**
  * A two-thing cross-fade toggle, for a slot that swaps one control for another
  * (the composer's send ⇆ mic).
  *
@@ -836,207 +754,6 @@ export function useCrossfade(shown: boolean): {
   }));
   return { shownStyle, hiddenStyle };
 }
-
-export function useScreenEnter(): {
-  style: ReturnType<typeof useAnimatedStyle>;
-  onLayout: () => void;
-  progress: SharedValue<number>;
-  shift: SharedValue<number>;
-} {
-  /*
-   * A layout-started entrance, NOT a Reanimated `entering` layout animation and
-   * NOT an effect-started one either. Both were tried and frame-stepped on a
-   * device (2026-09-02):
-   *
-   *   - `entering` (custom worklet and stock `FadeIn` alike) never ran on this
-   *     mount path, while `exiting` on the same view did.
-   *   - Starting the ramp from `useEffect` ran, but the clock started at MOUNT
-   *     and a heavy screen (the chat) takes several frames to lay out and
-   *     paint for the first time — so its first visible frame was already
-   *     two-thirds of the way through a 150ms fade: a jump, then a short tail.
-   *
-   * So the view mounts at opacity 0 / offset 48 (the style's initial values are
-   * read from shared values, which IS applied before the first paint) and the
-   * ramp starts from `onLayout`, which fires once the screen has real geometry
-   * — content first, then the animation, which is exactly the reference app's
-   * `needDelayOpenAnimation` (ActionBarLayout.java:2280). `onLayout` can fire
-   * more than once; the ramp is started once.
-   *
-   * Direction is read once at mount, which is after the navigation helper set
-   * it and before anything paints.
-   */
-  const back = navDirection.value === 'back';
-  const progress = useSharedValue(0);
-  const shift = useSharedValue(back ? -M3.distance.push : M3.distance.push);
-  const started = useSharedValue(false);
-  const onLayout = () => {
-    if (started.value) {
-      return;
-    }
-    started.value = true;
-    /*
-     * ONE FRAME between the mount commit and the animation's first frame.
-     *
-     * `onLayout` fires in the same frame as the screen's first React commit, so
-     * the animation's opening frames were competing with the mount itself:
-     * hooks firing, queries subscribing, FlashList computing its first layout.
-     * Measured on the S22 at 60Hz, a push/pop had a p50 frame of 17.85ms
-     * against the reference app's 7.55ms, with 44% of frames inside budget against
-     * their 97.5% — while plain scrolling matched them almost exactly. The
-     * transition was the whole gap.
-     *
-     * the reference app solves this with a DATA signal, not a geometry one:
-     * `needDelayOpenAnimation()` holds the incoming screen at alpha 0 and
-     * translateX 48dp until the first message batch has rendered
-     * (ChatActivity.java:27014 returning `firstLoading`, cleared at :20613,
-     * which calls `resumeDelayedFragmentAnimation`), with a 200ms timeout as
-     * the safety net (ActionBarLayout.java:2270-2282, :1920-1927).
-     *
-     * We cannot see that signal from here — this hook knows nothing about any
-     * particular screen's queries — so we take the part that generalises: give
-     * the commit one whole frame to itself before starting. The screen sits
-     * invisible for one extra frame (16.7ms at 60Hz), which is below the
-     * threshold at which a tapped transition reads as delayed.
-     *
-     * `started.value` is set OUTSIDE the callback, so a second `onLayout`
-     * arriving before the frame fires cannot start a second animation.
-     */
-    /*
-     * GEOMETRY, and only geometry. There was a second gate here until
-     * 2026-09-19 — `holdScreenEnter`, which let an arriving screen say "I have
-     * no DATA yet" and held the entrance behind a subscription with a 200ms
-     * ceiling, after the reference app's `needDelayOpenAnimation`
-     * (ChatActivity.java:27014, ActionBarLayout.java:2270-2282).
-     *
-     * It is gone because it never had a caller but one: V1's transcript, which
-     * held until its first message batch landed. Nothing else ever opted in,
-     * so with that screen deleted `isScreenEnterHeld()` was false forever and
-     * this branch always took the immediate path — a subscription, a timer and
-     * an unmount disposer that could not fire. The A/B that was run for it
-     * (Redmi, debug, three runs an arm) could not separate the effect from the
-     * run-to-run variance either, so nothing measured is being given up.
-     *
-     * If a screen wants it back, the mechanism is in
-     * `git log -S holdScreenEnter` and the place to prove it is a RELEASE
-     * build at 120Hz, where the frame budget halves to 8.3ms.
-     */
-    ramp();
-  };
-
-  const ramp = () => {
-    requestAnimationFrame(() => {
-    /*
-     * The transition lock is raised HERE, not at the call site.
-     *
-     * Every push in both trees goes through this hook, so raising it here means
-     * a new pushed screen cannot forget to. The write side has to exist at all
-     * or the lock is dead code: `transitioning` would read false forever and
-     * every deferral that reads it (the wallpaper mount, the message-insert
-     * scroll, the emoji pre-mount) would silently take its immediate branch.
-     *
-     * Lowered from the FADE's completion rather than the spring's. The spring
-     * is `spatialDefault` and settles asymptotically, so waiting on it would
-     * hold the lock well past the point anything is still visibly moving; the
-     * 200ms fade is the part a deferred insert would actually have collided
-     * with. `finished` is checked because an interrupted animation still calls
-     * back, and a lock left raised is worse than the jank it avoids.
-     */
-    setTransitioning(true);
-    // 200ms (short4), not the reference app's 150: at 150 the fade read as abrupt on the
-    // S22 by hand (Amit, 2026-09-02); the slide keeps the reference app's 48dp.
-    progress.value = withTiming(
-      1,
-      {
-        duration: M3.duration.short4,
-        easing: SCREEN_DECEL,
-        reduceMotion: ReduceMotion.Never,
-      },
-      () => {
-        runOnJS(setTransitioning)(false);
-      },
-    );
-    shift.value = springTo(0, 'spatialDefault');
-    });
-  };
-  const style = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateX: shift.value }],
-  }));
-  return { style, onLayout, progress, shift };
-}
-
-/**
- * Home's half of the M3 back transition, driven from the pop itself.
- *
- * Home is always mounted, so it has no `entering`: when a pushed screen pops,
- * Home would simply be there once the overlay is gone. M3's back pattern has the
- * predecessor slide in from the left as the leaving screen slides right, so Home
- * gets that slide from a module-level shared value.
- *
- * Kicked by the navigation helpers BEFORE the route changes (see App.tsx's
- * `popRoute` and the back handler), not from an effect on the new route: an
- * effect runs after the overlay has already begun fading, so the jump to -48
- * was visible through it (a 28-unit spike in the frame diff, 2026-09-02). Set
- * while the overlay is still opaque, the jump is hidden and only the settle is
- * seen. Same `spatialDefault` spring as `screenOut`, so the two halves move as
- * one.
- */
-export const homeShift = makeMutable(0);
-export function revealHome(): void {
-  homeShift.value = -M3.distance.push;
-  homeShift.value = springTo(0, 'spatialDefault');
-}
-export function useHomeRevealStyle() {
-  return useAnimatedStyle(() => ({
-    transform: [{ translateX: homeShift.value }],
-  }));
-}
-
-/**
- * The screen leaving, mirror of `useScreenEnter`: same 150ms, opposite direction.
- * This one IS a layout animation (`exiting`), because that half runs reliably
- * and there is no mounted component left to hold a shared value for it.
- */
-export function screenOut() {
-  'worklet';
-  const back = navDirection.value === 'back';
-  return {
-    initialValues: { opacity: 1, transform: [{ translateX: 0 }] },
-    animations: {
-      opacity: withTiming(0, {
-        duration: M3.duration.short4,
-        // The outgoing screen holds, then goes: emphasized-accelerate (M3's exit
-        // curve). the reference app mirrors its decelerate here (alpha drops fast,
-        // ActionBarLayout.java:1899-1907) and that read as a cut by hand on the
-        // S22 (Amit, 2026-09-02); the slow-start curve keeps the leaving screen
-        // legible while Home settles in beneath it.
-        easing: EMPH_ACCEL,
-        reduceMotion: ReduceMotion.Never,
-      }),
-      transform: [
-        { translateX: springTo(back ? M3.distance.push : -M3.distance.push, 'spatialDefault') },
-      ],
-    },
-  };
-}
-
-/**
- * Top-level destination swap (the tab layers, boot phases).
- *
- * The M3 top-level pattern is a fade-through with no slide and no shared
- * element. It is written here WITHOUT the "out, then in" delay: the tab layers
- * sit over an always-mounted Home, so a gap between the outgoing fade and the
- * incoming one shows Home for 100ms — a flash, verified on device 2026-09-02 —
- * rather than the neutral surface the pattern assumes. A straight cross-fade of
- * the two layers over Home reads as one dissolve. `Never`, because a fade IS
- * the reduced-motion answer for a top-level change, not something to remove.
- */
-export const topLevelIn = FadeIn.duration(M3.duration.short4)
-  .easing(EMPH_DECEL)
-  .reduceMotion(ReduceMotion.Never);
-export const topLevelOut = FadeOut.duration(M3.duration.short2)
-  .easing(EMPH_ACCEL)
-  .reduceMotion(ReduceMotion.Never);
 
 /**
  * A bottom sheet rising and settling. Position only — the sheet body never fades.

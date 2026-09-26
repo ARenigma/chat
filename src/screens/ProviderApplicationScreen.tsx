@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated from 'react-native-reanimated';
-import { topLevelIn } from '../theme/motion';
+import { fadeSwap } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -837,7 +837,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
   if (phase === 'done') {
     return (
       <Animated.View
-        entering={topLevelIn}
+        entering={fadeSwap}
         style={[styles.root, styles.doneRoot, { paddingTop: insets.top }]}>
         <View style={styles.doneCheck}>
           <Icon name="check" size={TOKENS.icon['2xl']} color={theme.color.text.onAccent} />
