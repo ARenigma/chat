@@ -5792,11 +5792,12 @@ describe('a tapped message notification is held until `role` is known, not route
     const app = withoutComments(read('App.tsx'));
     expect(app).toContain('const [pendingPeer, setPendingPeer] = useState<string | null>(null);');
     // The deep-link consumer sets it, it does not call setRoute itself.
+    // parsePeerUrl replaced the inline url.match (nav §9 step 2).
     const peerBranch = app.slice(
-      app.indexOf("url.match(/^companionchat:\\/\\/peer\\/(.+)$/)"),
+      app.indexOf('parsePeerUrl(url)'),
       app.indexOf('handleAuthDeepLink(url)'),
     );
-    expect(peerBranch).toContain('setPendingPeer(peerId)');
+    expect(peerBranch).toContain('setPendingPeer(parsedPeer)');
     expect(peerBranch).not.toContain('setRoute(');
   });
 
@@ -8892,5 +8893,25 @@ describe('the Greptile push gate sees findings (2026-09-24)', () => {
   it('passes a clean review', () => {
     expect(matches('No review comments.\nConfidence: 5/5')).toBe(false);
     expect(matches('MP3 HP1X P12')).toBe(false);
+  });
+});
+
+describe('nav route-library dependency contracts', () => {
+  it('events.ts does not import eventemitter3', () => {
+    // The route library must use a plain Set<Listener>, not a third-party
+    // event emitter, to keep the dependency footprint minimal.
+    const events = read('src/lib/events.ts');
+    // Comments may mention eventemitter3 to explain why it is not used;
+    // what must not appear is an actual import statement.
+    expect(events).not.toMatch(/^import\b.*eventemitter3/m);
+    expect(events).not.toMatch(/require\(['"]\s*eventemitter3/);
+  });
+
+  it('THIRD_PARTY_LICENSES.md carries the Bluesky attribution notice and commit', () => {
+    // helpers.ts is adapted from the Bluesky social-app (MIT). The notice and
+    // the exact source commit must be present so the attribution is auditable.
+    const licenses = read('THIRD_PARTY_LICENSES.md');
+    expect(licenses).toMatch(/bluesky-social\/social-app/i);
+    expect(licenses).toContain('f80c43eabe3dfbe0fa3f111f361f48ebfa0fa8ab');
   });
 });
