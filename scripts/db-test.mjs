@@ -196,6 +196,7 @@ const MIGRATIONS = [
   'supabase/migrations/152_story_commenter_block.sql',
   'supabase/migrations/153_function_grants_closed_by_default.sql',
   'supabase/migrations/154_provider_busy_waits.sql',
+  'supabase/migrations/156_contact_guard_detector.sql',
 ];
 
 /**
