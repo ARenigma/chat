@@ -524,7 +524,8 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(style('ctaOutlineBusy')).toContain('borderColor: t.color.state.danger');
     expect(style('ctaOutlineAway')).toContain('borderColor: t.color.text.secondary');
     expect(style('ctaAway')).not.toContain('borderColor');
-    expect(src).not.toContain('ROW_CTA_WIDTH');
+    // ROW_CTA_WIDTH is back (108, 2026-09-27): one fixed shape for every state.
+    expect(src).toContain('export const ROW_CTA_WIDTH = 108;');
     expect(style('ctaLabel')).toContain('...TOKENS.typography.textSmSemiBold');
   });
 
