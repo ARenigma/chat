@@ -2717,6 +2717,16 @@ describe('FLAG_SECURE demo-capture carve-out', () => {
     expect(internalSection).toContain('"ALLOW_DEV_CAPTURE", "true"');
   });
 
+  it('never re-adds FLAG_SECURE in a variant that does not block capture', () => {
+    // JS passes `false` for every non-seed account, so without this guard the
+    // internal build blocked a real tester's screencaps on sign-in (S22,
+    // 2026-09-26) although build.gradle says the variant decides.
+    const chrome = read('android/app/src/main/java/com/companionchat/WindowChromeModule.kt');
+    const guard = chrome.indexOf('if (!enabled && !BuildConfig.BLOCK_SCREENSHOTS) return');
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(chrome.indexOf('win.addFlags('));
+  });
+
   it('native setDemoCaptureEnabled returns early when ALLOW_DEV_CAPTURE is false', () => {
     /*
      * The build-variant gate must appear BEFORE any window flag manipulation.

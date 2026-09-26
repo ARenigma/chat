@@ -127,6 +127,14 @@ class WindowChromeModule(private val reactContext: ReactApplicationContext) :
         // Gate 1: compile-time variant check. `release` always takes this
         // branch and returns before any window flag is touched.
         if (!BuildConfig.ALLOW_DEV_CAPTURE) return
+        // A variant that does not block capture (internal: BLOCK_SCREENSHOTS
+        // false) is never made to block it here. JS calls this with `false`
+        // for every account that is not a seeded @example.test one, so without
+        // this line the internal build re-added FLAG_SECURE on sign-in and a
+        // real tester's screencaps came back black, contradicting build.gradle
+        // ("the variant decides"). Production is untouched: release has
+        // ALLOW_DEV_CAPTURE false and returns above, and BLOCK_SCREENSHOTS true.
+        if (!enabled && !BuildConfig.BLOCK_SCREENSHOTS) return
         UiThreadUtil.runOnUiThread {
             val win = reactContext.currentActivity?.window ?: return@runOnUiThread
             if (enabled) {
