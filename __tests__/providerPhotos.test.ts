@@ -16,7 +16,7 @@ const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
  *   `snapToInterval`, `directionalLockEnabled`, `nestedScrollEnabled`
  *                                     — ProviderDetailScreen.tsx, the hero pager
  *   `announceForAccessibility`        — ProviderDetailScreen.tsx, the live region
- *   `READ_MEDIA_IMAGES`               — ProviderYouScreen.tsx, the photo picker
+ *   `READ_MEDIA_IMAGES`               — ProviderPhotosScreen.tsx, the photo picker
  *
  * That list is the whole justification and it is checked, not remembered. It
  * used to name `PappalGlyphs` and `setFakeBoldText` as well, and by 2026-09-07
@@ -246,16 +246,16 @@ describe('a provider publishes several photos, and one of them is the face', () 
   });
 
   it('offers the provider a single-select, not a row of switches', () => {
-    const home = code('src/screens/ProviderYouScreen.tsx');
+    const home = code('src/screens/ProviderPhotosScreen.tsx');
     expect(home).toContain('accessibilityRole="radiogroup"');
     expect(home).toContain('accessibilityRole="radio"');
     expect(home).toContain('useSetPrimaryPhoto');
-    const block = between(home, 'testID="provider-photos"', 'testID="earned-notice"');
+    const block = between(home, 'testID="provider-photos"', 'testID="photo-remove-confirm"');
     expect(block).not.toContain('<Toggle');
   });
 
   it('picks photos through the system picker, which needs no permission', () => {
-    const home = code('src/screens/ProviderYouScreen.tsx');
+    const home = code('src/screens/ProviderPhotosScreen.tsx');
     // selectionLimit > 1 routes through PickMultipleVisualMedia, the permissionless
     // system photo picker — NOT the MediaStore / READ_MEDIA_IMAGES path AttachPanel
     // refuses on Play-policy grounds.
@@ -282,8 +282,8 @@ describe('a provider publishes several photos, and one of them is the face', () 
      * Pressable-free View is correct all over this file (the primary badge, the
      * tab badge).
      */
-    const home = code('src/screens/ProviderYouScreen.tsx');
-    const block = between(home, 'testID="provider-photos"', 'testID="earned-notice"');
+    const home = code('src/screens/ProviderPhotosScreen.tsx');
+    const block = between(home, 'testID="provider-photos"', 'testID="photo-remove-confirm"');
 
     // A plain View carries the position and wraps the control.
     expect(block).toMatch(/<View style=\{styles\.photoRemoveSlot\}>\s*<Pressable/);

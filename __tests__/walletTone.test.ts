@@ -252,7 +252,8 @@ describe('the bright accent carries no label', () => {
      * four of the first five wrong while the fifth was being fixed, and this one
      * is on a screen the same change set is already editing.
      */
-    const home = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
+    // On the photos page since the provider IA (Option A).
+    const home = withoutComments(read('src/screens/ProviderPhotosScreen.tsx'));
     const block = styleBlock(home, 'photoBadge');
     expect(block).toContain('bg.accentStrong');
     expect(block).not.toMatch(/bg\.accent(?!Strong|Tint)/);
@@ -318,42 +319,30 @@ describe('the bright accent carries no label', () => {
     }
   });
 
-  it('keeps the payout row visible now the card is the fill the row used to be', () => {
+  it('keeps Get paid legible now it is a settings row, not an inset on the card', () => {
     /*
-     * A fill move with a second-order effect that would have been worse than the
-     * bug it fixed. `payoutRow` was `bg/accentStrong` inset into a `bg/accent`
-     * card — a deeper step in a brighter one, which is what made it read as a
-     * control. Once the card takes accentStrong for its labels' sake, an
-     * unchanged row is the SAME colour as its container: 1.00:1, a "Get paid"
-     * button that is not on screen at all.
-     *
-     * So it takes the answer the app already gives, stated as a rule on
-     * `minutesTagOn` in RechargeScreen.tsx and followed by `ribbonOn` and the
-     * compact chip's `popularOn`: anything inset into a filled accent card takes
-     * the page colour and accent ink. There is no third accent step for an inset
-     * element to be.
-     *
-     * Both glyphs move with the label or they would be white on white in light
-     * mode, which is the same class of mistake as the one being fixed.
+     * The provider IA (owner, 2026-09-25, Option A) moved "Get paid" off the
+     * earnings card into the Money section of the settings list. The inset
+     * problem this test used to guard — a `payoutRow` on an accentStrong card
+     * had to take the page colour and accent ink or it was 1.00:1 against its
+     * container — is gone with the inset: the row is a list row on `bg/base`
+     * in the list's own ink. Pinned from both sides, so a revert that puts a
+     * control back on the card is caught.
      */
     const home = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
-    const row = styleBlock(home, 'payoutRow');
-    expect(row).toContain('bg.base');
-    expect(row).not.toMatch(/bg\.accent/);
-    expect(styleBlock(home, 'payoutLabel')).toMatch(/text\.accent/);
-    expect(home).toMatch(/name="wallet"[^/]*color=\{theme\.color\.text\.accent\}/);
-    expect(home).toMatch(/name="chevronRight"[^/]*color=\{theme\.color\.text\.accent\}/);
-    /*
-     * And it is not a downgrade taken to dodge the nesting problem: the pairing
-     * it lands on beats the white-on-accentStrong one it replaces in BOTH modes.
-     * Asserted as a comparison rather than against 4.5 so it stays meaningful if
-     * the palette moves — the claim is "this row got more legible, not less".
-     *
-     * AT LEAST as legible, since the one-ramp coral (2026-09-26): in light the
-     * row's ink and the card's fill are the same step 500, so step-500 ink on
-     * white and white on step 500 are the same pair read in both directions,
-     * 5.27:1 each. Dark is still strictly better (step 300 on the base, 6.94:1).
-     */
+    expect(home).not.toContain('payoutRow');
+    expect(home).toContain("testID: 'you-get-paid'");
+    expect(home).toContain('onPress: onOpenPayout');
+    // The stats moved INTO the card, so they take its ink, at full strength.
+    for (const style of ['statValue', 'statLabel']) {
+      const block = styleBlock(home, style);
+      expect(block).toMatch(/text\.onAccent/);
+      expect(block).not.toMatch(/opacity:/);
+    }
+    const settings = withoutComments(read('src/screens/SettingsSheet.tsx'));
+    expect(styleBlock(settings, 'row')).toContain('bg.base');
+    // The inset row's pairing is still the better one where it survives
+    // (anything inset into a filled accent card takes page colour + accent ink).
     for (const mode of ['Light', 'Dark'] as const) {
       expect(contrast(hex('text/accent', mode), hex('bg/base', mode))).toBeGreaterThanOrEqual(
         contrast(hex('text/onAccent', mode), hex('bg/accentStrong', mode)),

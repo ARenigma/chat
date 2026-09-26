@@ -1,50 +1,36 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Image, PixelRatio, StyleSheet, Text, View } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
 import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { sectionIn, sectionOut } from '../theme/motion';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import type { ProviderPhoto } from '../lib/database.types';
 import { MAX_PROVIDER_PHOTOS } from '../lib/database.types';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { AVAILABILITY, useAvailabilityToggle } from '../lib/providerAvailability';
+import { getPaidStatus } from '../lib/payoutStatus';
 import { useProfile } from '../api/chat';
 import {
-  useAddProviderPhotos,
   useEarnings,
+  usePayoutAccount,
+  usePayoutReadiness,
   useProviderPhotos,
-  useRemoveProviderPhoto,
   useSetChannels,
-  useSetPrimaryPhoto,
 } from '../api/provider';
-import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Icon, type IconName } from '../components/Icon';
-import { Pressable } from '../components/Pressable';
 import { RupeeAmount } from '../components/RupeeAmount';
 import { Toggle } from '../components/Toggle';
 import { SettingsSheet } from './SettingsSheet';
 
-/**
- * The gallery tile, in dp. A measured size gets a name rather than sitting as a
- * bare number in three style blocks: three across the 360dp column with the
- * card's own 16dp margins and a 12dp gutter.
- */
-const PHOTO_TILE = 88;
-
-/**
- * The remove badge's drawn size, in dp. Named because the touch target is
- * DERIVED from it rather than declared: `Pressable`'s `size` prop turns this
- * into `hitSlop = ceil((interaction.minTarget - 24) / 2) = 12` on every side,
- * so a 24dp disc is pressable across 48dp — "we recommend that each interactive
- * UI element have a focusable area, or touch target size, of at least 48dp ×
- * 48dp".
- * https://developer.android.com/guide/topics/ui/accessibility/apps
- */
-const REMOVE_BADGE = 24;
+/** The "Your photos" row's thumbnails: how many, and how big, in dp. */
+const THUMB_COUNT = 3;
+const THUMB = 28;
 
 interface Props {
   onOpenPayout: () => void;
+  /** The "Your photos" sub-page (owner, 2026-09-25, Option A). */
+  onOpenPhotos: () => void;
+  /** The Edit profile page: headline, about, languages, expertise. */
+  onOpenEditProfile: () => void;
   /** Per-session earnings ledger, opened from the settings list. */
   onOpenUsage: () => void;
   /** The provider's blocked-members list, opened from the settings list. */
@@ -70,26 +56,27 @@ const CHANNEL_ROWS: readonly { key: ChannelKey; title: string; glyph: IconName }
 ];
 
 /**
- * The provider's You tab: everything about them and their money —
- * availability, what they offer, their photos, what they have earned (60%
- * share, ADR-0021; 1 token = ₹1), payout setup and stats — above the shared
- * settings list.
+ * The provider's You tab, re-laid like Bluesky and the industry apps (owner,
+ * 2026-09-25, "Option A approved"): the EARNINGS card first with its KPI
+ * stats inside, then AVAILABILITY (the master switch and the channels under
+ * it), then the grouped settings list — Your profile (Edit profile, Your
+ * photos), Money (Get paid with its verification status, Earnings by
+ * session), App, Legal.
  *
  * The "You" tab IS the settings surface, exactly like the member tree — one
- * screen, not a dashboard with a second Settings behind a gear. The
- * provider-only controls ride in as SettingsSheet's `topSection`, above the
- * shared account/privacy list, and the header/search/profile hero come from the
- * sheet itself.
+ * screen, not a dashboard with a second Settings behind a gear. The two cards
+ * ride in as SettingsSheet's `topSection`; the provider rows as `extraRows`,
+ * so the sheet's search filters them with the rest.
  *
- * Earnings show with a payout-pending note because the transfer is manual for
- * now (docs/provider-payouts.md); the figure is a correct accrual, not yet paid.
- *
- * Split out of ProviderHomeScreen in navigation step 6 so it can become the
- * provider YouTab root. It owns the photo-remove confirmation too, because the
- * only thing that opens it lives here.
+ * The gallery moved to its own page (ProviderPhotosScreen), and the
+ * photo-remove confirmation with it. Nothing here animates beyond the
+ * channels' existing collapse: settings rows are a tens-a-day surface, and
+ * the frequency gate leaves them the press state layer alone.
  */
 export function ProviderYouScreen({
   onOpenPayout,
+  onOpenPhotos,
+  onOpenEditProfile,
   onOpenUsage,
   onOpenBlocked,
   onSignedOut,
@@ -103,13 +90,9 @@ export function ProviderYouScreen({
   const { toggle, pending: availabilityPending } = useAvailabilityToggle();
   const setChannels = useSetChannels();
   const { data: photos } = useProviderPhotos(profile?.id ?? null);
-  const addPhotos = useAddProviderPhotos();
-  const setPrimary = useSetPrimaryPhoto();
-  const removePhoto = useRemoveProviderPhoto();
-
-  const [pendingDelete, setPendingDelete] = useState<ProviderPhoto | null>(null);
+  const { data: readiness } = usePayoutReadiness();
+  const { data: payoutAccount } = usePayoutAccount();
   const gallery = photos ?? [];
-  const remaining = MAX_PROVIDER_PHOTOS - gallery.length;
   const available = profile?.is_available ?? false;
   const availabilityCopy = AVAILABILITY[available ? 'on' : 'off'];
   // What they are willing to do, which is a different question from whether
@@ -161,57 +144,107 @@ export function ProviderYouScreen({
     [enabledCount, setChannels, toggle],
   );
 
-  /**
-   * Add photos.
-   *
-   * `selectionLimit` greater than 1 routes through `PickMultipleVisualMedia` —
-   * the system photo picker, which requires NO runtime permission and is not
-   * the MediaStore / READ_MEDIA_IMAGES path the app refuses on Play-policy
-   * grounds (the manifest removes that permission; see
-   * `__tests__/contract.test.ts` › "never declares a restricted media-read
-   * permission"). This is now the ONLY picker in the app — the chat's attach
-   * panel was deleted on 2026-09-19 — and it adds no dependency and no native
-   * change on the installed react-native-image-picker 7.2.3 (RULE 5).
-   *
-   * Clamped to the free slots so the picker never hands back more than the 070
-   * trigger will accept; a clamp of 1 is plain single-select, which is the right
-   * behaviour for the last slot.
-   *
-   * https://developer.android.com/training/data-storage/shared/photopicker
-   */
-  const pickPhotos = useCallback(async () => {
-    if (remaining <= 0) {
-      return;
-    }
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: Math.max(1, remaining),
-      quality: 0.9,
-    }).catch(() => null);
-    if (result === null || result.didCancel === true) {
-      return;
-    }
-    const drafts = (result.assets ?? [])
-      .filter(a => a.uri !== undefined)
-      .slice(0, remaining)
-      .map(a => ({ uri: a.uri as string, mime: a.type }));
-    if (drafts.length > 0) {
-      addPhotos.mutate(drafts);
-    }
-  }, [remaining, addPhotos]);
-
   const earned = earnings?.provider_tokens ?? 0;
+  const status = getPaidStatus(readiness, payoutAccount);
+  const thumbs = gallery.slice(0, THUMB_COUNT);
 
   return (
-    <>
-      <SettingsSheet
-        bottomOffset={bottomOffset}
-        onSignedOut={onSignedOut}
-        onDeleted={onDeleted}
-        onUsage={onOpenUsage}
-        onBlocked={onOpenBlocked}
-        topSection={
+    <SettingsSheet
+      bottomOffset={bottomOffset}
+      onSignedOut={onSignedOut}
+      onDeleted={onDeleted}
+      onUsage={onOpenUsage}
+      onBlocked={onOpenBlocked}
+      extraRows={{
+        'edit-profile': {
+          icon: 'person',
+          title: 'Edit profile',
+          detail: 'Headline, about, languages and what you help with',
+          onPress: onOpenEditProfile,
+          testID: 'you-edit-profile',
+          accessibilityLabel: 'Edit profile',
+        },
+        photos: {
+          icon: 'image',
+          title: 'Your photos',
+          detail:
+            gallery.length === 0
+              ? 'Add photos members see on your profile'
+              : `${gallery.length} of ${MAX_PROVIDER_PHOTOS}`,
+          trailing:
+            thumbs.length > 0 ? (
+              <View style={styles.thumbs} importantForAccessibility="no-hide-descendants">
+                {thumbs.map(p => (
+                  <Image
+                    key={p.id}
+                    source={{
+                      uri: sizedStorageImageUri(p.url, THUMB, THUMB, PixelRatio.get()) ?? undefined,
+                    }}
+                    style={styles.thumb}
+                  />
+                ))}
+              </View>
+            ) : undefined,
+          onPress: onOpenPhotos,
+          testID: 'you-photos',
+          accessibilityLabel: `Your photos, ${gallery.length} of ${MAX_PROVIDER_PHOTOS}`,
+        },
+        'get-paid': {
+          icon: 'wallet',
+          title: 'Get paid',
+          detail: status.label,
+          detailTone: status.tone === 'action' ? 'attention' : 'default',
+          trailing:
+            status.tone === 'verified' ? (
+              <Icon name="badgeCheck" size={TOKENS.icon.sm} color={theme.color.text.accent} />
+            ) : undefined,
+          onPress: onOpenPayout,
+          testID: 'you-get-paid',
+          accessibilityLabel: `Get paid, ${status.label}`,
+        },
+      }}
+      topSection={
         <View style={styles.controls}>
+          {/* EARNINGS FIRST (owner, 2026-09-25, Option A): what they have made
+              is the first question a provider opens this tab with, and the
+              KPI stats sit inside the same card rather than floating below
+              it, so the money reads as one block. The data is what
+              `provider_earnings` (038) offers: the accrued share, minutes
+              billed, members served, and the rating from the profile. It has
+              no today/this-week split, so none is invented here.
+
+              Earnings — motivating, never a bleak "0". 1 token = ₹1 (ADR-0021).
+              The figure is a correct accrual held for a manual payout
+              (docs/provider-payouts.md), so its note says held, not paid. */}
+          <View style={styles.earnCard} testID="provider-earnings">
+            <Text allowFontScaling style={styles.earnLabel}>
+              Earned so far
+            </Text>
+            {/* `RupeeAmount` routes through `formatRupees`, so an earnings
+                figure past 999 prints "₹12,500" and not "₹12500". */}
+            <RupeeAmount
+              value={earned}
+              testID="earned-notice"
+              maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
+              allowFontScaling
+              style={styles.earnValue}
+            />
+            <Text allowFontScaling style={styles.earnSub}>
+              {earned > 0
+                ? 'Held for payout. Transfers land in your account.'
+                : 'You keep 60% of every paid minute. It shows up here.'}
+            </Text>
+            <View style={styles.stats}>
+              <Stat label="Minutes" value={String(earnings?.minutes_billed ?? 0)} testID="stat-minutes" />
+              <Stat label="People" value={String(earnings?.members_served ?? 0)} testID="stat-people" />
+              <Stat
+                label="Rating"
+                value={profile?.rating_avg != null ? profile.rating_avg.toFixed(1) : 'New'}
+                testID="stat-rating"
+              />
+            </View>
+          </View>
+
           {/* Availability and what they offer are ONE inset card, and as of
               2026-09-17 they are ONE QUESTION rather than two related ones:
               a master switch with the three channels collapsed under it.
@@ -226,8 +259,8 @@ export function ProviderYouScreen({
               it. Closed is one state to read instead of four.
 
               Kept as a single card (not two edge-bleeding siblings) so its
-              controls line up with the photos, earnings and stats blocks
-              below rather than running to the screen edge. */}
+              controls line up with the earnings card above rather than
+              running to the screen edge. */}
           <View style={styles.availabilityCard}>
             {/* Availability — the one control with an immediate effect on
                 whether anyone new can reach them. The Chats header carries
@@ -336,234 +369,9 @@ export function ProviderYouScreen({
               </Animated.View>
             ) : null}
           </View>
-
-          {/* The gallery (migration 070). It lives HERE and not in the
-              one-time application flow, because this is the surface a
-              provider comes back to when they want to change what members
-              see — next to what they are open to and what they offer. */}
-          <View style={styles.photos} testID="provider-photos">
-            <Text allowFontScaling style={styles.channelsLabel}>
-              Your photos
-            </Text>
-            <Text allowFontScaling style={styles.channelHint}>
-              Members swipe these on your profile. Tap one to make it your main photo.
-            </Text>
-            {/* One-of-N, so radios and not switches. Toggle.tsx is an M3
-                SWITCH (accessibilityRole="switch"), and a row of switches
-                would say each photo can be the main one independently —
-                which the database (provider_photos_one_primary) makes
-                untrue. Same control the age brackets and the rating stars
-                already use.
-                https://m3.material.io/components/radio-button/guidelines */}
-            <View style={styles.photoStrip} accessibilityRole="radiogroup">
-              {gallery.map((p, i) => (
-                <View key={p.id}>
-                  <Pressable
-                    onPress={() => {
-                      if (!p.is_primary) {
-                        setPrimary.mutate(p.id);
-                      }
-                    }}
-                    disabled={setPrimary.isPending}
-                    testID={`photo-primary-${i}`}
-                    accessibilityRole="radio"
-                    checked={p.is_primary}
-                    accessibilityLabel={`Photo ${i + 1} of ${gallery.length}`}
-                    accessibilityHint="Makes this your main photo"
-                    press="card"
-                    highlight="material"
-                    style={[styles.photoTile, p.is_primary && styles.photoTilePrimary]}>
-                    <Image
-                      source={{
-                        uri:
-                          sizedStorageImageUri(
-                            p.url,
-                            PHOTO_TILE,
-                            PHOTO_TILE,
-                            PixelRatio.get(),
-                          ) ?? undefined,
-                      }}
-                      style={styles.photoImg}
-                    />
-                    {p.is_primary ? (
-                      <View style={styles.photoBadge}>
-                        <Icon name="check" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
-                      </View>
-                    ) : null}
-                  </Pressable>
-                  {/* Removal is its own small target rather than a second
-                      full-width button per photo, and it opens a
-                      confirmation rather than acting — the two controls
-                      overlap at the corner, so a mis-tap has to be
-                      recoverable.
-
-                      THE ABSOLUTE POSITION LIVES ON THIS WRAPPER VIEW, NOT
-                      ON THE PRESSABLE — the same gotcha as the favourite
-                      heart in ProviderDetailScreen.tsx, and the same fix.
-                      `Pressable` splits the caller's style: only the
-                      box-sizing keys (BOX_KEYS in Pressable.tsx) reach the
-                      touchable root, and `position`/`top`/`right` stay on
-                      the inner Animated.View. Set on the Pressable they
-                      therefore anchored the badge to the Pressable's own
-                      24dp box, and the control laid out in normal flow
-                      BELOW the tile instead of on its corner.
-
-                      The 48dp target survives the move: `size` is what makes
-                      the hitSlop arithmetic explicit (24 + 2×12), and the
-                      slop reaching 8dp past the tile's top and right edges
-                      is genuinely pressable, not merely declared. Three
-                      things in RN 0.86 have to hold for that and all three
-                      were read rather than assumed:
-                        * `ReactViewGroup.initView` sets
-                          `clipChildren = false` (ReactViewGroup.kt:172), so
-                          a child outside the parent's box still draws and
-                          still hit-tests;
-                        * `TouchTargetHelper.findTouchTargetView` only
-                          refuses an out-of-bounds descendant when the
-                          ancestor's overflow is hidden/scroll or it clips
-                          (TouchTargetHelper.kt:188-208) — every ancestor
-                          here is an overflow-visible View, and the tile's
-                          own `overflow: 'hidden'` is on a SIBLING;
-                        * a child's hitSlop is unioned into the parent's
-                          overflow inset by Fabric itself —
-                          `contentBounds.unionInPlace(outsetBy(frame,
-                          hitSlop))`, YogaLayoutableShadowNode.cpp:777 — so
-                          the inset the check above consults already
-                          includes this slop.
-                      https://reactnative.dev/docs/pressable#hitslop */}
-                  <View style={styles.photoRemoveSlot}>
-                    <Pressable
-                      onPress={() => setPendingDelete(p)}
-                      testID={`photo-remove-${i}`}
-                      accessibilityLabel={`Remove photo ${i + 1}`}
-                      press="none"
-                      highlight="dim"
-                      size={REMOVE_BADGE}
-                      style={styles.photoRemove}>
-                      <Icon name="close" size={TOKENS.icon.xs} color={theme.color.text.onInverse} />
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-              {remaining > 0 ? (
-                <Pressable
-                  onPress={() => {
-                    void pickPhotos();
-                  }}
-                  /* `disabled` while the upload is in flight, not `busy`.
-                     `busy` is the held-compression state that pairs with
-                     `busyLabel` — the participle a Button swaps into its
-                     label — and this tile has no label to swap; Pressable
-                     accordingly has no `busyLabel`. contract.test's
-                     "narrates every mutation a button starts" counts the two
-                     props together for exactly that reason, so an icon-only
-                     control says "not now" instead of pretending to narrate.
-                     The outcome arrives as a notice. */
-                  disabled={addPhotos.isPending}
-                  testID="photo-add"
-                  accessibilityLabel={`Add photos, ${remaining} of ${MAX_PROVIDER_PHOTOS} slots free`}
-                  press="card"
-                  highlight="material"
-                  style={[styles.photoTile, styles.photoAdd]}>
-                  <Icon name="plus" size={TOKENS.icon.lg} color={theme.color.text.secondary} />
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-
-          {/* Earnings — motivating, never a bleak "0". 1 token = ₹1 (ADR-0021). */}
-          <View style={styles.earnCard}>
-            <Text allowFontScaling style={styles.earnLabel}>
-              Earned so far
-            </Text>
-            {/*
-             * `₹{earned}` was a hand-built string with no thousands
-             * grouping — an earnings figure past 999 would have printed
-             * "₹12500" rather than "₹12,500". Found during the ₹ glyph
-             * sweep alongside TokenCounter's doubled glyph; `RupeeAmount`
-             * routes through `formatRupees`, so both defects are the same
-             * fix.
-             */}
-            <RupeeAmount
-              value={earned}
-              testID="earned-notice"
-              maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
-              allowFontScaling
-              style={styles.earnValue}
-            />
-            <Text allowFontScaling style={styles.earnSub}>
-              {earned > 0
-                ? 'Held for payout. Transfers land in your account.'
-                : 'You keep 60% of every paid minute. It shows up here.'}
-            </Text>
-            <Pressable
-              onPress={onOpenPayout}
-              testID="open-payout"
-              accessibilityLabel="Set up how you get paid"
-              press="none"
-              highlight="dim"
-              style={styles.payoutRow}>
-              {/* Both glyphs take the row's own ink, not the card's: the row
-                  is `bg/base` now, so `text/onAccent` here would be white on
-                  white in light mode. See the note on `payoutRow`. */}
-              <Icon name="wallet" size={TOKENS.icon.md} color={theme.color.text.accent} />
-              <Text allowFontScaling style={styles.payoutLabel}>
-                Get paid
-              </Text>
-              <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.accent} />
-            </Pressable>
-          </View>
-
-          <View style={styles.stats}>
-            <Stat label="Minutes" value={String(earnings?.minutes_billed ?? 0)} testID="stat-minutes" />
-            <Stat label="People" value={String(earnings?.members_served ?? 0)} testID="stat-people" />
-            <Stat
-              label="Rating"
-              value={profile?.rating_avg != null ? profile.rating_avg.toFixed(1) : 'New'}
-              testID="stat-rating"
-            />
-          </View>
         </View>
-        }
-      />
-
-      {/* Removing a photo is not undoable — the object goes with the row — so it
-          takes M3's basic confirmation dialog, with the consequence named rather
-          than a vague "are you sure".
-
-          THREE BRANCHES, NOT TWO. "The next one becomes your main photo" is
-          what 070's AFTER trigger does — it promotes the oldest survivor — but
-          only while there IS a survivor. On the last photo the same trigger
-          nulls the mirrored scalar instead (pgTAP 320, case 13: "emptying the
-          gallery nulls avatar_url"), and ProviderDetailScreen's hero then draws
-          the coral gradient with the provider's initial over it. The two-branch
-          version promised a successor that does not exist, on the one removal
-          that changes what members see most. */}
-      <ConfirmDialog
-        visible={pendingDelete !== null}
-        title="Remove this photo?"
-        body={
-          pendingDelete?.is_primary !== true
-            ? 'Members will no longer see it on your profile.'
-            : gallery.length > 1
-              ? 'It is your main photo. The next one becomes your main photo.'
-              : 'It is your only photo. Members will see your initial until you add another.'
-        }
-        cancelLabel="Keep"
-        confirmLabel="Remove"
-        destructive
-        busy={removePhoto.isPending}
-        busyLabel="Removing"
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={() => {
-          if (pendingDelete !== null) {
-            removePhoto.mutate(pendingDelete);
-          }
-          setPendingDelete(null);
-        }}
-        testID="photo-remove-confirm"
-      />
-    </>
+      }
+    />
   );
 }
 
@@ -591,7 +399,7 @@ const makeStyles = (t: Theme) =>
     // the profile hero and the settings list. No horizontal inset of its own —
     // the sheet's scroll already pads the content — so the cards line up with the
     // settings rows below rather than sitting further in.
-    controls: { gap: TOKENS.space.md, paddingTop: TOKENS.space.md },
+    controls: { gap: TOKENS.space.md, paddingTop: TOKENS.space.md, paddingBottom: TOKENS.space.md },
     // The card itself: the inset frame the availability row and the channel
     // switches share, so both read as one card, two related questions.
     availabilityCard: {
@@ -606,9 +414,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.md,
     },
     // Channels sit inside the availability card, separated from the row above by
-    // a hairline rather than a gap: one card, two related questions. The
-    // hairline spans the card's inner width (padding to padding), which is why
-    // this block carries no horizontal inset of its own.
+    // a hairline rather than a gap: one card, two related questions.
     channels: {
       gap: TOKENS.space.sm,
       marginTop: TOKENS.space.sm,
@@ -617,82 +423,6 @@ const makeStyles = (t: Theme) =>
       borderTopColor: t.color.border.hairline,
     },
     channelsLabel: { ...TOKENS.typography.textSmSemiBold, color: t.color.text.secondary },
-    /*
-     * The gallery block. Hairline-topped like `channels`; the sheet's own scroll
-     * padding insets it, so its label and tiles line up with the settings rows
-     * rather than running to the screen edge.
-     */
-    photos: {
-      gap: TOKENS.space.sm,
-      paddingTop: TOKENS.space.sm,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: t.color.border.hairline,
-    },
-    photoStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKENS.space.sm },
-    photoTile: {
-      width: PHOTO_TILE,
-      height: PHOTO_TILE,
-      borderRadius: TOKENS.radius.field,
-      borderCurve: 'continuous',
-      overflow: 'hidden',
-      backgroundColor: t.color.bg.sunken,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    // The main photo is marked twice — a border AND the check badge — because a
-    // ring alone is a colour-only signal (WCAG 2.2 SC 1.4.1).
-    photoTilePrimary: { borderWidth: 2, borderColor: t.color.border.accent },
-    photoImg: { width: '100%', height: '100%' },
-    /*
-     * accentStrong on the weaker non-text floor, exactly as `checkboxOn` in
-     * ProfileSetupScreen took it: the mark inside is a 14dp `check` Icon rather
-     * than a label, so it answers to 3:1 and not 4.5:1 —
-     * developer.android.com/guide/topics/ui/accessibility/apps, "For all other
-     * text, set the color contrast ratio to at least 3:1". `bg/accent` clears
-     * that in light (3.44:1) and misses it in dark (2.59:1), where the accent is
-     * a light blue and the tick is `text/onAccent`. 5.19:1 / 6.13:1 here.
-     *
-     * Included with the earnings card above rather than left for a later pass
-     * because it is the same token pair on the same screen, and the header of
-     * `__tests__/walletTone.test.ts` exists because splitting this defect by
-     * surface is what kept four of the first five wrong.
-     */
-    photoBadge: {
-      position: 'absolute',
-      left: TOKENS.space['2xs'],
-      bottom: TOKENS.space['2xs'],
-      width: 22,
-      height: 22,
-      borderRadius: 11,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: t.color.bg.accentStrong,
-    },
-    photoAdd: {
-      borderWidth: 1,
-      borderColor: t.color.border.strong,
-      backgroundColor: 'transparent',
-    },
-    /*
-     * The corner the remove control hangs on. POSITION ONLY, and that split is
-     * the point: `position`/`top`/`right` are the properties `Pressable` keeps
-     * on its inner view, so they have to be applied by a plain View that wraps
-     * it. The control's own box stays below, where Pressable forwards it to the
-     * touchable root.
-     */
-    photoRemoveSlot: {
-      position: 'absolute',
-      top: -TOKENS.space['2xs'],
-      right: -TOKENS.space['2xs'],
-    },
-    photoRemove: {
-      width: REMOVE_BADGE,
-      height: REMOVE_BADGE,
-      borderRadius: REMOVE_BADGE / 2,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(0,0,0,0.6)',
-    },
     channelRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -708,10 +438,9 @@ const makeStyles = (t: Theme) =>
     availabilityTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
     availabilitySub: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
     /*
-     * accentStrong, not accent — and the card is only half of the fix, because
-     * the OPACITY on two of its three labels was the other half.
+     * accentStrong, not accent, and every label on it at full strength.
      *
-     * Three labels sit on this fill, all `text/onAccent`, and Android's rule
+     * Five labels sit on this fill, all `text/onAccent`, and Android's rule
      * sorts them into two groups —
      * developer.android.com/guide/topics/ui/accessibility/apps ("Increase text
      * visibility"): "If the text is smaller than 18sp, or if the text is bold
@@ -719,27 +448,19 @@ const makeStyles = (t: Theme) =>
      * in a color contrast ratio of at least 4.5:1. For all other text, set the
      * color contrast ratio to at least 3:1."
      *
-     *   - `earnValue` is 28dp Bold, so it is neither under 18sp nor bold-under-
-     *     14sp: it lands in "all other text" at 3:1. On `bg/accent` it passed in
-     *     light (3.44:1) and FAILED in dark (2.59:1), because the dark-mode
-     *     accent is a light blue. It is 5.19:1 / 6.13:1 here and comfortable.
-     *   - `earnLabel` (12dp) and `earnSub` (12dp) are under 18sp, so both take
-     *     4.5:1, and both were at 3.44:1 / 2.59:1.
+     *   - `earnValue` (28dp Bold) and `statValue` (22dp Bold) are "all other
+     *     text" at 3:1; on `bg/accent` the value FAILED in dark (2.59:1).
+     *   - `earnLabel`, `earnSub` and `statLabel` (12dp) take 4.5:1.
+     * On accentStrong every one is 5.19:1 light / 6.13:1 dark.
      *
-     * THE OPACITY IS PART OF THE MEASUREMENT, which is the thing that makes
-     * this card different from the six surfaces fixed in aba2c13. `opacity` on
-     * a `Text` composites the whole view, so the rendered ink was not
-     * `text/onAccent` at all — it was white at 80% / 85% over the fill, and WCAG
-     * measures the pixel that lands. Moving the fill alone would have left them
-     * at 3.87:1 and 4.16:1 in light: better, still short, and silently so.
-     * At full strength both are 5.19:1 / 6.13:1.
+     * THE OPACITY IS PART OF THE MEASUREMENT: `opacity` on a `Text`
+     * composites the whole view, so white at 80% is not `text/onAccent` and
+     * WCAG measures the pixel that lands. No label here carries an alpha; the
+     * hierarchy is the type scale's job. `__tests__/walletTone.test.ts` pins
+     * both halves.
      *
-     * Dropping the alpha does not break the rule that the FILL moves and the
-     * label never does — `text/onAccent` is still the token on all three. The
-     * hierarchy the alpha was buying is already carried by the type scale, 12dp
-     * Medium against 28dp Bold, which is a far louder difference than 15% of
-     * white; and there is no fill in the palette that carries 80% white at
-     * 4.5:1 while still being the accent, so the alpha was the only lever left.
+     * The stats moved INTO this card in the provider IA (Option A), so they
+     * take the card's ink rather than the page's.
      */
     earnCard: {
       padding: TOKENS.space.lg,
@@ -755,55 +476,25 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.onAccent,
       marginBottom: TOKENS.space.xs,
     },
-    /*
-     * The page colour and accent ink, because the card above it is now the fill
-     * this row used to be.
-     *
-     * This row was `bg/accentStrong` on an `bg/accent` card — a deeper step
-     * inset into a brighter one, which is what made it read as a control. Once
-     * the card takes `accentStrong` for its labels' sake, an unchanged row is
-     * the SAME colour as its container: 1.00:1, a "Get paid" button that is not
-     * on screen at all. That is a worse outcome than the contrast bug being
-     * fixed, so the two moves are one move.
-     *
-     * It takes the same answer the rest of the app already gives, stated as a
-     * rule on `minutesTagOn` in RechargeScreen.tsx: anything inset into a
-     * selected/filled accent card takes the page colour and accent ink. See
-     * also `ribbonOn` and the compact chip's `popularOn` there. Two accent steps
-     * exist; there is no third, so an inset element cannot be a deeper one.
-     *
-     * The numbers improve on both counts. `text/accent` on `bg/base` is 8.17:1
-     * light / 7.54:1 dark, against the 5.19:1 / 6.13:1 the white-on-accentStrong
-     * pairing gave, so the 16dp label and the two glyphs are better off. The
-     * row's BOUNDARY against the card is 5.19:1 light and 2.63:1 dark — the dark
-     * figure is under the 3:1 that WCAG 1.4.11 asks of a component boundary, and
-     * it is named here rather than glossed: it is the same figure every other
-     * inset pill in the app already carries, the row is identified by a wallet
-     * glyph, a bold label and a chevron rather than by its edge alone, and it is
-     * a large improvement on the 2.37:1 the old accentStrong-on-accent nesting
-     * measured. Closing it properly needs a third accent step, which is a
-     * palette decision and not this change's to make.
-     */
-    payoutRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.sm,
-      paddingHorizontal: TOKENS.space.md,
-      height: TOKENS.layout.rowOneLine,
-      borderRadius: TOKENS.radius.field,
-      borderCurve: 'continuous',
-      backgroundColor: t.color.bg.base,
-    },
-    payoutLabel: {
-      ...TOKENS.typography.titleMediumEmphasized,
-      color: t.color.text.accent,
-      flex: 1,
-    },
     stats: {
       flexDirection: 'row',
       gap: TOKENS.space.xl,
+      paddingTop: TOKENS.space.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.color.text.onAccent,
     },
     stat: { gap: TOKENS.space.hair },
-    statValue: { ...TOKENS.typography.titleLargeEmphasized, color: t.color.text.primary },
-    statLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    statValue: { ...TOKENS.typography.titleLargeEmphasized, color: t.color.text.onAccent },
+    statLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.onAccent },
+    // The photos row's strip: a few thumbnails before the chevron, the row's
+    // preview of what the sub-page holds. Decorative, hidden from TalkBack;
+    // the row's label carries the count.
+    thumbs: { flexDirection: 'row', gap: TOKENS.space['2xs'], marginRight: TOKENS.space.xs },
+    thumb: {
+      width: THUMB,
+      height: THUMB,
+      borderRadius: TOKENS.radius.sm,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.sunken,
+    },
   });

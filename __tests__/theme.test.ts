@@ -2204,6 +2204,14 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'ProviderChatsScreen.tsx',
       'ProviderDetailScreen.tsx',
+      /*
+       * Provider IA (Option A, 2026-09-25). Edit profile: the header Save is
+       * the page's one action, in accent ink. Your photos: the main photo's
+       * ring and check badge, a selection state, moved here from the You tab
+       * unchanged.
+       */
+      'ProviderEditProfileScreen.tsx',
+      'ProviderPhotosScreen.tsx',
       'ProviderPushGate.tsx',
       /*
        * The explore row, which JOINED this list on 2026-09-08 when it grew a

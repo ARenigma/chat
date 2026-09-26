@@ -384,6 +384,39 @@ export interface ProviderProfileEdit {
 }
 
 /**
+ * The save itself, apart from the hook so it is tested without React: the
+ * fields RPC first, then the tags, each only when it changed.
+ */
+export async function saveProviderProfile(edit: ProviderProfileEdit): Promise<void> {
+  if (edit.parts.fields) {
+    const { error } = await supabase.rpc('update_provider_profile', {
+      p_headline: edit.headline.trim(),
+      p_about: edit.about.trim(),
+      p_languages: edit.languages,
+    });
+    if (error) {
+      const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
+    }
+  }
+  if (edit.parts.expertise) {
+    const { error } = await supabase.rpc('set_provider_expertise', {
+      p_expertise: edit.expertise,
+    });
+    if (error) {
+      const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
+    }
+  }
+}
+
+/**
  * A live provider saves their Edit profile form.
  *
  * Two existing server writers, not a new combined one: `update_provider_profile`
@@ -403,34 +436,7 @@ export function useSaveProviderProfile() {
   const setNotice = useStore(s => s.setNotice);
 
   return useMutation<void, Error, ProviderProfileEdit>({
-    mutationFn: async edit => {
-      if (edit.parts.fields) {
-        const { error } = await supabase.rpc('update_provider_profile', {
-          p_headline: edit.headline.trim(),
-          p_about: edit.about.trim(),
-          p_languages: edit.languages,
-        });
-        if (error) {
-          const refusal = contactGuardRefusalFromError(error);
-          if (refusal) {
-            throw new ContactGuardRefusalError(refusal);
-          }
-          throw new Error(error.message);
-        }
-      }
-      if (edit.parts.expertise) {
-        const { error } = await supabase.rpc('set_provider_expertise', {
-          p_expertise: edit.expertise,
-        });
-        if (error) {
-          const refusal = contactGuardRefusalFromError(error);
-          if (refusal) {
-            throw new ContactGuardRefusalError(refusal);
-          }
-          throw new Error(error.message);
-        }
-      }
-    },
+    mutationFn: saveProviderProfile,
     onSuccess: () => {
       tick();
       setNotice('Profile saved.', 'confirm');

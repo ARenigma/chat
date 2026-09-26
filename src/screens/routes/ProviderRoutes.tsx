@@ -5,17 +5,20 @@
  * while notifications are off, as it covered ProviderHome.
  */
 
-import React, { useCallback, useEffect } from 'react';
-import { useIsFocused } from '@react-navigation/native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useIsFocused, usePreventRemove, type NavigationAction } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import * as Layout from '../../components/Layout';
 import { ChatRequestScreen } from '../../components/ChatRequestScreen';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ProviderPushGate } from '../../components/ProviderPushGate';
 import { ProviderChatsScreen } from '../ProviderChatsScreen';
 import { ProviderSavedScreen } from '../ProviderSavedScreen';
 import { ProviderYouScreen } from '../ProviderYouScreen';
 import { ProviderBankScreen } from '../ProviderBankScreen';
+import { ProviderEditProfileScreen } from '../ProviderEditProfileScreen';
+import { ProviderPhotosScreen } from '../ProviderPhotosScreen';
 import { useDismissKeyboardOnBlur } from '../../hooks/useDismissKeyboardOnBlur';
 import { useNavigationDeduped } from '../../hooks/useNavigationDeduped';
 import { useOpenChat } from '../../hooks/useOpenChat';
@@ -55,6 +58,8 @@ export function ProviderYouRoute() {
       <ProviderPushGate />
       <ProviderYouScreen
         onOpenPayout={() => nav.push('Payout')}
+        onOpenPhotos={() => nav.push('ProviderPhotos')}
+        onOpenEditProfile={() => nav.push('EditProfile')}
         onOpenUsage={() => nav.push('Usage')}
         onOpenBlocked={() => nav.push('Blocked')}
         onSignedOut={onSignedOut}
@@ -68,6 +73,69 @@ export function PayoutRoute({ navigation }: RouteProps<'Payout'>) {
   return (
     <Layout.Screen>
       <ProviderBankScreen onBack={() => navigation.goBack()} />
+    </Layout.Screen>
+  );
+}
+
+/** "Your photos", pushed from the You tab's row; the stack's default push. */
+export function ProviderPhotosRoute({ navigation }: RouteProps<'ProviderPhotos'>) {
+  return (
+    <Layout.Screen>
+      <ProviderPhotosScreen onBack={() => navigation.goBack()} />
+    </Layout.Screen>
+  );
+}
+
+/**
+ * Edit profile. Leaving with unsaved changes asks first (nav-migration §4,
+ * the adapters' `usePreventRemove`): hardware back, the header arrow and a
+ * tab re-press all become one "Discard changes?", and Discard replays the
+ * exact action that was held. A landed save leaves without asking: `leaving`
+ * lifts the guard first and the effect pops on the next render, because a
+ * `goBack` in the same tick would still meet the guard.
+ * https://reactnavigation.org/docs/preventing-going-back
+ */
+export function EditProfileRoute({ navigation }: RouteProps<'EditProfile'>) {
+  const [dirty, setDirty] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [held, setHeld] = useState<NavigationAction | null>(null);
+  useDismissKeyboardOnBlur();
+
+  usePreventRemove(dirty && !leaving, ({ data }) => {
+    setHeld(data.action);
+  });
+  useEffect(() => {
+    if (leaving) {
+      navigation.goBack();
+    }
+  }, [leaving, navigation]);
+
+  return (
+    <Layout.Screen>
+      <ProviderEditProfileScreen
+        onBack={() => navigation.goBack()}
+        onDirtyChange={setDirty}
+        onSaved={() => setLeaving(true)}
+      />
+      <ConfirmDialog
+        visible={held !== null}
+        title="Discard changes?"
+        body="Your edits to your profile have not been saved."
+        cancelLabel="Keep editing"
+        confirmLabel="Discard"
+        destructive
+        onCancel={() => setHeld(null)}
+        onConfirm={() => {
+          const action = held;
+          setHeld(null);
+          // The held action replays past the guard, as the docs' own
+          // confirm does; `leaving` is only for the save path.
+          if (action !== null) {
+            navigation.dispatch(action);
+          }
+        }}
+        testID="edit-profile-discard-confirm"
+      />
     </Layout.Screen>
   );
 }
