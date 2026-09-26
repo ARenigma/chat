@@ -28,6 +28,10 @@ import { MAX_PROVIDER_PHOTOS } from '../lib/database.types';
 import { track } from '../lib/telemetry';
 import { errorTick, tick } from '../lib/haptics';
 import {
+  ContactGuardRefusalError,
+  contactGuardRefusalFromError,
+} from '../lib/contactGuard';
+import {
   cashfreeOnboardingAvailable,
   CashfreeOnboardingError,
   startCashfreeOnboarding,
@@ -152,7 +156,9 @@ export function useSubmitApplication() {
       // The 18+ refusal comes back as a server error and is worth showing
       // plainly rather than as "something went wrong", it is not retryable.
       setNotice(
-        /18 or older/.test(err.message)
+        err instanceof ContactGuardRefusalError
+          ? err.message
+          : /18 or older/.test(err.message)
           ? 'You must be 18 or older to be a provider.'
           : 'Could not submit right now.',
       );
@@ -208,7 +214,11 @@ export function useCompleteProviderOnboarding() {
         p_provider_category: draft.category,
       });
       if (error) {
-        throw new Error(error.message);
+        const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
       }
 
       /*
@@ -299,7 +309,11 @@ export function useSetChannels() {
       }
       const { error } = await supabase.from('profiles').update(patch).eq('id', me);
       if (error) {
-        throw new Error(error.message);
+        const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
       }
     },
     onSuccess: () => {
@@ -307,9 +321,11 @@ export function useSetChannels() {
       void queryClient.invalidateQueries({ queryKey: keys.profile });
       void queryClient.invalidateQueries({ queryKey: keys.providers });
     },
-    onError: () => {
+    onError: err => {
       errorTick();
-      setNotice('Could not change what you offer.');
+      setNotice(
+        err instanceof ContactGuardRefusalError ? err.message : 'Could not change what you offer.',
+      );
     },
   });
 }
@@ -335,7 +351,11 @@ export function useSetProviderExpertise() {
         p_expertise: expertise,
       });
       if (error) {
-        throw new Error(error.message);
+        const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
       }
       return data ?? [];
     },
@@ -344,9 +364,11 @@ export function useSetProviderExpertise() {
       void queryClient.invalidateQueries({ queryKey: keys.profile });
       void queryClient.invalidateQueries({ queryKey: keys.providers });
     },
-    onError: () => {
+    onError: err => {
       errorTick();
-      setNotice('Could not save what you help with.');
+      setNotice(
+        err instanceof ContactGuardRefusalError ? err.message : 'Could not save what you help with.',
+      );
     },
   });
 }

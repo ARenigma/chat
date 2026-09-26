@@ -63,6 +63,6 @@ describe('isolated V2 Kirill chat shell', () => {
     expect(composer).toContain('testID="chat-v2-input"');
     expect(composer).toContain('testID="chat-v2-send"');
     expect(composer).toContain('testID="chat-v2-mic"');
-    expect(composer).toMatch(/onSend\(text\);[\s\S]*setText\(''\);/);
+    expect(composer).toMatch(/if \(!onSend\(text\)\) \{[\s\S]*setText\(''\);/);
   });
 });

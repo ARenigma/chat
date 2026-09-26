@@ -745,7 +745,7 @@ describe('the V2 shell renders real rows', () => {
     // The quoted parent rides with the send, and the reply bar clears first so
     // a failed send does not leave the strip pointing at a message that went.
     expect(screen).toMatch(
-      /setReplyTo\(null\);[\s\S]{0,120}void sendText\(text, parent\?\.messageId \?\? null\);[\s\S]{0,80}\[replyTo, sendText\]/,
+      /setReplyTo\(null\);[\s\S]{0,120}void sendText\(text, parent\?\.messageId \?\? null\);[\s\S]{0,80}\[guardMode, replyTo, sendText, setNotice\]/,
     );
     expect(screen).not.toMatch(/\[chat\],\s*\);/);
   });

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import {
+  ContactGuardRefusalError,
+  contactGuardRefusalFromError,
+} from '../lib/contactGuard';
 import type { Profile } from '../lib/database.types';
 import {
   USERNAME_MAX,
@@ -121,6 +125,10 @@ export async function setPreferredLanguages(
     // this is the cheapest possible guard against that.
     .eq('id', userId);
   if (error) {
+    const refusal = contactGuardRefusalFromError(error);
+    if (refusal) {
+      throw new ContactGuardRefusalError(refusal);
+    }
     throw new Error(error.message);
   }
 }
@@ -300,7 +308,11 @@ export function useClaimMemberProfile() {
         p_avatar_seed: avatarSeed,
       });
       if (error) {
-        throw new Error(error.message);
+        const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
       }
       const result = data as { status?: string; message?: string };
       if (result.status !== 'ok') {

@@ -537,3 +537,49 @@ export function unreadAnchorOf(
   }
   return oldest === undefined ? null : oldest.localKey ?? oldest.id;
 }
+
+/** How far back the contact guard's hard window looks (spec 3.5: 6 messages / 15 min). */
+export const CONTACT_WINDOW_MS = 15 * 60 * 1000;
+/** The window's earlier messages; the one being sent is the sixth. */
+export const CONTACT_WINDOW_PRIOR = 5;
+
+/**
+ * The sender's own recent text bodies, OLDEST FIRST, for the composer's
+ * contact-guard precheck (`precheckContactGuard`'s `recentOwn`).
+ *
+ * The server's window reads stored messages, so only what the server holds
+ * counts: a pending bubble has not reached it, a failed one never did, and a
+ * deleted one has no body left. Voice notes and photos carry no text.
+ */
+export function chatV2RecentOwnTexts(
+  rows: readonly ChatV2Row[],
+  nowMs: number,
+): string[] {
+  const picked: string[] = [];
+  // Rows are newest first, so the first five that qualify are the five newest.
+  for (const row of rows) {
+    if (picked.length === CONTACT_WINDOW_PRIOR) {
+      break;
+    }
+    if (
+      row.kind !== 'message' ||
+      !row.mine ||
+      row.pending ||
+      row.failed ||
+      row.deleted
+    ) {
+      continue;
+    }
+    const body = row.message.body;
+    if (body === null || body.trim() === '') {
+      continue;
+    }
+    const at = Date.parse(row.message.created_at);
+    if (!Number.isFinite(at) || nowMs - at > CONTACT_WINDOW_MS) {
+      // Older rows only get older from here.
+      break;
+    }
+    picked.push(body);
+  }
+  return picked.reverse();
+}

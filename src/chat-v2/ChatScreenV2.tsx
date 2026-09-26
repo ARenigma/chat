@@ -33,11 +33,19 @@ import { Sheet } from '../components/Sheet';
 import { MemberProfileSheet } from '../components/MemberProfileSheet';
 import { M3Field } from '../components/TextField';
 import { SafetySheet } from '../screens/SafetySheet';
+import { useContactGuardMode } from '../api/appConfig';
+import {
+  CONTACT_GUARD_NOTICE,
+  contactGuardNotice,
+  precheckContactGuard,
+} from '../lib/contactGuard';
 import type { ReactionEmoji } from '../lib/database.types';
+import { errorTick } from '../lib/haptics';
 import { openRefill, openWallet } from '../lib/routes/actions';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import type { VoiceDraft } from '../lib/voice';
 import { TOKENS, type Theme } from '../theme/tokens';
+import { useStore } from '../store/useStore';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { chatV2PageDownBottom, type ChatV2CallPermissions } from './cells';
 import { ChatActionsV2, type ChatV2ActionRequest } from './ChatActionsV2';
@@ -48,7 +56,11 @@ import type { ChatV2Anchor } from './ChatMessageCellV2';
 import { ChatPageDownV2 } from './ChatPageDownV2';
 import { ChatSessionBarV2 } from './ChatSessionBarV2';
 import { chatV2Arrival, chatV2RowIds, chatV2ScrolledAway } from './chatState';
-import type { ChatV2ImageBody, ChatV2Row } from './rows';
+import {
+  chatV2RecentOwnTexts,
+  type ChatV2ImageBody,
+  type ChatV2Row,
+} from './rows';
 import {
   chatV2ConsentCopy,
   chatV2LeaveCopy,
@@ -315,13 +327,40 @@ export function ChatScreenV2({
    * The reply bar clears on send, whichever way the answer was written: a
    * reply composed and then answered with a recording is still a reply.
    */
+  /*
+   * The contact guard's precheck runs first, and only in enforce mode (it
+   * returns null otherwise): a message the server would refuse is explained
+   * before the send and never leaves the field. The server still decides, and
+   * a predicted block is not sent "once for the strike": strikes are the
+   * server's to count, on its own refusals. `false` tells the composer to keep
+   * the text so the sender can edit it.
+   */
+  const guardMode = useContactGuardMode();
+  const setNotice = useStore(s => s.setNotice);
+  // Read at the moment of send, so a new message does not re-create the
+  // composer's handler.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const onSend = useCallback(
-    (text: string) => {
+    (text: string): boolean => {
+      const refusal = precheckContactGuard(
+        text,
+        guardMode,
+        chatV2RecentOwnTexts(rowsRef.current, Date.now()),
+      );
+      if (refusal) {
+        setNotice(
+          contactGuardNotice(refusal) ?? CONTACT_GUARD_NOTICE.CONTACT_INFO,
+        );
+        errorTick();
+        return false;
+      }
       const parent = replyTo;
       setReplyTo(null);
       void sendText(text, parent?.messageId ?? null);
+      return true;
     },
-    [replyTo, sendText],
+    [guardMode, replyTo, sendText, setNotice],
   );
   const onSendVoice = useCallback(
     (draft: VoiceDraft) => {

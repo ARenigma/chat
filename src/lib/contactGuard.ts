@@ -192,3 +192,19 @@ export function contactGuardRefusalFromError(
     surface: 'profile',
   };
 }
+
+/**
+ * A write the guard refused, thrown by the profile mutations. Its `message` is
+ * the line to show, so a screen that surfaces `err.message` shows the guard's
+ * copy with no change, and an `onError` with its own generic line can tell a
+ * refusal apart with `instanceof`.
+ */
+export class ContactGuardRefusalError extends Error {
+  readonly refusal: ContactGuardRefusal;
+
+  constructor(refusal: ContactGuardRefusal) {
+    super(contactGuardNotice(refusal) ?? CONTACT_GUARD_NOTICE.CONTACT_INFO);
+    this.name = 'ContactGuardRefusalError';
+    this.refusal = refusal;
+  }
+}

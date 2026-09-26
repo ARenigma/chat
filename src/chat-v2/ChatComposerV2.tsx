@@ -31,7 +31,11 @@ interface Props {
   bottomInset: number;
   /** Benchmark route may exercise layout but cannot invoke mutations. */
   readOnly?: boolean;
-  onSend: (text: string) => void;
+  /**
+   * False when the send was refused before it left (the contact guard's
+   * precheck): the text stays in the field, where the sender can edit it.
+   */
+  onSend: (text: string) => boolean;
   /** A finished recording, ready to upload. */
   onSendVoice: (draft: VoiceDraft) => void;
   /** Persists the draft across a process death, and is cleared on send. */
@@ -274,7 +278,9 @@ export function ChatComposerV2({
     if (disabled || readOnly || text.trim() === '') {
       return;
     }
-    onSend(text);
+    if (!onSend(text)) {
+      return;
+    }
     setText('');
     // A sent message is not a draft any more. Purging here rather than letting
     // the next backgrounding write an empty string keeps the stored value and
