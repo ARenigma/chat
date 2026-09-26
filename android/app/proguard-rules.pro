@@ -26,6 +26,13 @@
 -keep class * extends com.margelo.nitro.core.HybridObject { *; }
 -dontwarn com.margelo.nitro.**
 
+# react-native-screens Fragment class names must survive R8 renaming so that
+# process-death Fragment restoration can reconstruct screen Fragments by class
+# name. Without this, restored Fragments raise ClassNotFoundException.
+# screens issue #4505; PR #4540 (unmerged, rule shipped manually here instead).
+# https://developer.android.com/topic/performance/app-optimization/keep-rules-best-practices
+-keepnames class com.swmansion.rnscreens.** extends androidx.fragment.app.Fragment
+
 # Cashfree Verification Suite (1-Click Onboarding) SDK + its PG base dependency.
 # The AAR ships no consumer ProGuard rules, so R8 would strip the SDK surface and
 # the WebView JS-bridge classes the native module bridges to (CFVerificationService,

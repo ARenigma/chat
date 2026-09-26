@@ -2240,12 +2240,13 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
 });
 
 describe('hardware back reaches the app', () => {
-  it('does not opt the manifest into OnBackInvokedCallback while BackHandler carries every back decision', () => {
-    // App.tsx's single BackHandler subscription (and the guard stack behind it,
-    // src/lib/backGuard.ts) is how a live paid session or call gets its confirm
-    // dialog. That path is fed by the Activity's legacy onBackPressed; opting
-    // into the predictive-back callback is the W6 item and must be done with
-    // its own reading of the docs, not slipped in with a manifest edit.
+  it('does not opt the manifest into OnBackInvokedCallback while back guards are wired by the navigator', () => {
+    // App.tsx's single BackHandler handles root-exit only (the "do you want to
+    // leave?" dialog). Live paid sessions and calls use usePreventRemove in their
+    // route adapters (src/screens/routes/), which is fed by the Activity's legacy
+    // onBackPressed. Opting into the predictive-back callback is the W6 item and
+    // must be done with its own reading of the docs, not slipped in with a
+    // manifest edit. src/lib/backGuard.ts is deleted in step 8 of the migration.
     // https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
     expect(read(MANIFEST)).not.toMatch(
       /enableOnBackInvokedCallback\s*=\s*"true"/,
@@ -2829,5 +2830,115 @@ describe('the Truecaller sheet footer leads to Google (2026-09-24)', () => {
     // is still 'loading' from the sheet in that render.
     const start = screen.slice(screen.indexOf('const startGoogle = useCallback'), screen.indexOf('const onGoogle = useCallback'));
     expect(start).not.toContain('canSubmit(');
+  });
+});
+
+/**
+ * Step 1 — react-navigation and react-native-screens installation pins.
+ *
+ * These encode the decisions and constraints from ADR-0032 §2 and the
+ * nav-migration plan §7 and §9 step 1 so that a future edit that violates them
+ * fails here rather than at runtime or in a release build.
+ *
+ * Sources:
+ *   react-native-screens Android installation:
+ *     https://github.com/software-mansion/react-native-screens?tab=readme-ov-file#android
+ *   Fragment state saving (why factory must precede super.onCreate):
+ *     https://developer.android.com/guide/fragments/saving-state
+ *   R8 -keepnames vs -keep (why names only, not members):
+ *     https://developer.android.com/topic/performance/app-optimization/keep-rules-best-practices
+ */
+describe('react-navigation + react-native-screens — step 1 installation (ADR-0032)', () => {
+  const pkg = JSON.parse(read('package.json'));
+  const activity = read('android/app/src/main/java/com/companionchat/MainActivity.kt');
+  const proguard = read('android/app/proguard-rules.pro');
+  const gradleProps = read('android/gradle.properties');
+  const buildGradle = read('android/app/build.gradle');
+
+  it('pins @react-navigation/native, native-stack, bottom-tabs and react-native-screens to exact versions — no caret', () => {
+    // Exact pins (no ^) prevent silent major/minor upgrades that can shift
+    // native API surfaces between Gradle sync and an npm install on a new machine.
+    // All four versions are within Bluesky social-app f80c43e's ranges.
+    expect(pkg.dependencies['@react-navigation/native']).toBe('7.4.1');
+    expect(pkg.dependencies['@react-navigation/native-stack']).toBe('7.19.2');
+    expect(pkg.dependencies['@react-navigation/bottom-tabs']).toBe('7.19.2');
+    expect(pkg.dependencies['react-native-screens']).toBe('4.28.0');
+    for (const dep of [
+      '@react-navigation/native',
+      '@react-navigation/native-stack',
+      '@react-navigation/bottom-tabs',
+      'react-native-screens',
+    ]) {
+      // A leading ^ means "compatible with", not "exactly". Fail on any caret.
+      expect(pkg.dependencies[dep]).not.toMatch(/^\^/);
+    }
+  });
+
+  it('assigns RNScreensFragmentFactory before super.onCreate — required for process-death Fragment restore', () => {
+    // react-native-screens uses AndroidX Fragments to render screens. When the
+    // process dies and is restored, the Fragment manager recreates Fragments by
+    // class name. Without RNScreensFragmentFactory registered before
+    // super.onCreate(), the manager uses the default factory and cannot find the
+    // screen Fragment classes after R8 renaming — causing a crash on restore.
+    // https://github.com/software-mansion/react-native-screens?tab=readme-ov-file#android
+    // https://developer.android.com/guide/fragments/saving-state
+    const factoryIdx = activity.indexOf('supportFragmentManager.fragmentFactory = RNScreensFragmentFactory()');
+    const superIdx = activity.indexOf('super.onCreate(savedInstanceState)');
+    expect(factoryIdx).toBeGreaterThan(-1);
+    expect(superIdx).toBeGreaterThan(-1);
+    // Factory registration must come before super.onCreate.
+    expect(factoryIdx).toBeLessThan(superIdx);
+  });
+
+  it('never calls super.onCreate(null) — Truecaller launcher needs the saved Activity state', () => {
+    // Passing null to super.onCreate() clears the saved instance state, which
+    // breaks Truecaller's registerForActivityResult launcher: it stores its
+    // callback key in the Activity result registry (backed by saved state), and
+    // clearing that state loses the in-flight OAuth result after process death.
+    // https://developer.android.com/training/basics/intents/result
+    // Use code() to strip comments — the factory comment explains why null is
+    // NOT passed, and the literal string must not appear in executable code.
+    expect(code('android/app/src/main/java/com/companionchat/MainActivity.kt')).not.toContain('super.onCreate(null)');
+  });
+
+  it('cites the screens README and Fragment saving-state doc in the factory comment', () => {
+    // RULE 1: every platform doc reference is cited in the code so the reader
+    // can verify the claim.
+    expect(activity).toContain('https://github.com/software-mansion/react-native-screens?tab=readme-ov-file#android');
+    expect(activity).toContain('https://developer.android.com/guide/fragments/saving-state');
+  });
+
+  it('keeps Fragment class names from R8 renaming — screens issue #4505', () => {
+    // -keepnames preserves the class name string that the Fragment manager uses
+    // to reconstruct screen Fragments after process death, without keeping all
+    // members (which -keep would do, over-retaining). The rule targets only
+    // RNScreens Fragment subclasses, not the whole com.swmansion tree.
+    // screens #4505; PR #4540 (unmerged — the rule ships here instead).
+    expect(proguard).toContain(
+      '-keepnames class com.swmansion.rnscreens.** extends androidx.fragment.app.Fragment',
+    );
+  });
+
+  it('does not set rnsGammaEnabled — screens 4.28.0 uses the stable renderer by default', () => {
+    // rnsGammaEnabled was a feature flag for an experimental renderer in older
+    // screens versions. 4.28.0 ships the stable renderer; the flag is absent
+    // from its changelog and should not be set.
+    expect(gradleProps).not.toContain('rnsGammaEnabled');
+    expect(buildGradle).not.toContain('rnsGammaEnabled');
+  });
+
+  it('does not set screenOrientation — ADR-0032 ruling 8, large-screen guidance', () => {
+    // Orientation is not restricted: https://developer.android.com/guide/topics/large-screens/large-screen-cookbook
+    // (Already pinned in the manifest test above; duplicated here so step-1
+    // reviewers see it alongside the other five ruling-8 checks.)
+    expect(read(MANIFEST)).not.toMatch(/android:screenOrientation=/);
+  });
+
+  it('does not opt into OnBackInvokedCallback — back guards use usePreventRemove in route adapters', () => {
+    // Kept off: usePreventRemove in the nav adapters (src/screens/routes/) handles
+    // all back guards via the Activity's legacy onBackPressed path. Opting in
+    // requires its own doc reading (W6 item). ADR-0032 ruling 8.
+    // https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
+    expect(read(MANIFEST)).not.toMatch(/enableOnBackInvokedCallback\s*=\s*"true"/);
   });
 });

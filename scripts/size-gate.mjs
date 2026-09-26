@@ -24,7 +24,11 @@ import { statSync } from 'node:fs';
 
 const BUNDLE = '/tmp/companionchat.android.bundle';
 const CEILING = 6_000_000;
-const BASELINE = 5_516_544;
+// Baseline measured 2026-09-26 on nav/native-stack step 1: +68,154 bytes vs
+// the 5,516,544 pre-navigation baseline, from the JS surface of
+// @react-navigation/native 7.4.1, native-stack 7.19.2, bottom-tabs 7.19.2
+// and react-native-screens 4.28.0 (its native .so does not enter the bundle).
+const BASELINE = 5_584_698;
 
 let size;
 try {

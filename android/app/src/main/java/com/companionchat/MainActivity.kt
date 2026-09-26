@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts.StartActivityFo
 import androidx.core.view.WindowCompat
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
+import com.swmansion.rnscreens.RNScreensFragmentFactory
 import com.facebook.react.bridge.Promise
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
@@ -311,6 +312,24 @@ class MainActivity : ReactActivity() {
    * rather than relying on the victim capturing anything.
    */
   override fun onCreate(savedInstanceState: Bundle?) {
+    /*
+     * Register RNScreensFragmentFactory FIRST — before super.onCreate — so the
+     * Fragment manager uses it when restoring saved Fragment state after process
+     * death. Without this, screen Fragments whose class names were renamed by R8
+     * cannot be restored and the app crashes with ClassNotFoundException.
+     *
+     * Required by react-native-screens for Android Fragment-based screens.
+     * react-native-screens installation (Android):
+     *   https://github.com/software-mansion/react-native-screens?tab=readme-ov-file#android
+     * Fragment state saving (why the factory must precede super.onCreate):
+     *   https://developer.android.com/guide/fragments/saving-state
+     *
+     * Note: `super.onCreate(null)` is NOT used here. Truecaller's launcher
+     * (registered as a property before STARTED) needs the saved Activity state
+     * (`android:support:activity-result`) to survive process death and task restore.
+     * Passing null clears all saved state and breaks the Truecaller flow.
+     */
+    supportFragmentManager.fragmentFactory = RNScreensFragmentFactory()
     updateBenchmarkLaunch(intent)
     super.onCreate(savedInstanceState)
 
