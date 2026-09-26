@@ -466,6 +466,27 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         runtime: 'live',
       },
       {
+        // Read by private.contact_guard_mode() (migration 157), which the send,
+        // edit, comment and caption gates and the profile-field trigger ask
+        // first. Migration 157 publishes it as 'shadow'; anything unreadable
+        // is read as shadow, never as enforce.
+        key: 'contact_guard_mode',
+        label: 'Contact guard',
+        description:
+          'Phone numbers, emails, UPI IDs, links and handles in chats, comments, captions and profiles. Shadow logs every would-be block for review; enforce refuses them and counts strikes.',
+        type: 'enum',
+        options: [
+          { value: 'off', label: 'Off' },
+          { value: 'shadow', label: 'Shadow (log only)' },
+          { value: 'enforce', label: 'Enforce' },
+        ],
+        default: 'shadow',
+        risk: 'high',
+        impact:
+          'Enforce blocks sends and pauses repeat offenders for 24 hours. Off lets contact details through everywhere and stops logging.',
+        runtime: 'live',
+      },
+      {
         key: 'new_registrations_enabled',
         label: 'New registrations',
         description: 'Allow new users to create accounts.',

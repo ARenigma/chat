@@ -608,10 +608,10 @@ select is(
             || (pg_get_functiondef(f) ~ 'provider_is_listed|user_has_accepted_current_policies|stories_enabled|suspended_until')::text,
             ',' order by f::regproc::text)
    from unnest(array[
-     'public.create_story(uuid, text, text, text, integer)'::regprocedure,
+     'public.create_story_core(uuid, text, text, text, integer)'::regprocedure,
      'public.story_media_upload_allowed(text)'::regprocedure
    ]) f),
-  'create_story:true/false,story_media_upload_allowed:true/false',
+  'create_story_core:true/false,story_media_upload_allowed:true/false',
   '24d. create_story and the upload policy both ask story_post_refusal, and neither keeps a copy of it'
 );
 select ok(
@@ -964,7 +964,7 @@ select is(
               and position(a in pg_get_functiondef(f)) < position(b in pg_get_functiondef(f)))::text,
             ',' order by f::regproc::text)
    from (values
-     ('public.create_story(uuid, text, text, text, integer)'::regprocedure,
+     ('public.create_story_core(uuid, text, text, text, integer)'::regprocedure,
       'pg_advisory_xact_lock_shared(hashtextextended(''story_media_purge'', 0))',
       'select 1 from public.story_media_released m',
       'insert into public.stories ('),
@@ -973,7 +973,7 @@ select is(
       'from public.story_objects_to_purge(p_limit)',
       'insert into public.story_media_released (name)')
    ) as t(f, l, a, b)),
-  'claim_story_objects_to_purge:true,create_story:true',
+  'claim_story_objects_to_purge:true,create_story_core:true',
   '37i. a create and a claim take the one purge lock before they decide'
 );
 
