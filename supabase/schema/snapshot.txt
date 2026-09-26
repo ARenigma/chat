@@ -2241,6 +2241,7 @@ FUNCTION unblock_by_handle(p_handle uuid) returns json security=definer
 FUNCTION unialike(anyelement, text) returns text security=invoker
 FUNCTION unialike(anyelement, text, text) returns text security=invoker
 FUNCTION unregister_push_token(p_token text) returns boolean security=definer
+FUNCTION update_provider_profile(p_headline text, p_about text, p_languages text[]) returns void security=definer
 FUNCTION upsert_external_identity(p_provider text, p_subject text, p_phone text, p_user_id uuid) returns void security=definer
 FUNCTION upsert_media_channel_usage_analytics(p_call_id uuid, p_duration_seconds integer, p_participant_acu numeric, p_raw jsonb) returns uuid security=definer
 FUNCTION upsert_media_vendor_usage_daily(p_backend call_media_backend, p_project_id text, p_usage_date date, p_duration_audio_seconds bigint, p_duration_video_hd_seconds bigint, p_duration_video_hdp_seconds bigint, p_duration_video_1080p_seconds bigint, p_duration_video_2k_seconds bigint, p_duration_video_4k_seconds bigint, p_source text, p_raw jsonb, p_cost_paise_override integer) returns uuid security=definer

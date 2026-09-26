@@ -82,6 +82,11 @@ values ('authenticated', 'provider_busy_waits');
 insert into expected_callable (role, proname)
 values ('authenticated', 'presence_heartbeat');
 
+-- 180: a live provider edits their own headline, about and languages. Signed
+-- in only; a member is refused inside the function.
+insert into expected_callable (role, proname)
+values ('authenticated', 'update_provider_profile');
+
 -- Every public function a role can execute, extension functions aside (pgTAP
 -- here, whatever the platform installs live).
 create temporary view actual_callable as
