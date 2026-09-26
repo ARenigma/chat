@@ -121,6 +121,7 @@ const MemoizedAnimatedPagerView = memo(AnimatedPagerView);
 type PagerEvent = {
   position?: number;
   offset?: number;
+  pageScrollState?: 'idle' | 'dragging' | 'settling';
 };
 
 export function ProviderPager({
@@ -185,9 +186,18 @@ export function ProviderPager({
       } else if (event.eventName.endsWith('onPageSelected')) {
         didInit.set(true);
         scheduleOnRN(notifySelected, event.position ?? 0);
+      } else if (event.eventName.endsWith('onPageScrollStateChanged')) {
+        // A drag the user starts can never be the spurious pre-selection
+        // report the gate exists for, so it opens the gate too. Measured on
+        // the S22 (2026-09-27): this build never dispatches the initial
+        // onPageSelected, so without this line the FIRST swipe after launch
+        // moved the page while the tab indicator stayed put.
+        if (event.pageScrollState === 'dragging') {
+          didInit.set(true);
+        }
       }
     },
-    ['onPageScroll', 'onPageSelected'],
+    ['onPageScroll', 'onPageSelected', 'onPageScrollStateChanged'],
   );
 
   return (

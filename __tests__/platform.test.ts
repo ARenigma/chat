@@ -3156,3 +3156,13 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     expect(read('App.tsx')).not.toMatch(/from '\.\/src\/shell|components\/Layout'/);
   });
 });
+
+describe('the category pager tracks the very first drag', () => {
+  it('opens its init gate on a user drag, not only on onPageSelected', () => {
+    // S22, 2026-09-27: no initial onPageSelected arrives, so a gate that only
+    // onPageSelected could open ignored every scroll frame of the first swipe.
+    const pager = readFileSync(join(ROOT, 'src/components/ProviderPager.tsx'), 'utf8');
+    expect(pager).toContain("'onPageScrollStateChanged'");
+    expect(pager).toMatch(/pageScrollState === 'dragging'\)\s*\{\s*didInit\.set\(true\)/);
+  });
+});
