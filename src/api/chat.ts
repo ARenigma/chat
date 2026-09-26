@@ -41,6 +41,7 @@ import { track } from '../lib/telemetry';
 import { useStore } from '../store/useStore';
 import { messagesKey } from './realtime';
 import { sendResultFrom } from '../lib/sendErrors';
+import { openRefill } from '../lib/routes/actions';
 
 /**
  * Newest-first: the transcript renders into an inverted list.
@@ -717,8 +718,8 @@ async function sendMessageWith(
    */
   resume?: { readonly nonce: string; readonly createdAt: string },
 ): Promise<boolean> {
-  const { queryClient, conversationId, selfId, setSending, setBalance, setNotice, openRefill } =
-    deps;
+  const { queryClient, conversationId, selfId, setSending, setBalance, setNotice } = deps;
+  const showRefill = deps.openRefill;
   const body = raw.trim();
   if (body === '') {
     return false;
@@ -728,7 +729,7 @@ async function sendMessageWith(
   // so accepting a pending chat request by sending never left the device.
   if (memberPaysInThread(queryClient, conversationId) && !canSend(useStore.getState().balance)) {
     errorTick();
-    openRefill();
+    showRefill();
     return false;
   }
 
@@ -863,7 +864,7 @@ async function sendMessageWith(
     );
     errorTick();
     if (code === 'INSUFFICIENT_BALANCE') {
-      openRefill();
+      showRefill();
     }
     // The balance may have moved for reasons unrelated to this send.
     void queryClient.invalidateQueries({ queryKey: keys.profile });
@@ -914,7 +915,6 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
   const setSending = useStore(s => s.setSending);
   const setBalance = useStore(s => s.setBalance);
   const setNotice = useStore(s => s.setNotice);
-  const openRefill = useStore(s => s.openRefill);
 
   return useCallback(
     (
@@ -932,7 +932,7 @@ export function useSendMessage(conversationId: string | undefined, selfId: strin
         resume,
       );
     },
-    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice],
   );
 }
 
@@ -965,7 +965,7 @@ export async function drainAllOutbox(queryClient: QueryClient): Promise<void> {
     // Not signed in (yet, or any more) — nothing to drain against.
     return;
   }
-  const { setSending, setBalance, setNotice, openRefill } = useStore.getState();
+  const { setSending, setBalance, setNotice } = useStore.getState();
   for (const entry of entries) {
     if (entry.attempts >= REPLAY_LIMIT) {
       continue;

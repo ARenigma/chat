@@ -9,7 +9,6 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary, ProviderSummary } from '../lib/database.types';
@@ -39,11 +38,11 @@ import {
   type ProviderCategory,
 } from '../lib/providerFilters';
 import { OFFERED_LANGUAGES, sortByLanguageMatch } from '../lib/languagePrefs';
-import { useBackGuard } from '../lib/backGuard';
+import { useSearchBack } from '../hooks/useSearchBack';
 import { useBlockedPeerIds } from '../api/safety';
 import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
-import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import {
@@ -82,8 +81,8 @@ import {
   searchResultsOut,
 } from '../theme/motion';
 import { HOME_SUGGESTIONS_ENABLED } from '../config';
-import { HomeSuggestionScreen } from '../components/HomeSuggestionScreen';
 import { useHomeSuggestions } from '../hooks/useHomeSuggestions';
+import { useHomeSuggestionPrompt } from '../store/useHomeSuggestionPrompt';
 
 /**
  * Whether the spotlight has been dismissed IN THIS APP RUN.
@@ -148,6 +147,13 @@ interface Props {
    * unmounts or covers Home the way it always has and passes nothing.
    */
   focused?: boolean;
+  /**
+   * Whether the idle campaign counts Home as shown: Home focused, or its own
+   * `HomeSuggestion` prompt on top of it. Defaults to `focused`.
+   */
+  campaignFocused?: boolean;
+  /** Where an accepted prompt goes. Defaults to `onOpenConversation`. */
+  onSuggestionChat?: (providerId: string) => void;
 }
 
 /**
@@ -173,12 +179,13 @@ export function HomeScreen({
   onSeeAllChats,
   hasActiveCall = false,
   focused = true,
+  campaignFocused = focused,
+  onSuggestionChat,
 }: Props) {
   const styles = useStyles(makeStyles);
-  const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const columnWidth = contentColumnWidth(windowWidth);
-  const listBottomPadding = insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl;
+  const listBottomPadding = useBottomBarOffset(TOKENS.space.xl);
   const balance = useStore(s => s.balance);
   // Read rather than called for its side effect: the directory's ORDER now
   // depends on the member's language preference, so this screen needs the row
@@ -189,10 +196,10 @@ export function HomeScreen({
   // Busy providers carry `busy_wait_minutes` (migration 154): merged in HERE,
   // at the one place this screen reads the directory, so every page, row and
   // pick downstream sees the same answer. The hook polls every 30s while the
-  // app is foregrounded (TanStack focusManager). `focused: true` until these
-  // screens sit under react-navigation (step 7), which gives useIsFocused.
+  // app is foregrounded (TanStack focusManager) and only while Home is the
+  // focused screen: a covered Home polls nothing.
   const directoryIds = useMemo(() => (directoryRows ?? []).map(p => p.id), [directoryRows]);
-  const busyWaits = useProviderBusyWaits(directoryIds, { focused: true });
+  const busyWaits = useProviderBusyWaits(directoryIds, { focused });
   const providers = useMemo(
     () => (directoryRows === undefined ? undefined : withBusyWaits(directoryRows, busyWaits)),
     [directoryRows, busyWaits],
@@ -204,7 +211,28 @@ export function HomeScreen({
      compile-time false. The hook is unconditionally called (rule of hooks) but
      returns null suggestion when the flag is off. */
   const { currentSuggestion, onAccept: onAcceptSuggestion, onDismiss: onDismissSuggestion } =
-    useHomeSuggestions({ hasActiveCallOrRing: hasActiveCall, onOpenConversation, focused });
+    useHomeSuggestions({
+      hasActiveCallOrRing: hasActiveCall,
+      onOpenConversation: onSuggestionChat ?? onOpenConversation,
+      focused: campaignFocused,
+    });
+  /*
+   * The prompt is shown by the `HomeSuggestion` route, not over this screen
+   * (nav-migration §2): published here, where the campaign lives, and pushed
+   * by Home's route adapter.
+   */
+  const setSuggestionPrompt = useHomeSuggestionPrompt(s => s.setPrompt);
+  useEffect(() => {
+    if (!HOME_SUGGESTIONS_ENABLED) {
+      return;
+    }
+    setSuggestionPrompt(
+      currentSuggestion === null
+        ? null
+        : { suggestion: currentSuggestion, onAccept: onAcceptSuggestion, onDismiss: onDismissSuggestion },
+    );
+  }, [currentSuggestion, onAcceptSuggestion, onDismissSuggestion, setSuggestionPrompt]);
+  useEffect(() => () => setSuggestionPrompt(null), [setSuggestionPrompt]);
 
   const railPrefs = useRailPrefs();
   const startTour = useHomeTour(s => s.start);
@@ -544,34 +572,15 @@ export function HomeScreen({
    * Hardware back leaves search, the way the arrow does.
    *
    * Found on a device 2026-09-07: the "Leave search" arrow worked and the system
-   * back button did nothing at all. `searching` is local state that no guard
-   * knew about, so the press fell through to App.tsx's route handler, which sees
-   * Home as the root and has nothing to pop — two presses in a row left the
-   * member still staring at the search field.
-   *
-   * Android treats this as a correctness requirement, not a nicety: search is
-   * exactly the "temporary UI state" the custom-back guidance says must be
-   * dismissed by back before the screen itself is left, and the same page says
-   * to intercept ONLY in the state that needs it — hence `searching ? … : null`
-   * rather than an always-on guard, which is also what keeps ordinary
-   * navigation off Home immediate.
+   * back button did nothing at all. Search is exactly the "temporary UI state"
+   * the custom-back guidance says back dismisses before the screen itself is
+   * left, and the same page says to intercept ONLY in the state that needs it.
+   * Focus-scoped since navigation step 7 (`useSearchBack`, nav-migration §4):
+   * registered after the NavigationContainer's listener, so it is consulted
+   * first, and gone while Home is covered.
    * https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
-   *
-   * The guard returns TRUE because it HANDLED the press — `consumeBack` stops at
-   * the first guard that does, which is what keeps the press from also reaching
-   * App.tsx's route handler and popping Home out from under the member. It
-   * cannot just be `closeSearch`: that returns void, and void is not "handled".
-   *
-   * Memoised on `closeSearch` alone, which itself has an empty dep list, so the
-   * identity is stable and this registers once when search opens and
-   * unregisters when it closes — the guard stack cannot accumulate duplicates
-   * across renders.
    */
-  const searchBackGuard = useCallback(() => {
-    closeSearch();
-    return true;
-  }, [closeSearch]);
-  useBackGuard(searching ? searchBackGuard : null);
+  useSearchBack(searching, closeSearch);
 
   const loading = convosPending || providersPending;
   const firstUser = balance === 0;
@@ -990,17 +999,6 @@ export function HomeScreen({
           setMenuAnchor(null);
         }}
       />
-      {/* Idle-home campaign prompt. Gated by HOME_SUGGESTIONS_ENABLED so R8
-          strips it in production builds where the flag is false. Renders over
-          all Home content (absolute position with zIndex) but below the app
-          navigation layer (App.tsx's call ring is at zIndex 40). */}
-      {HOME_SUGGESTIONS_ENABLED && currentSuggestion !== null ? (
-        <HomeSuggestionScreen
-          suggestion={currentSuggestion}
-          onAccept={onAcceptSuggestion}
-          onDismiss={onDismissSuggestion}
-        />
-      ) : null}
     </View>
   );
 }

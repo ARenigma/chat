@@ -40,13 +40,14 @@ import {
   type ChatV2BackState,
 } from '../src/chat-v2/session';
 import { chatV2ConsentFailure } from '../src/chat-v2/cells';
-import { providerParent, type ProviderRoute } from '../src/lib/routes';
 import type { TranscriptMessage } from '../src/lib/transcript';
 
 const ROOT = join(__dirname, '..');
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
 
 const app = (): string => read('App.tsx');
+const chatRoute = (): string => read('src/screens/routes/ChatRoute.tsx');
+const navigation = (): string => read('src/Navigation.tsx');
 const v2 = (file: string): string => read(`src/chat-v2/${file}`);
 /**
  * Source with its comments removed, for the assertions that must not be
@@ -133,38 +134,26 @@ describe('V1 is gone and there is no fallback seam', () => {
     expect(source).not.toContain('CHAT_V2_CUTOVER');
   });
 
-  it('mounts V2 unconditionally on both normal chat routes', () => {
-    const source = codeOnly(app());
+  it('mounts V2 unconditionally, from the one Chat route adapter', () => {
     /*
-     * The `chat` branch reaches `<ChatScreenV2` with nothing to choose
-     * between on the way. The member route passes through `AfterPaint` and
-     * `PushedLayer` (the entrance wrappers every pushed screen takes), so the
-     * window is generous — what it must NOT contain is a second screen name
-     * or a conditional, which is what the seam looked like.
+     * Navigation step 7: the chat is a route. One adapter mounts
+     * `<ChatScreenV2`, with nothing to choose between on the way, and it is
+     * the only mount in the app. It is registered as `Chat` and as the
+     * dev-only `ChatV2` (the benchmark harness) in both trees.
      */
-    for (const branch of [
-      "providerRoute.name === 'chat' ? (",
-      "route.name === 'chat' ? (",
-    ]) {
-      const at = source.indexOf(branch);
-      expect(at).toBeGreaterThan(-1);
-      // From the END of the route test, so the branch's own `? (` is not read
-      // as the conditional this forbids.
-      const from = at + branch.length;
-      const mount = source.slice(from, source.indexOf('<ChatScreenV2', from));
-      expect(source.indexOf('<ChatScreenV2', from)).toBeGreaterThan(from);
-      expect(mount).not.toContain('?');
-      expect(mount).not.toContain('ChatScreen ');
-    }
-    // Four mounts total: the member and provider `chat` routes, and the two
-    // dev-only `chatV2` benchmark routes that keep the read-only harness.
-    expect(source.match(/<ChatScreenV2\b/g) ?? []).toHaveLength(4);
-    // None passes the step-6 gates: the old tree unmounts a covered chat, so
-    // `live` and `focused` keep their `true` defaults until the Chat route
-    // adapter (step 7) is the one mounting it.
-    for (const m of source.matchAll(/<ChatScreenV2\b[\s\S]*?\/>/g)) {
-      expect(m[0]).not.toMatch(/\b(live|focused|onGuard)=/);
-    }
+    const route = codeOnly(chatRoute());
+    expect(route.match(/<ChatScreenV2\b/g) ?? []).toHaveLength(1);
+    const mount = route.slice(route.indexOf('return ('), route.indexOf('<ChatScreenV2'));
+    expect(mount).not.toContain('?');
+    expect(codeOnly(app())).not.toContain('<ChatScreenV2');
+    // The adapter passes the step-6 gates for real now: live, focused, guard.
+    const props = route.slice(route.indexOf('<ChatScreenV2'), route.indexOf('/>', route.indexOf('<ChatScreenV2')));
+    expect(props).toContain('live={live}');
+    expect(props).toContain('focused={focused}');
+    expect(props).toContain('onGuard={onGuard}');
+    const nav = navigation();
+    expect(nav.match(/name="Chat" getComponent=\{\(\) => ChatRoute\}/g) ?? []).toHaveLength(2);
+    expect(nav.match(/name="ChatV2" getComponent=\{\(\) => ChatRoute\}/g) ?? []).toHaveLength(2);
   });
 });
 
@@ -173,40 +162,29 @@ describe('V1 is gone and there is no fallback seam', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('route selection for both roles', () => {
-  it('gives the provider tree its own development V2 destination', () => {
-    const route: ProviderRoute = {
-      name: 'chatV2',
-      peerId: THEM,
-      benchmarkReadOnly: false,
-    };
-    expect(providerParent(route)).toEqual({ name: 'home' });
-  });
-
-  it('routes the V2 deep link into the tree the role selects', () => {
-    const source = app();
-    expect(source).toMatch(
-      /if \(role === 'member'\)[\s\S]{0,400}name: 'chatV2'[\s\S]{0,400}pushProvider\(\{[\s\S]{0,200}name: 'chatV2'/,
-    );
+  it('routes the V2 deep link into the conversations tab of the tree the role selects', () => {
+    // The intent applier pushes ChatV2 in whichever tab holds the role's
+    // conversations (HomeTab or ChatsTab), as a chat is.
+    const nav = navigation();
+    const applier = nav.slice(nav.indexOf("case 'openChatV2'"), nav.indexOf("case 'chatRequest'"));
+    expect(applier).toContain('chatTabOf(root)');
+    expect(applier).toContain("StackActions.push('ChatV2', params)");
   });
 
   it('mounts V2 on the provider tree with back, calls and earnings', () => {
-    const source = app();
-    const provider = source.slice(source.indexOf("providerRoute.name === 'chatV2'"));
-    expect(provider).toContain('<ChatScreenV2');
-    expect(provider.slice(0, 1200)).toContain('onOpenEarnings');
-    expect(provider.slice(0, 1200)).toContain('onStartCall');
-    expect(provider.slice(0, 1200)).toContain('onBack');
+    const route = chatRoute();
+    expect(route).toContain('onBack={exit}');
+    expect(route).toContain('onStartCall={benchmarkReadOnly ? undefined : onStartCall}');
+    expect(route).toContain("onOpenEarnings={role === 'provider' ? onOpenEarnings : undefined}");
   });
 
   it('mounts V2 on the member tree with the wallet, profile and calls', () => {
-    const source = app();
-    const member = source.slice(
-      source.indexOf("route.name === 'chat' ? ("),
-    );
-    expect(member.slice(0, 1600)).toContain('<ChatScreenV2');
-    expect(member.slice(0, 1600)).toContain('onOpenProfile');
-    expect(member.slice(0, 1600)).toContain('onStartCall');
-    expect(member.slice(0, 1600)).toContain('onBack');
+    const route = chatRoute();
+    // The member peer has a profile (a sheet over the chat); the wallet is the
+    // screen's own `openWallet` fallback when no earnings opener is passed.
+    expect(route).toContain("onOpenProfile={role === 'member' && route.name === 'Chat' ? onOpenProfile : undefined}");
+    expect(route).toContain("nav.push('ProviderDetail', { providerId: id })");
+    expect(v2('ChatScreenV2.tsx')).toContain('onOpenEarnings={onOpenEarnings ?? openWallet}');
   });
 });
 
@@ -302,9 +280,11 @@ const PARITY: readonly {
     tokens: ['testID="chat-v2-edit"', 'testID="chat-v2-delete"', '<MediaViewer'],
   },
   {
-    feature: 'the back ladder, below a barrier',
+    // Hardware back is the route adapter's `usePreventRemove` since navigation
+    // step 7; the screen publishes what it reads.
+    feature: 'the back contract, owned by the route',
     file: 'ChatScreenV2.tsx',
-    tokens: ['useBackBarrier()', 'useBackGuard(', 'chatV2BackStep('],
+    tokens: ['onGuard?.({', 'clearReply', 'openLeave'],
   },
   {
     feature: 'the session review prompt, on the edge a session ends',

@@ -53,9 +53,9 @@ interface Props {
   onSignedOut: () => void;
   onDeleted: () => void;
   /**
-   * What the settings scroll clears at its foot. The host's bottom nav owns the
-   * safe-area inset, so today this is plain breathing room; under the
-   * navigator it becomes the bar offset (useBottomBarOffset).
+   * What the settings scroll clears at its foot. Unset, SettingsSheet clears
+   * the bottom bar (`useBottomBarOffset`), which overlays the tab since
+   * navigation step 7.
    */
   bottomOffset?: number;
 }
@@ -94,7 +94,7 @@ export function ProviderYouScreen({
   onOpenBlocked,
   onSignedOut,
   onDeleted,
-  bottomOffset = TOKENS.space['3xl'],
+  bottomOffset,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();

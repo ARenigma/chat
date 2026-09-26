@@ -2390,9 +2390,11 @@ describe('who sets the signal, and who starts push', () => {
     expect(effect).toMatch(/^[^]*?return startPushWhenConfigured\(/);
     expect(effect.indexOf('startPushWhenConfigured(')).toBeLessThan(effect.indexOf('}, [boot.phase]);'));
     // The role split lives inside SignedIn, which renders only after every
-    // non-ready phase has returned — so neither tree can miss it.
+    // non-ready phase has returned — so neither tree can miss it. Since
+    // navigation step 7 the split is the container's key and `role` prop.
     const signedIn = app.slice(app.indexOf('function SignedIn('));
-    expect(signedIn).toContain("if (role === 'provider') {");
+    expect(signedIn).toContain("const signedInRole: 'member' | 'provider' = role === 'provider' ? 'provider' : 'member';");
+    expect(signedIn).toMatch(/<RoutesContainer\s+key=\{signedInRole\}\s+role=\{signedInRole\}/);
     expect(signedIn).not.toContain('startPush');
   });
 });
@@ -2825,13 +2827,17 @@ describe('the chat-request ring takes its notification with it', () => {
   });
 
   it('never opens the chat over a call, even for an Accept that lands after the call was routed', () => {
-    const app = withoutComments(read('App.tsx'));
-    expect(app).toMatch(
-      /<ChatRing\s*held=\{providerRoute\.name === 'call'\}\s*onOpenConversation=\{openAcceptedChat\}\s*\/>/,
+    // The ChatRequest route (navigation step 7) checks `activeCall` when the
+    // Accept lands: over a call, the ring leaves with the notice and no route
+    // under the call moves.
+    const route = withoutComments(read('src/screens/routes/ProviderRoutes.tsx'));
+    expect(route).toMatch(
+      /if \(useStore\.getState\(\)\.activeCall !== null\) \{\s*useStore\.getState\(\)\.setNotice\('Accepted\. The chat is waiting in your list\.', 'confirm'\);\s*removeSelf\(route\.key, navigation\.getState\(\)\.key\);\s*return;\s*\}\s*openAccepted\(peerId, route\.key\);/,
     );
-    expect(app).toMatch(
-      /const openAcceptedChat = useCallback\(\s*\(peerId: string\) => \{\s*if \(currentProviderRouteRef\.current\.name === 'call'\) \{\s*setNotice\('Accepted\. The chat is waiting in your list\.', 'confirm'\);\s*return;\s*\}\s*pushProvider\(\{ name: 'chat', peerId \}\);/,
-    );
+    // And a ring covered by a call is held: no clock, no ringing claim.
+    expect(route).toContain('held={!focused}');
+    // The queue holds a new ring behind a live call (nav-migration §3 rule 4).
+    expect(withoutComments(read('src/lib/intents.ts'))).toMatch(/const stillActive = useStore\.getState\(\)\.activeCall;\s*if \(stillActive !== null\) \{\s*return;/);
   });
 
   it('announces each request queued behind the ring, alerting, once, when the provider leaves the app', () => {

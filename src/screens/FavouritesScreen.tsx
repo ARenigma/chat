@@ -2,14 +2,14 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import { FlashList } from '@shopify/flash-list';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useProfile, useProviders } from '../api/chat';
 import { useProviderBusyWaits, withBusyWaits } from '../api/busy';
 import { useFavorites } from '../store/useFavorites';
-import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
+import { useSearchBack } from '../hooks/useSearchBack';
 import { TabTopBar } from '../components/TabTopBar';
 import { Icon } from '../components/Icon';
 import { SquareProviderCard, SQUARE_CARD_ESTIMATE } from '../components/ProviderCard';
@@ -25,6 +25,8 @@ import {
 
 interface Props {
   onOpenProvider: (id: string) => void;
+  /** Whether Favourites is the focused screen; a covered tab polls nothing. */
+  focused?: boolean;
 }
 
 /**
@@ -35,18 +37,17 @@ interface Props {
  * these people; the context is personal curation, not scanning a list.
  * Guideline: https://m3.material.io/components/cards/guidelines
  */
-export function FavouritesScreen({ onOpenProvider }: Props) {
+export function FavouritesScreen({ onOpenProvider, focused = true }: Props) {
   const styles = useStyles(makeStyles);
-  const insets = useSafeAreaInsets();
   useProfile();
   const { data: directoryRows } = useProviders();
   const ids = useFavorites(s => s.ids);
   // Busy providers carry `busy_wait_minutes` (migration 154): merged in HERE,
   // at the one place this screen reads the directory, so every page and row
   // sees the same answer. The hook polls every 30s while the
-  // app is foregrounded (TanStack focusManager). `focused: true` until these
-  // screens sit under react-navigation (step 7), which gives useIsFocused.
-  const busyWaits = useProviderBusyWaits(ids, { focused: true });
+  // app is foregrounded (TanStack focusManager) and only while this tab is
+  // the focused screen.
+  const busyWaits = useProviderBusyWaits(ids, { focused });
   const providers = useMemo(
     () => (directoryRows === undefined ? undefined : withBusyWaits(directoryRows, busyWaits)),
     [directoryRows, busyWaits],
@@ -94,6 +95,12 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
    */
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
+  const closeSearch = useCallback(() => {
+    setQuery('');
+    setSearching(false);
+  }, []);
+  // Hardware back leaves search first, as on Home (`useSearchBack`, nav §4).
+  useSearchBack(searching, closeSearch);
   // One list per page, each filtered by its own category and the one query.
   const favouritesByCategory = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -148,7 +155,7 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
   // unwanted flash on every scroll-back. Shared by both pages: ids are unique
   // across categories.
   const seenIds = useRef(new Set<string>());
-  const bottomPadding = insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl;
+  const bottomPadding = useBottomBarOffset(TOKENS.space.xl);
 
   return (
     <View style={styles.root}>
@@ -169,10 +176,7 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
         title="Favourites"
         searching={searching}
         onSearchOpen={() => setSearching(true)}
-        onSearchClose={() => {
-          setQuery('');
-          setSearching(false);
-        }}
+        onSearchClose={closeSearch}
         query={query}
         onQueryChange={setQuery}
         searchPlaceholder="Search your favourites"

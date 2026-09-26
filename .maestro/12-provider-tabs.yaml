@@ -1,0 +1,42 @@
+# CUJ 12 — the provider tree's tabs, and back to Chats.
+#
+# Needs a PROVIDER session (scripts/e2e.mjs --provider, or a provider account
+# signed in by hand). Navigation step 7: Chats, Saved and You are tab roots; back
+# from Saved or You returns to Chats (`backBehavior="initialRoute"`), and back
+# at the Chats root asks before leaving.
+appId: com.companionchat
+name: Provider tabs return to Chats
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: 'nav-chats'
+    timeout: 20000
+- tapOn:
+    id: 'nav-saved'
+- assertVisible:
+    id: 'nav-saved'
+    selected: true
+- back
+- assertVisible:
+    id: 'nav-chats'
+    selected: true
+- tapOn:
+    id: 'nav-settings'
+- assertVisible:
+    id: 'nav-settings'
+    selected: true
+- back
+- assertVisible:
+    id: 'nav-chats'
+    selected: true
+- back
+- extendedWaitUntil:
+    visible:
+      id: 'app-exit-dialog'
+    timeout: 5000
+- tapOn:
+    id: 'confirm-dialog-cancel'
+
+- takeScreenshot: artifacts/12-provider-tabs

@@ -98,18 +98,20 @@ describe('the call notification carries what the app needs to obey it', () => {
     const branch = app.slice(app.indexOf("if (action === 'decline')"));
     expect(branch.slice(0, 120)).toMatch(/void endCall\(callId\);\s*\n\s*return;/);
     /*
-     * Answering enqueues the intent rather than calling setRoute directly.
-     * nav-migration §3: the intent queue holds the ring until SignedIn registers
-     * an applier (role resolved), then routes to the correct tree.
-     * Both tree branches are asserted so the provider half cannot be dropped.
+     * Answering enqueues the intent rather than navigating directly.
+     * nav-migration §3: the intent queue holds the ring until the navigator
+     * registers its applier (onReady, step 7), then the applier pushes the
+     * `Call` route into the focused stack of whichever tree is mounted. Both
+     * trees register `Call`, so the provider half cannot be dropped.
      */
     expect(app).toMatch(/enqueueIntent\(\{ type: 'incomingCall', peerId: callPeer, callId, medium \}\)/);
-    expect(app).toMatch(
-      /pushProvider\(\{ name: 'call', peerId, direction: 'in', callId, medium \}\)/,
+    const nav = read('src/Navigation.tsx');
+    expect(nav).toMatch(
+      /case 'incomingCall':[\s\S]{0,300}presentCall\(\s*\{ peerId: intent\.peerId, direction: 'in', callId: intent\.callId, medium: intent\.medium \},\s*seq,/,
     );
-    expect(app).toMatch(
-      /pushRoute\(\{ name: 'call', providerId: peerId, direction: 'in', callId, medium \}\)/,
-    );
+    const actions = read('src/lib/routes/actions.ts');
+    expect(actions).toContain("navigationRef.dispatch({ ...StackActions.push('Call', { ...params }), target });");
+    expect(nav.match(/name="Call" getComponent=\{\(\) => CallRoute\}/g) ?? []).toHaveLength(2);
     // Dedup moved to the module-level routedCalls Set in intents.ts (nav-migration §3).
     const intents = read('src/lib/intents.ts');
     expect(intents).toContain('routedCalls.has(intent.callId)');

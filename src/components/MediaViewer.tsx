@@ -586,11 +586,11 @@ function MediaViewerView({
        * path here, and deliberately so: the same page says "because of this
        * required prop, be aware that BackHandler events will not be emitted as
        * long as the modal is open", which is exactly the behaviour the viewer
-       * needs. App.tsx owns the single BackHandler subscription that feeds
-       * src/lib/backGuard.ts, so while this window is up the chat's session
-       * guard cannot fire and back dismisses the photo instead of raising
-       * "End session and leave?". A useBackGuard() here would be dead code that
-       * looked like a safety net.
+       * needs: while this window is up, no BackHandler listener runs, so the
+       * NavigationContainer never pops and the chat route's paid-session guard
+       * (its `usePreventRemove`) never fires; back dismisses the photo instead
+       * of raising "End session and leave?". A BackHandler listener here would
+       * be dead code that looked like a safety net.
        * https://reactnative.dev/docs/modal
        */
       onRequestClose={onClose}>

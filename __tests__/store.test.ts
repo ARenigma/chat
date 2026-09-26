@@ -18,7 +18,8 @@ describe('useStore', () => {
     expect(s.sending).toBe(false);
     expect(s.peerActivity).toBeNull();
     expect(s.refillVisible).toBe(false);
-    expect(s.walletVisible).toBe(false);
+    // The wallet page is the `Wallet` route since navigation step 7, not a flag.
+    expect('walletVisible' in s).toBe(false);
   });
 
   /**
@@ -102,12 +103,13 @@ describe('useStore', () => {
     expect(useStore.getState().refillVisible).toBe(false);
   });
 
-  it('opens the wallet page independently of the refill sheet', () => {
-    useStore.getState().openWallet();
-    expect(useStore.getState().walletVisible).toBe(true);
-    expect(useStore.getState().refillVisible).toBe(false);
+  it('keeps no wallet page state: the page is a route (navigation step 7)', () => {
+    // openWallet/closeWallet live in src/lib/routes/actions.ts now, and keep
+    // the refill exclusion there (openRefill closes the Wallet route first).
+    const s = useStore.getState() as unknown as Record<string, unknown>;
+    expect(s.openWallet).toBeUndefined();
+    expect(s.closeWallet).toBeUndefined();
     useStore.getState().openRefill();
-    expect(useStore.getState().walletVisible).toBe(false);
     expect(useStore.getState().refillVisible).toBe(true);
   });
 
@@ -185,7 +187,6 @@ describe('useStore', () => {
       sending: false,
       peerActivity: null,
       refillVisible: false,
-      walletVisible: false,
       notice: null,
     });
   });

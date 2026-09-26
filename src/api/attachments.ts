@@ -25,6 +25,7 @@ import {
 import { useStore } from '../store/useStore';
 import { keys, memberPaysInThread } from './chat';
 import { sendResultFrom } from '../lib/sendErrors';
+import { openRefill } from '../lib/routes/actions';
 
 /** The private bucket created by migration 014. */
 const BUCKET = 'attachments';
@@ -162,7 +163,6 @@ export function useSendImage(
   const setSending = useStore(s => s.setSending);
   const setBalance = useStore(s => s.setBalance);
   const setNotice = useStore(s => s.setNotice);
-  const openRefill = useStore(s => s.openRefill);
   const setUploadProgress = useStore(s => s.setUploadProgress);
   const clearUploadProgress = useStore(s => s.clearUploadProgress);
 
@@ -313,7 +313,7 @@ export function useSendImage(
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
       return true;
     },
-    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill, setUploadProgress, clearUploadProgress],
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, setUploadProgress, clearUploadProgress],
   );
 }
 
@@ -340,7 +340,6 @@ export function useRetryImageSend(
   const setSending = useStore(s => s.setSending);
   const setBalance = useStore(s => s.setBalance);
   const setNotice = useStore(s => s.setNotice);
-  const openRefill = useStore(s => s.openRefill);
 
   return useCallback(
     async (message: Message): Promise<boolean> => {
@@ -423,6 +422,6 @@ export function useRetryImageSend(
       void queryClient.invalidateQueries({ queryKey: keys.conversationList });
       return true;
     },
-    [conversationId, selfId, queryClient, setSending, setBalance, setNotice, openRefill],
+    [conversationId, selfId, queryClient, setSending, setBalance, setNotice],
   );
 }

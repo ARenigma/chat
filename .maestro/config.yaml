@@ -1,5 +1,8 @@
 # Maestro drives the accessibility tree. Flows 01–08: launch, session, billing,
-# faults, resume, deletion, 200% font scale, expanded window.
+# faults, resume, deletion, 200% font scale, expanded window. 09–11 (navigation
+# step 7): the back stack and the root exit confirm, tabs back to Home, the
+# wallet sheet over a chat. 12–13 need a provider session: the provider tabs,
+# and a chat request accepted into its chat.
 # Signed-in journeys use a debug-only deep-link filter to install a local
 # Supabase session; release manifests and runtime behavior do not include it.
 appId: com.companionchat

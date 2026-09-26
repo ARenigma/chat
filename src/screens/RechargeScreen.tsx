@@ -1,7 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DEFAULT_RATES, formatRupees, gstAddedLabel, gstAddedSpoken, packTotalInr, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
@@ -15,7 +14,6 @@ import {
 } from '../api/appConfig';
 import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { screenOut, setNavDirection, useScreenEnter } from '../theme/motion';
 import { useStore } from '../store/useStore';
 import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
@@ -27,7 +25,7 @@ import { PaymentSheet } from './PaymentSheet';
 /**
  * Recharge packs — v10 layout, two hosts:
  *
- *   - Wallet pill → full page (`WalletScreen`, hosted by `RechargeWalletPage`).
+ *   - Wallet pill → the wallet page (`WalletScreen`, the `Wallet` route: a tall native sheet).
  *   - Chat/home paywall, talk-bar, first send → M3 Paper sheet (`RechargeScreen`).
  */
 function useRechargePacks() {
@@ -219,7 +217,7 @@ function RechargeSheetForm({
           // the recharge (Amit, 2026-09-10). The tax is not hidden — the pay
           // button shows the GST-inclusive total (packTotalInr) and Cashfree
           // charges it, so the all-in price is disclosed at the point of payment.
-          // The full wallet page (RechargeWalletPage) still itemises it.
+          // The full wallet page (WalletScreen) still itemises it.
           return (
             <View key={pack} style={styles.cardSlot}>
               <Pressable
@@ -341,7 +339,7 @@ function RechargeSheetFooter({ amount, gstRateBps, discountBps, onPay }: { amoun
         * moves. What is gone is a third statement of a rate that is 1:1, which
         * on a compact sheet was spending two lines to say a token is a rupee.
         *
-        * The full-page RechargeWalletPage KEEPS its version. That screen is
+        * The wallet page (WalletScreen) KEEPS its version. That screen is
         * reached deliberately from the wallet rather than thrown up mid-chat,
         * has the room, and is where somebody who wants the arithmetic goes.
         */}
@@ -378,23 +376,29 @@ function RechargeSheetFooter({ amount, gstRateBps, discountBps, onPay }: { amoun
 }
 
 /**
- * Full-page Recharge — wallet pill only. Same packs as the sheet.
+ * The wallet page — wallet pill only. Same packs as the sheet.
  *
- * A props-driven screen since navigation step 6: it knows nothing about how it
- * was opened or how it leaves, only that `onBack` leaves. That is the shape the
- * `Wallet` route registers in step 7; until then RechargeWalletPage below hosts
- * it on the store flag with the pushed-layer motion. `recharge-wallet` is on
- * this root so the id survives the host being deleted.
+ * Props-driven: it knows nothing about how it was opened or how it leaves,
+ * only that `onBack` leaves. The `Wallet` route presents it as a tall native
+ * sheet (`presentation: 'formSheet'`, owner 2026-09-26, ADR-0032), so the top
+ * inset belongs to the sheet's own edge, not to this page: a sheet stops below
+ * the status bar (`sheetShouldOverflowTopInset` false), and padding it again
+ * would open a gap under the grabber. `sheet` also turns on nested scrolling,
+ * which a scroller inside an Android form sheet needs so that
+ * BottomSheetBehavior can tell a scroll from a drag down
+ * (https://reactnavigation.org/docs/native-stack-navigator#presentation).
+ * `recharge-wallet` is on this root so the id survives any host.
  */
-export function WalletScreen({ onBack }: { onBack: () => void }) {
+export function WalletScreen({ onBack, sheet = false }: { onBack: () => void; sheet?: boolean }) {
   const styles = useStyles(makePageStyles);
   const insets = useSafeAreaInsets();
   const { livePacks, gstRateBps, discountBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
+  const topInset = sheet ? 0 : insets.top;
 
   return (
-    <View testID="recharge-wallet" style={[styles.page, { paddingTop: insets.top }]}>
+    <View testID="recharge-wallet" style={[styles.page, { paddingTop: topInset }]}>
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="recharge-wallet-back" style={styles.barIcon} />
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.barTitle}>
@@ -410,6 +414,7 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
+        nestedScrollEnabled={sheet}
         {...SCROLL_PHYSICS}>
         <RechargeForm
           amount={amount}
@@ -431,57 +436,6 @@ export function WalletScreen({ onBack }: { onBack: () => void }) {
       </View>
       <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
     </View>
-  );
-}
-
-/**
- * The old tree's wallet host: the store flag, the navigation direction and the
- * pushed-layer motion. Deleted with WalletLayer when `Wallet` becomes a route
- * (step 7).
- */
-export function RechargeWalletPage() {
-  const visible = useStore(s => s.walletVisible);
-  const close = useStore(s => s.closeWallet);
-
-  // A pushed page: it always enters from the right (a forward push) and its back
-  // leaves to the right, so it uses the shared screen builders. The direction is
-  // set on the not-visible → visible transition, in render and thus before the
-  // mount commits and `screenIn` reads it, so a preceding pop cannot leave the
-  // page entering from the wrong side. The ref keeps it to that one transition.
-  const wasVisible = useRef(false);
-  if (visible && !wasVisible.current) {
-    setNavDirection('forward');
-  }
-  wasVisible.current = visible;
-
-  if (!visible) return null;
-
-  const closeBack = () => {
-    setNavDirection('back');
-    close();
-  };
-
-  return (
-    <WalletLayer>
-      <WalletScreen onBack={closeBack} />
-    </WalletLayer>
-  );
-}
-
-/**
- * The wallet page's pushed layer: effect-driven entrance, layout-animation exit
- * (motion.ts). It positions and moves; WalletScreen inside paints the page.
- */
-function WalletLayer({ children }: { children: React.ReactNode }) {
-  const styles = useStyles(makePageStyles);
-  const enter = useScreenEnter();
-  return (
-    <Animated.View
-      style={[styles.layer, enter.style]}
-      onLayout={enter.onLayout}
-      exiting={screenOut}>
-      {children}
-    </Animated.View>
   );
 }
 
@@ -693,16 +647,6 @@ function RechargeForm({
 
 const makePageStyles = (t: Theme) =>
   StyleSheet.create({
-    // The old tree's overlay position, on WalletLayer only: a route screen is
-    // placed by its navigator, so the page itself just fills and paints.
-    layer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 20,
-    },
     page: {
       flex: 1,
       backgroundColor: t.color.bg.base,

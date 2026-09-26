@@ -10,20 +10,14 @@ import {
   StyleSheet,
   Text,
   View,
-  type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import type { InitialState, NavigationState } from '@react-navigation/native';
 import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { BLUR_SURFACE_AVAILABLE, BlurRoot } from './src/components/BlurSurface';
-import Animated, {
-  useAnimatedProps,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from './src/theme/tokens';
 import {
@@ -32,21 +26,11 @@ import {
   useStyles,
   useThemeMode,
 } from './src/theme/ThemeProvider';
-import {
-  revealHome,
-  screenOut,
-  setNavDirection,
-  transitioning,
-  useHomeRevealStyle,
-  useScreenEnter,
-} from './src/theme/motion';
-import { AfterPaint } from './src/components/AfterPaint';
 import { UpdateBanner } from './src/components/UpdateBanner';
 import { NoticeOverlay } from './src/components/NoticeBar';
 import { assertEnv } from './src/lib/env';
 import { storage } from './src/lib/storage';
 import { PROVIDER_INTENT_KEY } from './src/lib/providerIntent';
-import { consumeBack } from './src/lib/backGuard';
 import {
   onForegroundPush,
   signedInOnDevice,
@@ -58,17 +42,8 @@ import {
   clearIntents,
   enqueueIntent,
   setCallHooks,
-  setIntentApplier,
   setIntentOwner,
 } from './src/lib/intents';
-import {
-  memberParent,
-  providerParent,
-  transitionFor,
-  type ChatDoor,
-  type MemberRoute,
-  type ProviderRoute,
-} from './src/lib/routes';
 import {
   isAccountLink,
   linkIsForAccount,
@@ -80,11 +55,7 @@ import { initSentry } from './src/lib/sentry';
 import { sweepExpiredOutbox } from './src/lib/outboxStore';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
-import {
-  useFrameWatch,
-  trackQuerySlow,
-  trackScreenOpened,
-} from './src/lib/perfTelemetry';
+import { useFrameWatch, trackQuerySlow } from './src/lib/perfTelemetry';
 import { supabase } from './src/lib/supabase';
 import { applyDemoCapturePolicy } from './src/lib/demoCapture';
 import {
@@ -111,7 +82,7 @@ import {
   needsProfileSetup,
 } from './src/api/profileSetup';
 import type { Profile } from './src/lib/database.types';
-import { CALLS_ENABLED, useIncomingCalls, type IncomingCall, endCall} from './src/api/calls';
+import { useIncomingCalls, type IncomingCall, endCall } from './src/api/calls';
 import {
   parseVideoResolution,
   setVideoResolution,
@@ -121,206 +92,27 @@ import { useRole } from './src/api/provider';
 import { resetStore, useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
 import { PermissionsScreen } from './src/screens/PermissionsScreen';
-import { SessionFeedbackSheet } from './src/components/SessionFeedbackSheet';
 import { checkGate, gateSatisfied } from './src/lib/permissionsGate';
 import { ProfileSetupScreen } from './src/screens/ProfileSetupScreen';
 import { WelcomePappalScreen } from './src/screens/WelcomePappalScreen';
-import { RechargeScreen, RechargeWalletPage } from './src/screens/RechargeScreen';
 import { ConfirmDialog } from './src/components/ConfirmDialog';
 import { HomeTour } from './src/components/HomeTour';
 import { useHomeTour } from './src/store/useHomeTour';
 import { Button } from './src/components/Button';
-import { FloatingToolbar, type ToolbarKey } from './src/components/FloatingToolbar';
-import { ChatScreenV2 } from './src/chat-v2/ChatScreenV2';
-import { HomeScreen } from './src/screens/HomeScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
-import { ProviderDetailScreen } from './src/screens/ProviderDetailScreen';
-import { CallScreen } from './src/screens/CallScreen';
-import { ProviderApplicationScreen } from './src/screens/ProviderApplicationScreen';
-import { ProviderHomeScreen } from './src/screens/ProviderHomeScreen';
-import { ProviderStatusScreen } from './src/screens/ProviderStatusScreen';
-import { ProviderBankScreen } from './src/screens/ProviderBankScreen';
-import { BlockedUsersScreen } from './src/screens/BlockedUsersScreen';
-import { CallsScreen } from './src/screens/CallsScreen';
-import { FavouritesScreen } from './src/screens/FavouritesScreen';
-import { ChatsListScreen } from './src/screens/ChatsListScreen';
-import { InvoicesScreen } from './src/screens/InvoicesScreen';
-import { SettingsSheet } from './src/screens/SettingsSheet';
 import { SplashScreen } from './src/screens/SplashScreen';
-import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen';
-import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
-import { ChatRequestScreen, CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
+import { CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
 import { usePresenceHeartbeat } from './src/hooks/usePresenceHeartbeat';
+import { APPLY_INITIAL_STATE, RoutesContainer, stripForRestore } from './src/Navigation';
+import { ShellStateProvider } from './src/shell/ShellStateProvider';
+import type { SignedInActions } from './src/screens/routes/signedIn';
 
 initSentry();
 // Wire live call API into the intent queue. Called once at module init so
 // intents.ts can busy-decline and clear notifications without importing the
 // native modules directly (which break Jest). nav-migration §3.
 setCallHooks({ endCall, clearCall });
-
-/**
- * A pushed screen's layer: enters on the M3 forward/back transition, leaves on
- * its mirror. The entrance is effect-driven (`useScreenEnter`) because the
- * `entering` layout animation does not run on this mount path — see motion.ts.
- * One component so every push in both trees moves identically.
- *
- * `renderToHardwareTextureAndroid` is ON while the push animates and OFF the
- * moment it settles. It was deliberately absent until its own recorded
- * precondition was met, and it now is.
- *
- * The prop promotes the view to a GPU texture, so the compositor handles the
- * translate and the fade with a matrix multiply instead of re-drawing children
- * every frame. It must be toggled rather than left on: a permanent texture for
- * a full-screen view at 1080p is ~8MB of GPU memory held while nothing moves.
- *
- * THE MEASUREMENT THAT UNLOCKED IT (S22, 60Hz, release build, six push/pop
- * cycles each, `scripts/framestats.mjs`):
- *
- *              within budget   p50      p95      p99     over 2 budgets
- *   ours           44.2%     17.85ms  37.91ms  50.79ms        11
- *   the reference app       97.5%      7.55ms  14.45ms  23.97ms         0
- *
- * and on plain scrolling the two are near-identical (p95 28.19 vs 28.82, p99
- * 42.33 vs 42.39), so the transition was the entire felt gap. That is the
- * "push/pop frames exceed budget" evidence this note asked for.
- *
- * the reference app sets LAYER_TYPE_HARDWARE for the same reason before its swipe-back
- * (ActionBarLayout.java:1404) — the gesture needs zero-redraw compositing.
- *
- * The toggle is driven from `transitioning`, which `useScreenEnter` raises when
- * the animation starts and lowers in the fade's completion callback, with
- * `finished` checked so an interrupted animation still releases the texture.
- * `useAnimatedProps` applies it on the UI thread, so promotion happens on the
- * same thread as the animation rather than a JS round-trip behind it.
- * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
- */
-function PushedLayer({
-  style,
-  children,
-  testID,
-}: {
-  style: StyleProp<ViewStyle>;
-  children: React.ReactNode;
-  testID?: string;
-}) {
-  const enter = useScreenEnter();
-  const textureWhileMoving = useAnimatedProps(() => ({
-    renderToHardwareTextureAndroid: transitioning.value,
-  }));
-  return (
-    <Animated.View
-      testID={testID}
-      animatedProps={textureWhileMoving}
-      style={[style, enter.style]}
-      onLayout={enter.onLayout}
-      exiting={screenOut}>
-      {children}
-    </Animated.View>
-  );
-}
-/**
- * The tab cross-fade. M3 fade-through timing, spelled once here rather than as a
- * raw `.duration()` at the call site (see the App.tsx transition-builder gate).
- */
-const FADE = { duration: TOKENS.motion.duration.fast } as const;
-
-/**
- * A top-level tab's layer, mounted once and then kept alive.
- *
- * The tabs used to mount on entry and unmount on exit, each wrapped in
- * `AfterPaint` and carrying `entering`/`exiting` layout animations. That cost a
- * tab switch twice over (Amit, 2026-09-04: "slow and janky", both a delay before
- * anything happened AND a stutter during the fade):
- *
- *   1. The delay was the remount — the whole screen tree, its queries and its
- *      list rebuilt on every visit, plus `AfterPaint`'s deliberate one-frame
- *      hold before any of it was even asked to render.
- *   2. The stutter was the layout animation. Reanimated's `entering`/`exiting`
- *      run on mount/unmount of the whole subtree, so the fade competed with the
- *      very work it was trying to cover.
- *
- * So: mount lazily (nothing is built until first visited), then never unmount,
- * and cross-fade `opacity` on a shared value instead — a GPU-only property that
- * costs nothing to animate and needs no layout pass. `display: 'none'` when
- * fully hidden keeps an inactive tab out of layout entirely; `pointerEvents`
- * stops an invisible layer eating touches mid-fade.
- */
-/** Theme-independent, so `TabLayer` needs no `useStyles`. */
-const HIDDEN_LAYER = StyleSheet.create({ hidden: { display: 'none' } });
-
-function TabLayer({
-  active,
-  style,
-  children,
-}: {
-  active: boolean;
-  style: StyleProp<ViewStyle>;
-  children: React.ReactNode;
-}) {
-  // Mount on first activation and stay mounted. An unvisited tab costs nothing.
-  const [mounted, setMounted] = useState(active);
-  useEffect(() => {
-    if (active) {
-      setMounted(true);
-    }
-  }, [active]);
-
-  const opacity = useSharedValue(active ? 1 : 0);
-  useEffect(() => {
-    opacity.value = withTiming(active ? 1 : 0, FADE);
-  }, [active, opacity]);
-
-  /*
-   * `display` is REACT state here, not a value the animated style computes, and
-   * that distinction is a device-found bug rather than a preference.
-   *
-   * It used to be `display: opacity.value === 0 ? 'none' : 'flex'` inside the
-   * worklet. On the Favourites tab that left the top bar half-drawn: the wallet
-   * chip painted and the title and the magnifier beside it did not, on a row
-   * whose three children are siblings. What separates them is a background —
-   * Android's view flattening (NativeViewHierarchyOptimizer) folds a View or
-   * Text that draws nothing of its own into its parent, and a flattened node
-   * inside a subtree whose `display` flips on the UI thread, behind React's
-   * back, is not re-created when the subtree comes back. The chip has a fill,
-   * so it survives as a real view; a plain Text does not.
-   *
-   * Driving `display` from state puts the change back through the normal
-   * commit, which rebuilds the flattened children correctly. The hide is
-   * delayed by the fade's own duration so it still happens only once the layer
-   * is invisible, which is all the original worklet was buying.
-   */
-  const [laidOut, setLaidOut] = useState(active);
-  useEffect(() => {
-    if (active) {
-      setLaidOut(true);
-      return;
-    }
-    const timer = setTimeout(() => setLaidOut(false), FADE.duration);
-    return () => clearTimeout(timer);
-  }, [active]);
-
-  const animated = useAnimatedStyle(() => ({ opacity: opacity.value }));
-
-  if (!mounted) {
-    return null;
-  }
-  return (
-    <Animated.View
-      // A fully faded tab leaves layout entirely, so its list is not measured
-      // behind the active one — but the subtree stays MOUNTED, which is the
-      // whole point: state, scroll position and cached queries all survive the
-      // switch.
-      style={[style, animated, laidOut ? null : HIDDEN_LAYER.hidden]}
-      // Touches are refused the moment the tab stops being active, not when the
-      // fade ends, so a half-faded layer cannot swallow a tap.
-      pointerEvents={active ? 'auto' : 'none'}
-      accessibilityElementsHidden={!active}
-      importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}>
-      {children}
-    </Animated.View>
-  );
-}
 
 const { StartupTiming } = NativeModules as {
   StartupTiming?: { reportFullyDrawn(): void };
@@ -589,19 +381,13 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
 }
 
 /**
- * Member routes. The provider tree is separate and selected by the server-supplied
- * role, which is the whole of ADR-0002's safety argument: no member navigation
- * path can reach a provider screen, because they are different trees rather than
- * different branches.
- */
-/**
- * Navigation is still a single piece of state per tree, deliberately.
- *
- * Even at five member destinations this does not justify React Navigation: no
- * deep-link routing, no history stack worth persisting, no shared element
- * transitions. What it *does* now justify is two separate unions, because
- * "member screens" and "provider screens" must not be reachable from one
- * another by construction.
+ * The boot machine. Everything before `ready` is a phase here, outside the
+ * navigator (ADR-0016, ADR-0026: no route can reach Home around a gate); from
+ * `ready` on, SignedIn mounts the react-navigation container
+ * (src/Navigation.tsx, ADR-0032). The member and provider trees are two
+ * navigators selected by the server-supplied role, which is the whole of
+ * ADR-0002's safety argument: no member route can reach a provider screen,
+ * because they are different trees rather than different branches.
  */
 function Root() {
   const styles = useStyles(makeStyles);
@@ -621,8 +407,34 @@ function Root() {
   // server itself being unreachable), so a case where the network reports
   // online but the auth fetch keeps failing must not retry forever.
   const authRetryCountRef = useRef(0);
-  const [route, setRoute] = useState<MemberRoute>({ name: 'home' });
-  const [providerRoute, setProviderRoute] = useState<ProviderRoute>({ name: 'home' });
+  /*
+   * The last navigator state, for the foreground permission re-gate only
+   * (nav-migration §3): that gate unmounts SignedIn, and coming back through
+   * it restores the stacks the member was on instead of dropping them at
+   * Home. Kept with the role it belongs to. A fresh boot clears it (below),
+   * which keeps "always Home after restart".
+   */
+  const lastNavState = useRef<{ role: 'member' | 'provider'; state: NavigationState } | null>(null);
+  const regateRestore = useRef(false);
+  const takeRestoreState = useCallback((): { role: 'member' | 'provider'; state: InitialState } | null => {
+    if (!regateRestore.current) {
+      return null;
+    }
+    regateRestore.current = false;
+    const saved = lastNavState.current;
+    if (saved === null) {
+      return null;
+    }
+    const { state, strippedRequests } = stripForRestore(saved.state);
+    // A ring that is not restored is not ringing: its claim on the store goes.
+    for (const requestId of strippedRequests) {
+      useStore.getState().clearIncomingRequest(requestId);
+    }
+    return { role: saved.role, state };
+  }, []);
+  const onNavState = useCallback((role: 'member' | 'provider', state: NavigationState | undefined) => {
+    lastNavState.current = state === undefined ? null : { role, state };
+  }, []);
   /*
    * The signed-out screen. clearIntents() drops any held deep links or rings
    * that belong to the leaving account; setIntentOwner(null) ensures any intent
@@ -634,38 +446,49 @@ function Root() {
     setIntentOwner(null);
     setBoot({ phase: 'signedOut' });
   }, []);
+  /*
+   * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
+   * While `PROVIDER_INTENT_KEY` is set, the boot effect below skips
+   * `bootPhaseAfterAuth` entirely — profileSetup, policyGate AND permissions —
+   * which is the documented, deliberate shape of "Become a partner" (Amit,
+   * 2026-09-03: "SKIPS the member first-run ... entirely"). That is correct
+   * for the DURATION of the apply flow: `bootPhaseAfterAuth`'s own
+   * `onProviderPath` check only skips profileSetup, so a member policy modal
+   * opening over provider onboarding was the exact bug it exists to prevent.
+   *
+   * But the skip does not end when onboarding does. The flag clears on
+   * submission and the app flips straight to the provider tree in THIS SAME
+   * SESSION with `boot.phase` still 'ready' — nothing re-runs
+   * `bootPhaseAfterAuth` until the NEXT cold start, so a freshly-admitted
+   * provider could take a paid session having never seen the policy screen,
+   * and the server's own POLICY_REQUIRED check (session_cutover.sql) would
+   * refuse it with no in-app screen able to resolve that refusal short of a
+   * relaunch.
+   *
+   * `onProviderOnboarded` re-runs the exact same check `bootPhaseAfterAuth`
+   * already does on every other post-auth path, the moment identity_state
+   * stops being 'none' — at which point `onProviderPath` is true via that
+   * signal alone, so profileSetup is (still, correctly) skipped and only
+   * policyGate/permissions get the chance to apply. Called by the Apply route.
+   */
+  const onProviderOnboarded = useCallback(() => {
+    void (async () => {
+      const profile = await getSignedInProfile().catch(() => null);
+      const nextBoot = await bootPhaseAfterAuth(profile).catch(() => null);
+      if (nextBoot !== null) {
+        setBoot(nextBoot);
+      }
+    })();
+  }, []);
   const [exitDialogVisible, setExitDialogVisible] = useState(false);
   useReportFullyDrawn(boot.phase !== 'loading' && boot.phase !== 'ready');
-  // Refs so the BackHandler closure reads the current route without being in its
-  // dep array — adding route/providerRoute caused the listener to tear down and
-  // re-add itself on every navigation, producing a measurable re-subscription
-  // jank on Android on every setRoute call.
-  const routeRef = useRef(route);
-  routeRef.current = route;
-  const providerRouteRef = useRef(providerRoute);
-  providerRouteRef.current = providerRoute;
-  const resetConversation = useStore(s => s.resetConversation);
   const setNotice = useStore(s => s.setNotice);
-  // walletVisible/refillVisible and their close actions are read live via
-  // useStore.getState() inside the hardware-back handler (so it never
-  // re-subscribes); they are intentionally not selected here.
-  const pendingProviderApply = useStore(s => s.pendingProviderApply);
-
-
-  // While the provider-signup intent is set, KEEP the route on the onboarding
-  // screen. The boot machine bumps `attempt` several times (auth listener,
-  // onDone, permission grants), and each re-run resets the route to Home before
-  // the flag can steer it; enforcing it here, on every render, wins over those
-  // one-off resets. The flag is cleared when the onboarding is left or completed,
-  // which lets the route move again.
-  useEffect(() => {
-    if (boot.phase === 'ready' && pendingProviderApply && route.name !== 'apply') {
-      if (useHomeTour.getState().active) {
-        useHomeTour.getState().skip();
-      }
-      setRoute({ name: 'apply', from: 'home' });
-    }
-  }, [boot.phase, pendingProviderApply, route.name]);
+  /*
+   * No route-enforcing effect for the provider signup any more (nav-migration
+   * §3, A16/B12): SignedIn mounts the container straight into Apply from
+   * `pendingProviderApply` (`initialState`), and every boot re-run that
+   * remounts it re-derives the same first frame from the same flag.
+   */
 
   /**
    * Demo-capture policy: lifted for @example.test accounts in the `internal`
@@ -681,6 +504,14 @@ function Root() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // A fresh boot (every `attempt`) lands on Home: the saved stacks are for a
+  // permission re-gate only, which does not bump `attempt`.
+  useEffect(() => {
+    if (!regateRestore.current) {
+      lastNavState.current = null;
+    }
+  }, [attempt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -774,7 +605,6 @@ function Root() {
         // Adopt any BOOT-tagged intents (cold-start taps) for this account
         // and allow the queue to flush once the navigator applier is set.
         setIntentOwner(session.user.id);
-        setRoute({ name: 'home' });
         // "Become a partner" before auth → provider onboarding, and it SKIPS the
         // member first-run (username/age/policy) entirely. Member and provider are
         // separate worlds (Amit, 2026-09-03): a provider sets up their OWN profile
@@ -783,7 +613,7 @@ function Root() {
         // OnboardingScreen) and NOT cleared here — the boot effect can run more
         // than once, and clearing on the first run let a later run fall through to
         // the member path and Home. It is cleared when the onboarding is left or
-        // completed (see the apply route below).
+        // completed (the Apply route, src/screens/routes/MemberRoutes.tsx).
         if (storage.get(PROVIDER_INTENT_KEY) === '1') {
           // Restore the reactive flag from the persisted intent (the in-memory one
           // can be reset in the auth → boot transition) so the tour gate and the
@@ -793,7 +623,6 @@ function Root() {
             useHomeTour.getState().skip();
           }
           setBoot({ phase: 'ready' });
-          setRoute({ name: 'apply', from: 'home' });
           track('app_open');
           return;
         }
@@ -1164,13 +993,13 @@ function Root() {
          * foreground return (or the call ending) rather than re-checking
          * right now.
          */
-        const onCallScreen =
-          routeRef.current.name === 'call' || providerRouteRef.current.name === 'call';
-        if (onCallScreen) {
+        if (useStore.getState().activeCall !== null) {
           return;
         }
         const statuses = await checkGate();
         if (!gateSatisfied(statuses)) {
+          // Coming back through the gate restores the stacks (nav §3).
+          regateRestore.current = true;
           setBoot({ phase: 'permissions' });
         }
       }
@@ -1180,175 +1009,49 @@ function Root() {
    
   }, []);
 
-  /*
-   * Every navigation declares its direction before it changes the route.
-   *
-   * `navDirection` (a shared value in motion.ts) is read by `screenIn`/
-   * `screenOut` at the moment those builders run — which for the leaving screen
-   * is at unmount, after its props are gone — so a push and a pop cannot be told
-   * apart from the route alone. `pushRoute` goes deeper (slide from the right),
-   * `popRoute` returns (slide from the left). Tab switches use the top-level
-   * fade, which ignores direction, so they can go through either.
-   */
-  const pushRoute = useCallback((next: MemberRoute) => {
-    setNavDirection('forward');
-    setRoute(next);
-  }, []);
-  const popRoute = useCallback((next: MemberRoute) => {
-    setNavDirection('back');
-    if (next.name === 'home') {
-      revealHome();
-    }
-    setRoute(next);
-  }, []);
-
-  const openChat = useCallback(
-    (id: string, from: ChatDoor = 'home') => {
-      pushRoute({ name: 'chat', providerId: id, from });
-      track('conversation_opened');
-    },
-    [pushRoute],
-  );
-
-  const openProvider = useCallback(
-    (id: string, from: 'home' | 'favourites' | 'chat' = 'home') => {
-      pushRoute({ name: 'providerDetail', providerId: id, from });
-      track('directory_viewed');
-    },
-    [pushRoute],
-  );
-
-  // Back from a chat honours the door it was opened from (Home or a profile),
-  // matching the hardware-back handler rather than always dumping to Home.
-  const leaveChat = useCallback(() => {
-    setNavDirection('back');
-    const current = routeRef.current;
-    const next: MemberRoute =
-      current.name === 'chat' ? (memberParent(current) ?? { name: 'home' }) : { name: 'home' };
-    if (next.name === 'home') {
-      revealHome();
-    }
-    setRoute(next);
-    resetConversation();
-  }, [resetConversation]);
-
-  const backToHome = useCallback(() => popRoute({ name: 'home' }), [popRoute]);
-
   /**
-   * The hardware and gesture back button.
+   * The hardware and gesture back button, last in line (nav-migration §4).
    *
-   * Order matters and is the whole design: a sheet closes before a screen pops,
-   * because a sheet is the thing most recently opened and therefore the thing the
-   * user means. Returning `false` hands the gesture to Android, which closes the
-   * app; that only happens at a root, where trapping back would leave no way out
-   * but the task switcher.
+   * Registered once, at Root's mount, so it is consulted LAST: RN runs back
+   * listeners last-registered-first, and everything that navigates is
+   * registered after it. A visible RN Modal takes back before any listener
+   * (`onRequestClose`); a focused tab root that is searching closes its
+   * search (`useSearchBack`); the NavigationContainer pops a stack or returns
+   * to the first tab (`backBehavior="initialRoute"`), and a route that must
+   * not simply leave (a paid chat, a call, Apply) stops that pop with
+   * `usePreventRemove`. Only what none of them wanted reaches this handler,
+   * which is the root of the first tab.
+   *
+   * NOT READY YET: hand back to Android (2026-09-17 audit). Before `ready`
+   * there is no navigator and no exit dialog on screen, and a dialog raised
+   * then appeared unprompted the moment `ready` was reached.
+   *
+   * At the root it does NOT silently close. A lonely person about to leave is
+   * exactly the moment to say "someone's still here", so back at Home asks
+   * first ("Leave Pappal?"), and returning `true` keeps Android from closing
+   * underneath it.
+   *
+   * STATED DEVIATION, predictive back. Intercepting back at the root is what
+   * suppresses the system's back-to-home preview
+   * (https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture,
+   * https://developer.android.com/about/versions/16/behavior-changes-16); the
+   * exit confirm is the owner's, so the preview is given up for it. The
+   * in-app half is a separate gap: react-native-screens 4.28 animates with
+   * View tweens, which predictive back does not drive
+   * (https://developer.android.com/guide/fragments/animate). See MainActivity.kt.
    */
   useEffect(() => {
     const onBack = () => {
-      /*
-       * NOT READY YET: hand back to Android (2026-09-17 audit).
-       *
-       * Everything below this line assumes `route`/`providerRoute` describe
-       * where the member or provider actually is, which is only true once
-       * `boot.phase === 'ready'`. On splash, sign-in, profile setup, the
-       * policy gate, permissions, the update screen, or the error screen,
-       * `route` still holds its very first default value, so every branch
-       * below fell through to "no parent, show the exit dialog" — except
-       * that dialog is only ever RENDERED in the `ready` branch of Root's own
-       * return (see the JSX at the bottom of this file), so the visible
-       * effect was that back did nothing on those screens, and then the
-       * dialog popped up unprompted the moment `ready` was reached, because
-       * `exitDialogVisible` had been sitting `true` the whole time. A member
-       * on their first launch could get "Leave Pappal?" as their welcome.
-       *
-       * Returning `false` here does what the docblock above already claims
-       * for the true root case: hands the press to Android. On these
-       * screens that means the OS's own back behaviour (typically closing
-       * the activity), which is correct — there is no in-app parent to pop
-       * to on a screen the member has not really "entered" yet.
-       */
       if (bootPhaseRef.current !== 'ready') {
         return false;
       }
-      // The Recharge overlay closes before any screen pops: it sits above
-      // everything (zIndex 20) and is the thing the user most recently opened, so
-      // back means it first. Settings is a normal route now (not an overlay), so
-      // it pops through the parent map below like every other screen.
-      if (useHomeTour.getState().active) {
-        useHomeTour.getState().skip();
-        return true;
-      }
-      // Overlay state and its close actions are read from the store HERE, not
-      // from the effect's deps, for the same reason the route is read via a ref:
-      // otherwise toggling the wallet/refill overlay tore down and re-subscribed
-      // this listener, the very re-subscription jank the ref pattern avoids, and
-      // it let a chat's own back guard be outranked mid-session. (2026-09-10)
-      const store = useStore.getState();
-      if (store.walletVisible) {
-        setNavDirection('back');
-        store.closeWallet();
-        return true;
-      }
-      if (store.refillVisible) {
-        store.closeRefill();
-        return true;
-      }
-      // Below the overlays, above any route pop: a screen with something to
-      // protect (a live paid session, a call) holds a guard and takes the press
-      // to its own dialog. This is the ONLY hardware-back subscription that
-      // decides navigation; screens no longer subscribe themselves, because RN
-      // fires subscriptions last-registered-first and this effect re-subscribes
-      // whenever the Recharge overlay toggles — so a chat's own listener could
-      // be outranked by this one and the chat popped out from under a paid
-      // session (src/lib/backGuard.ts).
-      if (consumeBack()) {
-        return true;
-      }
-      // Read from refs so that route changes do NOT cause the listener to tear
-      // down and re-subscribe on every navigation (which produced a measurable
-      // jank spike on Android with each setRoute call). Local names shadow the
-      // outer state values intentionally — all reads here must go through refs.
-      // eslint-disable-next-line @typescript-eslint/no-shadow
-      const route = routeRef.current;
-      // eslint-disable-next-line @typescript-eslint/no-shadow
-      const providerRoute = providerRouteRef.current;
-      const parent = memberParent(route);
-      if (parent !== null) {
-        if (route.name === 'chat') {
-          store.resetConversation();
-        }
-        // A hardware/gesture back is always a pop, so the leaving screen slides
-        // off to the right and its parent enters from the left. Home's slide is
-        // kicked here, before the route changes, while the overlay still covers it.
-        setNavDirection('back');
-        if (parent.name === 'home') {
-          revealHome();
-        }
-        setRoute(parent);
-        return true;
-      }
-      const providerBack = providerParent(providerRoute);
-      if (providerBack !== null) {
-        setNavDirection('back');
-        setProviderRoute(providerBack);
-        return true;
-      }
-      /*
-       * At the root, do NOT silently close. A lonely person about to leave is
-       * exactly the moment to say "someone's still here", so back at Home asks
-       * first. This is the seam the retention experience plugs into later (an AI
-       * companion clip inviting them to stay / try a call); for now it is an
-       * honest native confirm, and returning `true` keeps the gesture handled so
-       * Android does not close underneath it.
-       */
       setExitDialogVisible(true);
       return true;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  // Empty deps: the listener is registered ONCE for Root's lifetime. Route,
-  // overlay state and store actions are all read live inside onBack (refs and
-  // useStore.getState()), so nothing here forces a re-subscription.
+    // Empty deps: registered ONCE for Root's lifetime, so its place in the
+    // order (last consulted) never moves.
   }, []);
 
   /*
@@ -1568,51 +1271,10 @@ function Root() {
   return (
     <>
       <SignedIn
-        route={route}
-        providerRoute={providerRoute}
-        openChat={openChat}
-        openProvider={openProvider}
-        leaveChat={leaveChat}
-        backToHome={backToHome}
-        setRoute={setRoute}
-        setProviderRoute={setProviderRoute}
         onSignedOut={toSignedOut}
-        /*
-         * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
-         * While `PROVIDER_INTENT_KEY` is set, the boot effect above skips
-         * `bootPhaseAfterAuth` entirely — profileSetup, policyGate AND
-         * permissions — which is the documented, deliberate shape of
-         * "Become a partner" (Amit, 2026-09-03: "SKIPS the member first-run
-         * ... entirely"). That is correct for the DURATION of the apply
-         * flow: `bootPhaseAfterAuth`'s own `onProviderPath` check only
-         * skips profileSetup, so a member policy modal opening over
-         * provider onboarding was the exact bug it exists to prevent.
-         *
-         * But the skip does not end when onboarding does. The flag clears
-         * on submission and the app flips straight to the provider tree in
-         * THIS SAME SESSION with `boot.phase` still 'ready' — nothing
-         * re-runs `bootPhaseAfterAuth` until the NEXT cold start, so a
-         * freshly-admitted provider could take a paid session having never
-         * seen the policy screen, and the server's own POLICY_REQUIRED
-         * check (session_cutover.sql) would refuse it with no in-app
-         * screen able to resolve that refusal short of a relaunch.
-         *
-         * `onProviderOnboarded` re-runs the exact same check
-         * `bootPhaseAfterAuth` already does on every other post-auth path,
-         * the moment identity_state stops being 'none' — at which point
-         * `onProviderPath` is true via that signal alone, so profileSetup
-         * is (still, correctly) skipped and only policyGate/permissions
-         * get the chance to apply.
-         */
-        onProviderOnboarded={() => {
-          void (async () => {
-            const profile = await getSignedInProfile().catch(() => null);
-            const nextBoot = await bootPhaseAfterAuth(profile).catch(() => null);
-            if (nextBoot !== null) {
-              setBoot(nextBoot);
-            }
-          })();
-        }}
+        onProviderOnboarded={onProviderOnboarded}
+        takeRestoreState={takeRestoreState}
+        onNavState={onNavState}
       />
       <ConfirmDialog
         visible={exitDialogVisible}
@@ -1630,179 +1292,41 @@ function Root() {
 }
 
 interface SignedInProps {
-  route: MemberRoute;
-  providerRoute: ProviderRoute;
-  /** `from` names the door, so back returns where the member actually came from. */
-  openChat: (id: string, from?: ChatDoor) => void;
-  openProvider: (id: string, from?: 'home' | 'favourites' | 'chat') => void;
-  leaveChat: () => void;
-  backToHome: () => void;
-  setRoute: (r: MemberRoute) => void;
-  setProviderRoute: (r: ProviderRoute) => void;
   onSignedOut: () => void;
   /** Re-checks policy/permission gates the moment provider onboarding
    *  completes, closing the gap the provider-intent boot skip leaves open
-   *  for the rest of this session. See its call site in Root. */
+   *  for the rest of this session. See its definition in Root. */
   onProviderOnboarded: () => void;
+  /** The stacks to restore after the permission re-gate, once, or null. */
+  takeRestoreState: () => { role: 'member' | 'provider'; state: InitialState } | null;
+  /** Every navigator state, for that restore. */
+  onNavState: (role: 'member' | 'provider', state: NavigationState | undefined) => void;
 }
 
 /**
  * Split out because the role query needs a session, and hooks cannot be called
  * conditionally, putting `useRole` in `Root` would run it before sign-in.
+ *
+ * Every hook here stays ABOVE `if (isPending)` and outside the navigator, with
+ * the lifetime it had before navigation step 7 (nav-migration §1, B6): the
+ * incoming-call and chat-request channels, the foreground push handler, the
+ * decline listener and the presence heartbeat live as long as the session,
+ * not as long as any screen. The navigator itself is `RoutesContainer`, keyed
+ * by role, so a role flip remounts it onto the other tree.
  */
-function SignedIn({
-  route,
-  providerRoute,
-  openChat,
-  openProvider,
-  leaveChat,
-  backToHome,
-  setRoute,
-  setProviderRoute,
-  onSignedOut,
-  onProviderOnboarded,
-}: SignedInProps) {
-  const styles = useStyles(makeStyles);
+function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavState }: SignedInProps) {
   const setNotice = useStore(s => s.setNotice);
-
-  /*
-   * Stable, so `memo(FloatingToolbarView)` can actually hold.
-   *
-   * It was an inline arrow at the call site, which is a new function identity on
-   * every render of Root - so the memo compared unequal every time and the whole
-   * toolbar re-rendered on any state change anywhere above it, including every
-   * keystroke that moves a store value. The memo was there; the prop defeated it.
-   */
-  const onSelectTab = useCallback((key: 'home' | 'settings' | 'call' | 'favourites') => {
-    if (key === 'home') {
-      setRoute({ name: 'home' });
-    } else if (key === 'settings') {
-      setRoute({ name: 'settings' });
-    } else if (key === 'call') {
-      setRoute({ name: 'calls' });
-    } else if (key === 'favourites') {
-      setRoute({ name: 'favourites' });
-    }
-    // `setRoute` is a useState setter, so React guarantees a stable identity and
-    // this list never actually changes - it is declared because a dependency
-    // that is stable BY ARGUMENT is one edit away from not being.
-  }, [setRoute]);
-
-  /*
-   * Which tab the bar highlights. It STICKS while the bar is hidden.
-   *
-   * Now that the bar is never unmounted, a pushed screen would otherwise flip
-   * `active` to a fallback and back again — animating the indicator's spring and
-   * fade on a bar nobody can see, twice per push/pop. Holding the last real tab
-   * means the prop simply does not change while pushed, so the memo holds and
-   * the indicator never moves.
-   *
-   * Written during render on purpose: this is derived, idempotent, and must not
-   * lag the route by a frame the way an effect would. `tabFor` is null exactly
-   * when `transitionFor(route)` is 'push', so the ref only ever takes a real
-   * destination.
-   */
-  const tabFor: ToolbarKey | null =
-    route.name === 'home'
-      ? 'home'
-      : route.name === 'settings'
-        ? 'settings'
-        : route.name === 'calls'
-          ? 'call'
-          : route.name === 'favourites'
-            ? 'favourites'
-            : null;
-  const lastTabRef = useRef<ToolbarKey>('home');
-  if (tabFor !== null) {
-    lastTabRef.current = tabFor;
-  }
-  const activeTab = lastTabRef.current;
   const { role, isPending } = useRole();
   const { data: selfId } = useSelfId();
   const { data: conversations } = useConversations();
-  /*
-   * Mirrors of the route props, so `onIncoming` can ask "am I on a call
-   * already?" without taking the routes as dependencies. A callback that
-   * changes identity on every navigation would resubscribe the incoming-call
-   * channel each time, and a resubscribe is a window in which a ring is missed.
-   */
-  const currentRouteRef = useRef(route);
-  currentRouteRef.current = route;
-  const currentProviderRouteRef = useRef(providerRoute);
-  currentProviderRouteRef.current = providerRoute;
-  // Total unread across all conversations for the home tab badge.
-  const totalUnread = (conversations ?? []).reduce((sum, c) => {
-    const count = c.i_am_member
-      ? Number(c.unread_count_member)
-      : Number(c.unread_count_provider);
-    return sum + count;
-  }, 0);
   useReportFullyDrawn(!isPending);
-  useEffect(() => {
-    trackScreenOpened(role === 'provider' ? providerRoute.name : route.name);
-  }, [role, route.name, providerRoute.name]);
 
-  /*
-   * The in-render navigations declare direction the same way Root's do (see the
-   * `pushRoute`/`popRoute` note there): `setNavDirection` before the setter, so
-   * `screenIn`/`screenOut` know whether this is a push or a pop. Root's own
-   * `openChat`/`leaveChat`/`backToHome` (passed in) already carry direction;
-   * these cover the pushes and pops wired directly into child screens here.
-   */
-  const pushRoute = useCallback(
-    (next: MemberRoute) => {
-      setNavDirection('forward');
-      setRoute(next);
-    },
-    [setRoute],
-  );
-  const popRoute = useCallback(
-    (next: MemberRoute) => {
-      setNavDirection('back');
-      if (next.name === 'home') {
-        revealHome();
-      }
-      setRoute(next);
-    },
-    [setRoute],
-  );
-  const pushProvider = useCallback(
-    (next: ProviderRoute) => {
-      setNavDirection('forward');
-      setProviderRoute(next);
-    },
-    [setProviderRoute],
-  );
-  const popProvider = useCallback(
-    (next: ProviderRoute) => {
-      setNavDirection('back');
-      setProviderRoute(next);
-    },
-    [setProviderRoute],
-  );
-
-  // Home's slide-in on a pop is driven from the pop itself (motion.ts `revealHome`).
-  const homeLayer = useHomeRevealStyle();
-
-  /*
-   * The one place a ring becomes a route, applied by the intent queue's applier.
-   * routedCalls dedup is now in intents.ts (module-level, survives role remounts).
-   * Glare (busy-decline, own-dial-race) is also in intents.ts via glareDecision.
-   * nav-migration §3.
-   */
-  const routeIncomingCall = useCallback(
-    (peerId: string, callId: string, medium: 'voice' | 'video') => {
-      if (role === 'provider') {
-        pushProvider({ name: 'call', peerId, direction: 'in', callId, medium });
-      } else {
-        pushRoute({ name: 'call', providerId: peerId, direction: 'in', callId, medium });
-      }
-    },
-    [role, pushProvider, pushRoute],
-  );
+  // Read once, at mount: a re-gate's saved stacks, for the role they were saved on.
+  const [restore] = useState(takeRestoreState);
+  const pendingProviderApply = useStore(s => s.pendingProviderApply);
+  const signedInRole: 'member' | 'provider' = role === 'provider' ? 'provider' : 'member';
 
   // Realtime ring: enqueue and let the intent queue apply glare + dedup.
-  // Declared before the early return so hook order is stable.
   const onIncoming = useCallback(
     (incoming: IncomingCall) => {
       enqueueIntent({
@@ -1821,16 +1345,14 @@ function SignedIn({
    *
    * `useIncomingChatRequests` fires when a session_request INSERT lands on the
    * Realtime channel while the provider is live. The store's first-writer-wins
-   * guard prevents two overlapping rings, and queues the second to ring next. `setIncomingRequest` is stable (Zustand
-   * updater), so this callback never changes identity and never resubscribes.
+   * guard prevents two overlapping rings and queues the second to ring next;
+   * the provider shell turns whichever request rings into a `ChatRequest`
+   * route through the intent queue (src/shell/index.tsx).
    *
    * Peer name: looked up from the already-fetched conversations list. If the
    * conversation exists the provider knows who this is; otherwise a short
    * handle derived from the initiator id is used — the same fallback
    * `member_handle()` produces server-side.
-   *
-   * The ring only fires on the provider tree; members never receive a
-   * session_request as the recipient.
    * https://developer.android.com/develop/ui/views/notifications/conversations
    */
   const setIncomingRequest = useStore(s => s.setIncomingRequest);
@@ -1856,33 +1378,15 @@ function SignedIn({
   useIncomingChatRequests(role === 'provider' ? selfId : undefined, onIncomingChatRequest);
   /*
    * The provider's presence heartbeat (migration 155): foreground, every 30 s
-   * while active, offline on background. At the top level with the role as its
-   * argument, beside the ring above, because a hook cannot sit inside the role
-   * branch below. A member passes false and never beats, and so does a role
-   * still loading (`undefined`), so a provider starts a moment late rather
-   * than anyone else ever starting at all. Sign-out does not wait for this tree to unmount: it
-   * halts the heartbeat and sends the offline itself, before the session is
-   * cleared (`leaveDevice` in src/api/auth.ts).
+   * while active, offline on background. Here, above the role split, because a
+   * hook cannot sit inside the role branch below. A member passes false and
+   * never beats, and so does a role still loading (`undefined`), so a
+   * provider starts a moment late rather than anyone else ever starting at
+   * all. Sign-out does not wait for this tree to unmount: it halts the
+   * heartbeat and sends the offline itself, before the session is cleared
+   * (`leaveDevice` in src/api/auth.ts).
    */
   usePresenceHeartbeat(role === 'provider');
-
-  /*
-   * Where an accepted chat request goes: its chat, except over a call. The
-   * ring is held while the call route is up (`held` on ChatRequestScreen), but
-   * an Accept pressed before a call was routed can land after it, and
-   * pushing the chat route then unmounts CallScreen, whose unmount cleanup
-   * ends the call. The chat is in the list, and the notice says so.
-   */
-  const openAcceptedChat = useCallback(
-    (peerId: string) => {
-      if (currentProviderRouteRef.current.name === 'call') {
-        setNotice('Accepted. The chat is waiting in your list.', 'confirm');
-        return;
-      }
-      pushProvider({ name: 'chat', peerId });
-    },
-    [pushProvider, setNotice],
-  );
 
   /*
    * A Decline pressed on a chat-request notification has landed.
@@ -1904,69 +1408,6 @@ function SignedIn({
   }, []);
 
   /*
-   * Intent applier: registered once the role is known (isPending === false).
-   * The queue may have held intents while the role was resolving; flush fires
-   * immediately on setIntentApplier. On unmount (sign-out) the applier is
-   * cleared so the queue re-enters the hold state. nav-migration §3.
-   *
-   * The applier routes each intent to the correct tree (member vs. provider),
-   * replacing the three separate pending-state effects that existed before.
-   * chatRequest: closeAllActiveElements is done in intents.ts before the
-   * applier is called, so the applier itself is a no-op — ChatRequestScreen
-   * presents itself from the store's incomingRequest field.
-   */
-  const intentApplier = useCallback(
-    (intent: import('./src/lib/intents').NavIntent) => {
-      switch (intent.type) {
-        case 'incomingCall':
-          routeIncomingCall(intent.peerId, intent.callId, intent.medium);
-          break;
-        case 'openChat':
-          if (role === 'provider') {
-            pushProvider({ name: 'chat', peerId: intent.peerId });
-          } else {
-            pushRoute({ name: 'chat', providerId: intent.peerId, from: 'home' });
-          }
-          break;
-        case 'openChatV2':
-          /*
-           * Both trees, because V2 serves both sides of a thread and the
-           * provider side is where the shapes differ — no profile card, an
-           * earnings pill instead of a balance, and a peer id
-           * `open_conversation` would reject.
-           */
-          if (role === 'member') {
-            pushRoute({
-              name: 'chatV2',
-              providerId: intent.peerId,
-              benchmarkReadOnly: intent.benchmarkReadOnly,
-            });
-          } else {
-            pushProvider({
-              name: 'chatV2',
-              peerId: intent.peerId,
-              benchmarkReadOnly: intent.benchmarkReadOnly,
-            });
-          }
-          break;
-        case 'chatRequest':
-          // ChatRequestScreen renders from the store; no navigation push needed.
-          break;
-      }
-    },
-    [role, routeIncomingCall, pushProvider, pushRoute],
-  );
-
-  useEffect(() => {
-    if (isPending) {
-      // Role not yet resolved: hold all intents until the role is known.
-      return;
-    }
-    setIntentApplier(intentApplier);
-    return () => setIntentApplier(null);
-  }, [isPending, intentApplier]);
-
-  /*
    * Foreground pushes. A call enqueues through the intent queue (glare +
    * dedup handled there); a nudge becomes a notice over an app the person is
    * already looking at.
@@ -1986,6 +1427,15 @@ function SignedIn({
     [setNotice],
   );
 
+  const actions = React.useMemo<SignedInActions>(
+    () => ({ role: signedInRole, onSignedOut, onProviderOnboarded }),
+    [signedInRole, onSignedOut, onProviderOnboarded],
+  );
+  const onStateChange = useCallback(
+    (state: NavigationState | undefined) => onNavState(signedInRole, state),
+    [onNavState, signedInRole],
+  );
+
   // No retry handler here on purpose: the profile query owns its own retries, and
   // a button that re-runs a query React Query is already retrying would only
   // look like it did something.
@@ -1993,375 +1443,28 @@ function SignedIn({
     return <SplashScreen />;
   }
 
-  // The provider tree. Selected by the server, never by a client flag.
-  if (role === 'provider') {
-    return (
-      <View style={styles.host}>
-        {/* One screen at a time, keyed on the route so a change remounts and the
-          * M3 push/pop plays: the leaving screen slides off on `screenOut`, the
-          * arriving one enters on `screenIn`, direction from `navDirection`. The
-          * provider tree used to hard-cut between these. */}
-        <PushedLayer key={providerRoute.name} style={styles.fill}>
-          {providerRoute.name === 'call' ? (
-            <CallScreen
-              key={providerRoute.callId ?? 'starting'}
-              providerId={providerRoute.peerId}
-              direction={providerRoute.direction}
-              callId={providerRoute.callId}
-              medium={providerRoute.medium}
-              // Symmetry with the member tree: hanging up returns to that peer's
-              // chat, not the provider home (user 2026-08-31).
-              onEnded={() => popProvider({ name: 'chat', peerId: providerRoute.peerId })}
-            />
-          ) : providerRoute.name === 'chatV2' ? (
-            /*
-             * The provider tree's V2 seam. Same screen, same props, a member's
-             * id as the peer — which is the whole point of exercising it:
-             * `onOpenProfile` is absent here (a member has no profile card, so
-             * the identity block opens the safety sheet), and the header pill
-             * is earnings rather than a balance.
-             */
-            <ChatScreenV2
-              providerId={providerRoute.peerId}
-              benchmarkReadOnly={providerRoute.benchmarkReadOnly}
-              onBack={() => popProvider({ name: 'home' })}
-              onOpenEarnings={() =>
-                pushProvider({
-                  name: 'usage',
-                  from: 'chat',
-                  peerId: providerRoute.peerId,
-                })
-              }
-              onStartCall={
-                providerRoute.benchmarkReadOnly
-                  ? undefined
-                  : channel =>
-                      pushProvider({
-                        name: 'call',
-                        peerId: providerRoute.peerId,
-                        direction: 'out',
-                        callId: null,
-                        medium: channel === 'video' ? 'video' : 'voice',
-                      })
-              }
-            />
-          ) : providerRoute.name === 'chat' ? (
-            /* The production provider conversation. */
-            <ChatScreenV2
-              providerId={providerRoute.peerId}
-              onBack={() => popProvider({ name: 'home' })}
-              onOpenEarnings={() =>
-                pushProvider({
-                  name: 'usage',
-                  from: 'chat',
-                  peerId: providerRoute.peerId,
-                })
-              }
-              onStartCall={channel =>
-                pushProvider({
-                  name: 'call',
-                  peerId: providerRoute.peerId,
-                  direction: 'out',
-                  callId: null,
-                  medium: channel === 'video' ? 'video' : 'voice',
-                })
-              }
-            />
-          ) : providerRoute.name === 'payout' ? (
-            <ProviderBankScreen onBack={() => popProvider({ name: 'home' })} />
-          ) : providerRoute.name === 'blocked' ? (
-            <BlockedUsersScreen onBack={() => popProvider({ name: 'home' })} />
-          ) : providerRoute.name === 'usage' ? (
-            <UsageLedgerScreen
-              onBack={() => {
-                if (
-                  providerRoute.from === 'chat' &&
-                  providerRoute.peerId !== undefined
-                ) {
-                  popProvider({ name: 'chat', peerId: providerRoute.peerId });
-                  return;
-                }
-                // The settings list now lives on the You tab (home), not a
-                // pushed screen, so usage opened from it returns there.
-                popProvider({ name: 'home' });
-              }}
-            />
-          ) : (
-            <ProviderHomeScreen
-              onOpenConversation={peerId => pushProvider({ name: 'chat', peerId })}
-              onOpenPayout={() => pushProvider({ name: 'payout' })}
-              onOpenUsage={() => pushProvider({ name: 'usage', from: 'settings' })}
-              onOpenBlocked={() => pushProvider({ name: 'blocked' })}
-              onSignedOut={onSignedOut}
-              onDeleted={onSignedOut}
-            />
-          )}
-        </PushedLayer>
-        {/* The chat ring, above every screen and both nav bars (goal item 13).
-            Renders nothing unless a request is live. setIncomingRequest is wired
-            in useIncomingChatRequests above; clearIncomingRequest is called by
-            ChatRequestScreen itself on accept/decline/expire. */}
-        <ChatRing
-          held={providerRoute.name === 'call'}
-          onOpenConversation={openAcceptedChat}
-        />
-      </View>
-    );
-  }
+  /*
+   * The first frame (nav-migration §3). A re-gate restores the stacks it saved
+   * for this same role. Otherwise a member mid provider-signup boots straight
+   * into Apply over Home, with no push and no Home frame first (the HomeTour
+   * is skipped by the boot effect). Otherwise the navigator's own initial
+   * routes: Home, or Chats for a provider.
+   */
+  const initialState =
+    restore !== null && restore.role === signedInRole
+      ? restore.state
+      : signedInRole === 'member' && pendingProviderApply
+        ? APPLY_INITIAL_STATE
+        : undefined;
 
   return (
-    <View style={styles.host}>
-      {/* The content area, above the docked nav. Home stays mounted underneath,
-        * always; the Settings tab and the pushed screens are absolute layers that
-        * fill THIS view (not the whole host), so they end at the nav's top edge
-        * and the fixed bar never has to move or be overlapped. Returning to Home
-        * never remounts its lists or replays entry animations — the native
-        * back-stack behaviour a single swapped-in screen threw away. */}
-      <View style={styles.content}>
-      {/* Settings is a docked nav tab, so Home no longer opens it. The wrapper
-          carries Home's slide-in on a pop (see `homeShift`). */}
-      <Animated.View style={[styles.fill, homeLayer]}>
-        <HomeScreen
-          onOpenConversation={openChat}
-          onOpenProvider={openProvider}
-          /*
-           * The directory card's CTA rings straight from the list.
-           *
-           * `medium: 'voice'` and `callId: null` is the same shape the provider
-           * detail screen pushes for its Call button — CallScreen owns
-           * `start_call` and the ringing, so this is a route change and not a
-           * second implementation of placing a call.
-           */
-          onCallProvider={id =>
-            pushRoute({
-              name: 'call',
-              providerId: id,
-              direction: 'out',
-              callId: null,
-              medium: 'voice',
-            })
-          }
-          onSeeAllChats={() => pushRoute({ name: 'chatsList' })}
-          hasActiveCall={route.name === 'call'}
-        />
-      </Animated.View>
-
-      {/* Favourites is a top-level tab: the people this member has hearted. */}
-      <TabLayer active={route.name === 'favourites'} style={styles.tabLayer}>
-        <FavouritesScreen onOpenProvider={id => openProvider(id, 'favourites')} />
-      </TabLayer>
-
-      {/* Calls is a top-level tab (empty state for now). A real destination so
-          the nav's Calls icon does something on tap rather than reading as dead. */}
-      <TabLayer active={route.name === 'calls'} style={styles.tabLayer}>
-        <CallsScreen />
-      </TabLayer>
-
-      {/* Settings is a top-level tab: its own layer filling the content area
-          (which ends at the docked nav's top edge), not inside the pushed overlay
-          that the nav does not survive. A tab switch, not a push: the M3
-          top-level pattern (a fade, no slide) so Home↔Settings does not read as
-          a sideways jump. */}
-      <TabLayer active={route.name === 'settings'} style={styles.tabLayer}>
-        <SettingsSheet
-          onDeleted={() => {
-            backToHome();
-            onSignedOut();
-          }}
-          onSignedOut={onSignedOut}
-          onBlocked={() => pushRoute({ name: 'blocked' })}
-          onTransactions={() => pushRoute({ name: 'transactions' })}
-          onInvoices={() => pushRoute({ name: 'invoices' })}
-          onUsage={() => pushRoute({ name: 'usage' })}
-        />
-      </TabLayer>
-
-      {/* No opaque cover between Home and the pushed overlays any more.
-          There used to be an instant white `coverHome` at zIndex 9 so a
-          full-width slide would reveal a neutral surface rather than the feed.
-          With the M3 fade-through (a 24dp slide under a fade) the cover was the
-          transition's worst enemy: it snapped Home to white in one frame, the
-          overlay then faded in white-on-white — invisible — and the deferred
-          content popped in un-animated. Frame-stepped on device 2026-09-02:
-          Home → pure white → chat. The overlay's own opaque surface fading in
-          over the visible Home IS the pattern; nothing needs to hide Home. */}
-
-      {route.name === 'chatsList' ||
-      (route.name === 'chat' && route.from === 'chatsList') ? (
-        // Full-screen Chats modal. Stays mounted under a chat opened from here
-        // so back returns to this list, not Home (docs/flows.md).
-        <PushedLayer style={styles.overlay}>
-          <ChatsListScreen
-            onBack={backToHome}
-            onOpenConversation={id => openChat(id, 'chatsList')}
-          />
-        </PushedLayer>
-      ) : null}
-
-      {route.name === 'chatV2' ? (
-        <AfterPaint>
-          <PushedLayer style={styles.overlay}>
-            <ChatScreenV2
-              providerId={route.providerId}
-              benchmarkReadOnly={route.benchmarkReadOnly}
-              onBack={() => popRoute({ name: 'home' })}
-              onStartCall={
-                route.benchmarkReadOnly
-                  ? undefined
-                  : channel =>
-                      pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
-              }
-            />
-          </PushedLayer>
-        </AfterPaint>
-      ) : route.name === 'chat' ? (
-        /*
-         * `AfterPaint` OUTSIDE the animated overlay, not inside it.
-         *
-         * Inside, the container began its fade+slide as an empty white box and
-         * the screen's content mounted one frame later, un-animated, into a
-         * container already most of the way through its entrance. Outside, the
-         * heavy commit lands first and the entrance starts on the frame the
-         * content is actually there — one frame of latency the eye cannot see,
-         * in exchange for an animation that animates the screen rather than a
-         * blank. Reanimated runs `exiting` for the topmost animated view of a
-         * removed subtree, so the pop still plays when AfterPaint unmounts.
-         */
-        <AfterPaint>
-          <PushedLayer style={[styles.overlay, route.from === 'chatsList' && styles.overlayStack]}>
-            {/*
-             * `leaveChat` rather than a bare pop: back out of a chat honours
-             * the door it was opened from and resets the conversation store.
-             */}
-            <ChatScreenV2
-              providerId={route.providerId}
-              onBack={leaveChat}
-              onOpenProfile={id => openProvider(id, 'chat')}
-              onStartCall={channel =>
-                pushRoute({ name: 'call', providerId: route.providerId, direction: 'out', callId: null, medium: channel === 'video' ? 'video' : 'voice' })
-              }
-            />
-          </PushedLayer>
-        </AfterPaint>
-      ) : route.name === 'call' ||
-        route.name === 'providerDetail' ||
-        route.name === 'apply' ||
-        route.name === 'applicationStatus' ||
-        route.name === 'blocked' ||
-        route.name === 'transactions' ||
-        route.name === 'invoices' ||
-        route.name === 'usage' ? (
-        // Same shape as the chat overlay: content first, then the entrance.
-        <AfterPaint>
-        <PushedLayer style={styles.overlay}>
-          {route.name === 'call' ? (
-            <AfterPaint>
-              <CallScreen
-                key={route.callId ?? 'starting'}
-                providerId={route.providerId}
-                direction={route.direction}
-                callId={route.callId}
-                medium={route.medium}
-                // Ending a call lands on that peer's chat, not Home: a call is a
-                // moment inside a conversation, so hanging up returns to the
-                // conversation it belongs to (user 2026-08-31). Covers both the
-                // outgoing call (started from the chat) and an answered incoming
-                // ring, which should also drop the member into that SP's thread.
-                onEnded={() => openChat(route.providerId)}
-              />
-            </AfterPaint>
-          ) : route.name === 'providerDetail' ? (
-            <AfterPaint>
-              <ProviderDetailScreen
-                providerId={route.providerId}
-                onBack={backToHome}
-                onOpenChat={id => openChat(id, 'detail')}
-                onStartCall={(id, channel) =>
-                  pushRoute({
-                    name: 'call',
-                    providerId: id,
-                    direction: 'out',
-                    callId: null,
-                    medium: channel === 'video' ? 'video' : 'voice',
-                  })
-                }
-              />
-            </AfterPaint>
-          ) : route.name === 'apply' ? (
-            <ProviderApplicationScreen
-              // Leaving onboarding clears the provider-signup intent so a later
-              // boot does not re-route back into it.
-              onBack={() => {
-                storage.remove(PROVIDER_INTENT_KEY);
-                useStore.getState().setPendingProviderApply(false);
-                backToHome();
-              }}
-              // Auto-approve: completing onboarding flips role → 'provider', which
-              // re-renders into the provider tree (= provider home). The refetch is
-              // the belt-and-suspenders that guarantees the flip if the screen's own
-              // invalidate has not landed yet. No more applicationStatus.
-              onSubmitted={() => {
-                storage.remove(PROVIDER_INTENT_KEY);
-                useStore.getState().setPendingProviderApply(false);
-                void queryClient.invalidateQueries();
-                // Closes the boot-skip gap for the rest of THIS session —
-                // see onProviderOnboarded's own docblock at its call site.
-                onProviderOnboarded();
-              }}
-            />
-          ) : route.name === 'applicationStatus' ? (
-            <ProviderStatusScreen onBack={backToHome} onEdit={() => pushRoute({ name: 'apply', from: 'applicationStatus' })} />
-          ) : route.name === 'blocked' ? (
-            <BlockedUsersScreen onBack={backToHome} />
-          ) : route.name === 'usage' ? (
-            <UsageLedgerScreen onBack={() => popRoute({ name: 'settings' })} />
-          ) : route.name === 'invoices' ? (
-            // Back to Settings, the door it was opened from — the same pop as
-            // its two neighbours, and the parent `memberParent` returns.
-            <InvoicesScreen onBack={() => popRoute({ name: 'settings' })} />
-          ) : (
-            <TransactionHistoryScreen onBack={() => popRoute({ name: 'settings' })} />
-          )}
-        </PushedLayer>
-        </AfterPaint>
-      ) : null}
-      </View>
-
-      {/*
-        * The docked bottom bar (WhatsApp/iMessage). It is `position: 'absolute'`
-        * over the content area, NOT in the layout flow — the two tab screens pad
-        * their own scroll content by `NAV_BAR_HEIGHT` so no full-width row sits
-        * under it and steals a tab's tap. Calls stay gated (`CALLS_ENABLED`).
-        *
-        * ALWAYS RENDERED, and hidden on pushed screens rather than unmounted.
-        * The conditional it replaces rebuilt a native RenderEffect blur surface
-        * and eight animated children on every push and every pop, inside the
-        * frame that was already animating the transition. Because the bar takes
-        * no layout, keeping it mounted costs nothing; `display: none` keeps it
-        * out of drawing too. See the note in FloatingToolbar itself.
-        *
-        * Visibility comes from `transitionFor`, not a hand-written list of route
-        * names: it is an exhaustive switch, so a new route has to say which kind
-        * it is or fail typecheck. 'root' and 'tab' are the destinations the bar
-        * navigates between; 'push' is everything deeper.
-        */}
-      <FloatingToolbar
-        active={activeTab}
-        visible={transitionFor(route) !== 'push'}
-        callEnabled={CALLS_ENABLED}
-        homeBadgeCount={totalUnread}
-        onSelect={onSelectTab}
-      />
-      <RechargeWalletPage />
-      <RechargeScreen />
-      {/* One feedback sheet for the whole app: a session can end in a chat or
-          in a call started from a provider's page, and the sheet has to outlive
-          whichever screen noticed (goal item 14). It renders nothing until the
-          store holds a session to rate. */}
-      <SessionFeedbackSheet />
-      {/* The chat ring comment is intentionally moved to the provider tree above.
-          Members never receive session_requests as the recipient. */}
-    </View>
+    <RoutesContainer
+      key={signedInRole}
+      role={signedInRole}
+      actions={actions}
+      initialState={initialState}
+      onStateChange={onStateChange}
+    />
   );
 }
 
@@ -2428,7 +1531,12 @@ export default function App() {
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
             <ThemeProvider>
-              <Shell />
+              {/* The shell's state (minimal mode, the bar's height) sits above
+                  Root, so the UpdateBanner, outside every route, rides above
+                  the bottom bar (nav-migration §1). */}
+              <ShellStateProvider>
+                <Shell />
+              </ShellStateProvider>
             </ThemeProvider>
           </QueryClientProvider>
         </SafeAreaProvider>
@@ -2471,54 +1579,6 @@ const fill = StyleSheet.create({
 });
 
 const makeStyles = (t: Theme) => StyleSheet.create({
-  host: {
-    flex: 1,
-    backgroundColor: t.color.bg.base,
-  },
-  // The content area above the docked nav. flex:1 so it takes all the space the
-  // bar leaves, and position relative so the Settings tab and pushed-screen
-  // overlays (absolute) fill THIS, ending at the bar's top edge rather than
-  // under it. This is what makes the fixed bar not shift or get overlapped.
-  content: {
-    flex: 1,
-    position: 'relative',
-  },
-  // Opaque cover for a pushed screen, above the always-mounted Home and below
-  // the Recharge overlay (zIndex 20). Its zIndex 10 is also what hides the fixed
-  // nav (no zIndex) on pushed screens, which is the whole point of the split.
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: t.color.bg.base,
-    zIndex: 10,
-  },
-  // Chat opened from the Chats modal sits above that list so the list
-  // remains mounted underneath.
-  overlayStack: {
-    zIndex: 11,
-  },
-  // A top-level tab (Settings) covering Home. Deliberately NO zIndex: it paints
-  // over Home by document order, and the nav — rendered after it, also without a
-  // zIndex — paints over it, so the fixed bar stays visible on the tab. Giving
-  // this or the nav a zIndex is what broke the nav's touch handling on Android.
-  tabLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: t.color.bg.base,
-  },
-  blank: {
-    flex: 1,
-    backgroundColor: t.color.bg.base,
-  },
-  fill: {
-    flex: 1,
-  },
   fatal: {
     flex: 1,
     gap: TOKENS.space.md,
@@ -2541,17 +1601,3 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space['2xl'],
   },
 });
-
-/**
- * The old tree's ring host: hands ChatRequestScreen the store's ringing
- * request. Its own component so a ring arriving or leaving re-renders this and
- * not SignedIn, which is what the ring reading the store itself gave before
- * navigation step 6. Deleted when `ChatRequest` becomes a route (step 7).
- */
-function ChatRing(props: {
-  held: boolean;
-  onOpenConversation: (peerId: string) => void;
-}) {
-  const request = useStore(s => s.incomingRequest);
-  return <ChatRequestScreen request={request} {...props} />;
-}

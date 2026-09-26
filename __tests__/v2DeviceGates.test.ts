@@ -150,15 +150,17 @@ describe('V2 device gates', () => {
 
   it('carries internal-only benchmark read-only state into the controller and UI', () => {
     const app = read('App.tsx');
-    const routes = read('src/lib/routes.ts');
+    const types = read('src/lib/routes/types.ts');
+    const chatRoute = read('src/screens/routes/ChatRoute.tsx');
     const screen = read('src/chat-v2/ChatScreenV2.tsx');
     const composer = read('src/chat-v2/ChatComposerV2.tsx');
     const list = read('src/chat-v2/ChatListV2.tsx');
     const controller = read('src/chat-v2/useChatV2Controller.ts');
 
-    expect(routes).toContain('readonly benchmarkReadOnly: boolean');
+    expect(types).toContain('ChatV2: { peerId: string; benchmarkReadOnly: boolean }');
     expect(app).toContain('benchmarkReadOnly: benchmarkReadOnlyLaunch');
-    expect(app).toContain('benchmarkReadOnly={route.benchmarkReadOnly}');
+    // The route param reaches the screen through the Chat adapter (step 7).
+    expect(chatRoute).toContain('benchmarkReadOnly={benchmarkReadOnly}');
     expect(screen).toContain(
       'useChatV2Controller(providerId, benchmarkReadOnly, { live, focused })',
     );

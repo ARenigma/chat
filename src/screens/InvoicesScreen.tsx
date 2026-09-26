@@ -27,7 +27,6 @@ import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { useBackBarrier } from '../lib/backGuard';
 import { longDate } from '../lib/datetime';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
@@ -43,6 +42,7 @@ import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Pressable } from '../components/Pressable';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 
 interface Props {
   onBack: () => void;
@@ -115,19 +115,11 @@ export function unsettledNote(count: number): string | null {
 }
 
 export function InvoicesScreen({ onBack }: Props) {
-  /*
-   * This screen covers Home, and Home stays mounted underneath it (App.tsx
-   * renders pushed screens as overlays so returning never remounts Home's
-   * lists). Without this barrier Home's search guard — live whenever its search
-   * field is open — still hears the hardware back press from up here, closes a
-   * field nobody can see, and reports the press handled, so this screen never
-   * pops. See src/lib/backGuard.ts.
-   */
-  useBackBarrier();
-
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  // The bottom bar stays up on this pushed screen: the last row clears it.
+  const barOffset = useBottomBarOffset(TOKENS.space.xl);
   const setNotice = useStore(s => s.setNotice);
   const { data, isLoading } = useBills();
   const fetchInvoiceUrl = useFetchInvoiceUrl();
@@ -233,7 +225,7 @@ export function InvoicesScreen({ onBack }: Props) {
           {...SCROLL_PHYSICS}
           contentContainerStyle={[
             styles.list,
-            { paddingBottom: insets.bottom + TOKENS.space.xl },
+            { paddingBottom: barOffset },
           ]}>
           <View style={styles.group}>
             {documents.map((entry, index) => (

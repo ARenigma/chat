@@ -329,6 +329,18 @@ class MainActivity : ReactActivity() {
      * Passing null clears all saved state and breaks the Truecaller flow.
      */
     supportFragmentManager.fragmentFactory = RNScreensFragmentFactory()
+    /*
+     * Predictive back is a stated gap, with two causes (nav-migration §4,
+     * ADR-0032). react-native-screens 4.28 animates its fragments with View
+     * tween animations, and predictive back drives only Animator and AndroidX
+     * Transition (https://developer.android.com/guide/fragments/animate); and
+     * ReactActivity registers an always-enabled OnBackPressedCallback, so the
+     * system never sees a destination it could preview. On top of both, the
+     * JS root asks "Leave Pappal?" at the first tab's root, which is exactly
+     * the interception that suppresses the back-to-home preview
+     * (https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture).
+     * So `enableOnBackInvokedCallback` stays absent from the manifest.
+     */
     updateBenchmarkLaunch(intent)
     super.onCreate(savedInstanceState)
 

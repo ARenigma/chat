@@ -193,8 +193,6 @@ describe('every icon name resolves to a glyph the font draws', () => {
     const RESOLVERS: Record<string, RegExp> = {
       // TABS: { key, glyph: 'home', ... }
       'src/components/FloatingToolbar.tsx': /glyph: '(\w+)'/g,
-      // <TabButton icon="chat" ... />
-      'src/screens/ProviderHomeScreen.tsx': /<TabButton\s+icon="(\w+)"/g,
       // MEMBER_TABS / PROVIDER_TABS: { name, glyph: 'home', ... } (step 5 shell)
       'src/shell/bottom-bar/BottomBar.tsx': /glyph: '(\w+)'/g,
     };
@@ -226,7 +224,9 @@ describe('every icon name resolves to a glyph the font draws', () => {
     }
     // The scan found what is known to be there, so a regex that silently
     // matched nothing cannot pass this.
-    expect(dynamicSites).toBe(3);
+    // FloatingToolbar and the bottom bar (ProviderHomeScreen's own tab row
+    // went with the file in navigation step 7).
+    expect(dynamicSites).toBe(2);
     expect([...names.keys()]).toEqual(
       expect.arrayContaining(['home', 'heart', 'person', 'chat', 'star']),
     );

@@ -33,7 +33,16 @@ to the license Telegram for Android ships under.
 
 Portions of the following are adapted from the Bluesky social-app:
 
+- `src/Navigation.tsx` — the tab-navigator-as-root structure, one native stack per
+  tab, screens registered in every tab stack (`commonScreens`), the stable
+  `tabBar` callback and the `RoutesContainer` (upstream `src/Navigation.tsx`)
 - `src/lib/routes/helpers.ts` (upstream `src/lib/routes/helpers.ts`)
+- `src/lib/routes/actions.ts`, `src/lib/intents.ts` — notification routing into the
+  conversations tab and the replayed-payload pattern (upstream
+  `src/lib/hooks/useNotificationHandler.ts`, `src/Navigation.tsx`)
+- `src/shell/index.tsx` — the signed-in shell around the tab navigator (upstream
+  `src/view/shell/index.tsx`)
+- `src/hooks/useNavigationDeduped.ts` (upstream `src/lib/hooks/useNavigationDeduped.ts`)
 - `src/shell/bottom-bar/BottomBar.tsx`, `BottomBarStyles.ts` — the custom tab bar, its
   soft-reset / pop-to-top / navigate press logic and bar geometry (upstream
   `src/view/shell/bottom-bar/*`)

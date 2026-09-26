@@ -3,7 +3,6 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { useBackBarrier } from '../lib/backGuard';
 import { initialOf } from '../lib/display';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useBlockedPeople, useUnblockUser } from '../api/safety';
@@ -11,6 +10,7 @@ import { Avatar } from '../components/Avatar';
 import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
 import { Pressable } from '../components/Pressable';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 
 interface Props {
   onBack: () => void;
@@ -31,18 +31,10 @@ interface Props {
  * blocked, member or provider, under their public name only.
  */
 export function BlockedUsersScreen({ onBack }: Props) {
-  /*
-   * This screen covers Home, and Home stays mounted underneath it (App.tsx
-   * renders pushed screens as overlays so returning never remounts Home's
-   * lists). Without this barrier Home's search guard — live whenever its search
-   * field is open — still hears the hardware back press from up here, closes a
-   * field nobody can see, and reports the press handled, so this screen never
-   * pops. See src/lib/backGuard.ts.
-   */
-  useBackBarrier();
-
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  // The bottom bar stays up on this pushed screen: the last row clears it.
+  const barOffset = useBottomBarOffset(TOKENS.space.xl);
   const { data: list, isLoading, isError, isFetching, refetch } = useBlockedPeople();
   const unblock = useUnblockUser();
 
@@ -72,7 +64,7 @@ export function BlockedUsersScreen({ onBack }: Props) {
         <ScrollView
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
-          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + TOKENS.space.xl }]}>
+          contentContainerStyle={[styles.list, { paddingBottom: barOffset }]}>
           <Text allowFontScaling style={styles.hint}>
             Unblocking lets this person message you again. They are never told
             they were blocked.

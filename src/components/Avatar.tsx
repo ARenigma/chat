@@ -12,6 +12,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { DURATION, EASE_BREATHE } from '../theme/motion';
 import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
+import { useScreenFocused } from '../hooks/useScreenFocused';
 
 /**
  * 40 replaces 42, and that is a platform number rather than a rounder one: iOS
@@ -129,9 +130,12 @@ function AvatarView({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const breath = useSharedValue(0);
+  // A covered screen stays mounted under native-stack, so the loop also stops
+  // while its screen is not focused (nav-migration §5); true outside a navigator.
+  const screenFocused = useScreenFocused();
 
   useEffect(() => {
-    if (!breathing) {
+    if (!breathing || !screenFocused) {
       // Cancel explicitly so the loop stops when the prop flips false, not just
       // when the effect re-runs and hits the early return without a cleanup.
       cancelAnimation(breath);
@@ -155,7 +159,7 @@ function AvatarView({
     );
     // Cancel on unmount so the loop cannot outlive the component.
     return () => cancelAnimation(breath);
-  }, [breathing, breath]);
+  }, [breathing, screenFocused, breath]);
 
   const animated = useAnimatedStyle(() => ({
     transform: [{ scale: 1 + breath.value * 0.02 }],

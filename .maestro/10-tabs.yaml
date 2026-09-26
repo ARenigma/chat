@@ -1,0 +1,38 @@
+# CUJ 10 — tabs are peers, and back from a tab returns to the first one.
+#
+# Navigation step 7: `backBehavior="initialRoute"` (Bluesky Navigation.tsx).
+# From the Favourites root, back selects Home rather than leaving the app; the
+# selected state is read from the tab's accessibility state, which the bar
+# sets from the navigator (nav-migration §6).
+appId: com.companionchat
+name: Back from a tab returns to Home
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: 'nav-home'
+    timeout: 20000
+- tapOn:
+    id: 'nav-favourites'
+- assertVisible:
+    id: 'nav-favourites'
+    selected: true
+- back
+- assertVisible:
+    id: 'nav-home'
+    selected: true
+- assertNotVisible:
+    id: 'app-exit-dialog'
+
+- tapOn:
+    id: 'nav-settings'
+- assertVisible:
+    id: 'nav-settings'
+    selected: true
+- back
+- assertVisible:
+    id: 'nav-home'
+    selected: true
+
+- takeScreenshot: artifacts/10-tabs

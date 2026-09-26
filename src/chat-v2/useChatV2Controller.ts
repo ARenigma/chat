@@ -126,6 +126,7 @@ import {
   type ChatV2Notice,
   type ChatV2Row,
 } from './rows';
+import { openRefill } from '../lib/routes/actions';
 
 /** The outgoing-activity stand-in while the chat is not live. */
 const NOOP = (): void => undefined;
@@ -311,7 +312,6 @@ export function useChatV2Controller(
   // paths gate on before they spend anything.
   useProfile();
   const setNotice = useStore(s => s.setNotice);
-  const openRefill = useStore(s => s.openRefill);
   const requestReview = useStore(s => s.requestReview);
   const { data: selfId } = useSelfId();
   const { data: providers } = useProviders();
@@ -907,7 +907,6 @@ export function useChatV2Controller(
   }, [
     benchmarkReadOnly,
     conversationId,
-    openRefill,
     resumeConsent,
     setNotice,
   ]);
@@ -948,7 +947,6 @@ export function useChatV2Controller(
     benchmarkReadOnly,
     confirmChat,
     conversationId,
-    openRefill,
     pendingRequest,
     setNotice,
   ]);

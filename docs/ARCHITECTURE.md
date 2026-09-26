@@ -148,13 +148,13 @@ Key files: `src/api/transactions.ts`, `src/api/sessions.ts`, `src/screens/Rechar
 
 ## Feature Flags (`src/config.ts`)
 
-| Flag                 | Current value              | Effect when changed                                                                                                                                               |
-| -------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CALLS_ENABLED`      | `true`                     | Compile-time master for in-chat call affordances. Live voice/video knobs are admin `kill_switches` (`voice_calls_enabled`, `video_calls_enabled`, migration 044). |
-| `CALLS_TAB_ENABLED`  | `false`                    | When `true`, adds a Calls tab to the bottom nav (`FloatingToolbar`) and mounts `CallsScreen`. The tab is hidden while `CallsScreen` is still a stub.              |
-| `PAYMENTS_ENABLED`   | `false`                    | When `true`, wires the Pay button to a real UPI/Play Billing rail (not yet built).                                                                                |
-| `MOCK_PAYMENTS`      | `APP_ENV !== 'production'` | Enables the mock recharge flow; also gated server-side by `app_flags.mock_payments`.                                                                              |
-| `PHONE_AUTH_ENABLED` | `true`                     | Gates every phone sign-in entry point (button + send/verify functions). Flip to `false` to revert to Google-only in one diff.                                     |
+| Flag                 | Current value              | Effect when changed                                                                                                                                                      |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CALLS_ENABLED`      | `true`                     | Compile-time master for in-chat call affordances. Live voice/video knobs are admin `kill_switches` (`voice_calls_enabled`, `video_calls_enabled`, migration 044).        |
+| `CALLS_TAB_ENABLED`  | `false`                    | When `true`, registers `CallsTab` in the member tab navigator (`src/Navigation.tsx`), which gives the bottom bar its Calls button. Hidden while `CallsScreen` is a stub. |
+| `PAYMENTS_ENABLED`   | `false`                    | When `true`, wires the Pay button to a real UPI/Play Billing rail (not yet built).                                                                                       |
+| `MOCK_PAYMENTS`      | `APP_ENV !== 'production'` | Enables the mock recharge flow; also gated server-side by `app_flags.mock_payments`.                                                                                     |
+| `PHONE_AUTH_ENABLED` | `true`                     | Gates every phone sign-in entry point (button + send/verify functions). Flip to `false` to revert to Google-only in one diff.                                            |
 
 Runtime config also covers rates, packs, and kill switches via `get_public_config` (migration 035). Theme preference is client-only MMKV (`light` default on install).
 

@@ -1,0 +1,60 @@
+# CUJ 9 — back walks the stack, and the root asks before leaving.
+#
+# Navigation step 7 (nav-migration §4, ADR-0032). The profile is a tall native
+# sheet, and a chat opened from it takes the sheet's place, so back from that
+# chat returns to Home, where the profile was opened from (ADR-0032 §7). Back
+# on the sheet itself dismisses it. At the Home root back asks "Leave Pappal?"
+# and Cancel keeps the app up.
+appId: com.companionchat
+name: Back walks the stack and confirms at the root
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Ada'
+    timeout: 20000
+
+# Profile sheet, then its chat, then back: the chat replaced the sheet.
+- tapOn: 'Ada'
+- extendedWaitUntil:
+    visible:
+      id: 'detail-back'
+    timeout: 10000
+- tapOn:
+    id: 'action-chat'
+- extendedWaitUntil:
+    visible:
+      id: 'chat-v2-input'
+    timeout: 10000
+- back
+- extendedWaitUntil:
+    visible:
+      id: 'nav-home'
+    timeout: 10000
+- assertNotVisible:
+    id: 'detail-back'
+
+# Profile sheet again, dismissed by back.
+- tapOn: 'Ada'
+- extendedWaitUntil:
+    visible:
+      id: 'detail-back'
+    timeout: 10000
+- back
+- extendedWaitUntil:
+    visible:
+      id: 'nav-home'
+    timeout: 10000
+
+# The Home root asks first.
+- back
+- extendedWaitUntil:
+    visible:
+      id: 'app-exit-dialog'
+    timeout: 5000
+- tapOn:
+    id: 'confirm-dialog-cancel'
+- assertVisible:
+    id: 'nav-home'
+
+- takeScreenshot: artifacts/09-back-stack

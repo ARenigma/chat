@@ -96,8 +96,6 @@ interface AppState {
    */
   peerActivity: PeerActivityState | null;
   refillVisible: boolean;
-  /** Full-page Recharge, opened only from the wallet pill. */
-  walletVisible: boolean;
   /**
    * A session that just ended and has not been rated yet (goal item 14).
    *
@@ -176,8 +174,6 @@ interface AppState {
    * Promotes the next queued request that has not expired.
    */
   clearIncomingRequest: (requestId: string) => void;
-  openWallet: () => void;
-  closeWallet: () => void;
   /**
    * Tone defaults to `error` because most notices are failures and a failure
    * mis-styled as a confirmation is the worse of the two mistakes.
@@ -222,7 +218,6 @@ const INITIAL = {
   sending: false,
   peerActivity: null,
   refillVisible: false,
-  walletVisible: false,
   pendingReview: null,
   incomingRequest: null,
   queuedRequests: [] as readonly IncomingRequest[],
@@ -245,8 +240,6 @@ const INITIAL = {
   | 'clearReview'
   | 'setIncomingRequest'
   | 'clearIncomingRequest'
-  | 'openWallet'
-  | 'closeWallet'
   | 'setNotice'
   | 'setPendingProviderApply'
   | 'setUploadProgress'
@@ -270,7 +263,12 @@ export const useStore = create<AppState>()(set => ({
       return ownsPeerActivity(state.peerActivity, conversationId) ? { peerActivity: null } : state;
     }),
   setPlaying: playing => set({ playing }),
-  openRefill: () => set({ refillVisible: true, walletVisible: false }),
+  /*
+   * The refill sheet alone. Its exclusion with the wallet page is kept by
+   * `openRefill` in src/lib/routes/actions.ts, which closes the `Wallet` route
+   * first: the page is a route since navigation step 7, not a store flag.
+   */
+  openRefill: () => set({ refillVisible: true }),
   closeRefill: () => set({ refillVisible: false }),
   /*
    * First writer wins: if a call and its chat both notice the same session
@@ -342,8 +340,6 @@ export const useStore = create<AppState>()(set => ({
         rungRequestIds: next === null ? state.rungRequestIds : [...state.rungRequestIds, next.requestId],
       };
     }),
-  openWallet: () => set({ walletVisible: true, refillVisible: false }),
-  closeWallet: () => set({ walletVisible: false }),
   setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),
   setPendingProviderApply: pending => set({ pendingProviderApply: pending }),
   setUploadProgress: (id, fraction) =>

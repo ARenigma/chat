@@ -10,3 +10,9 @@ name: End measured real call
     timeout: 10000
 - tapOn:
     id: call-end
+# Navigation step 7: a call ends onto its peer's chat, the same mounted chat it
+# was started from (resolveOpenChat, callEnd), or in the call's place.
+- extendedWaitUntil:
+    visible:
+      id: chat-v2-input
+    timeout: 15000

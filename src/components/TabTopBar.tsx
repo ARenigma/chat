@@ -12,6 +12,7 @@ import { SearchBar } from './SearchBar';
 import { TokenCounter } from './TokenCounter';
 import { TourAnchor } from './TourAnchor';
 import type { TourTargetId } from '../store/useHomeTour';
+import { openWallet } from '../lib/routes/actions';
 
 /**
  * The search field's side margin, in dp, and it is 7 rather than a token
@@ -94,7 +95,6 @@ export function TabTopBar({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
-  const openWallet = useStore(s => s.openWallet);
 
   /*
    * No entering animation on the FIRST render, and this is a real defect and

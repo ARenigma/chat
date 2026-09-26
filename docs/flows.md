@@ -16,19 +16,19 @@ https://m3.material.io/components/menus/guidelines
 
 ## What Pappal does
 
-| Flow                     | Behaviour                                                                                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Long-press rail face     | Paper vertical menu: Pin, Remove from Home, Delete                                                                                               |
-| Long-press list row      | Paper vertical menu: Pin, Delete (no Remove — already on the list)                                                                               |
-| Remove                   | Hide from Home rail only. Still in Chats.                                                                                                        |
-| Delete                   | Confirm, then hide from both lists on this device. Peer unchanged.                                                                               |
-| See all → Chats          | Full-screen overlay (modal). Nav hidden.                                                                                                         |
-| Open chat from Chats     | Chat pushes on top of Chats. Back → Chats. Second back → Home.                                                                                   |
-| Open chat from Home rail | Back → Home.                                                                                                                                     |
-| Open chat from a profile | Back → that profile.                                                                                                                             |
-| First Home               | Spotlight tour first, then SP hero modal. Tour once per install; Skip anytime.                                                                   |
-| End call                 | Returns to the originating SP chat, not Home.                                                                                                    |
-| You (Settings)           | Profile-first account screen: cover wallpaper, overlapping avatar, continuous list with M3 inset dividers. Presence and theme open radio sheets. |
+| Flow                     | Behaviour                                                                                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Long-press rail face     | Paper vertical menu: Pin, Remove from Home, Delete                                                                                                  |
+| Long-press list row      | Paper vertical menu: Pin, Delete (no Remove — already on the list)                                                                                  |
+| Remove                   | Hide from Home rail only. Still in Chats.                                                                                                           |
+| Delete                   | Confirm, then hide from both lists on this device. Peer unchanged.                                                                                  |
+| See all → Chats          | Pushed in the Home tab's stack; the bottom bar stays (navigation step 7).                                                                           |
+| Open chat from Chats     | Chat pushes on top of Chats. Back → Chats. Second back → Home.                                                                                      |
+| Open chat from Home rail | Back → Home.                                                                                                                                        |
+| Open chat from a profile | The profile is a sheet; the chat takes its place, so back → where the profile was opened from (ADR-0032 §7). An open chat with them is returned to. |
+| First Home               | Spotlight tour first, then SP hero modal. Tour once per install; Skip anytime.                                                                      |
+| End call                 | Returns to the originating SP chat, not Home.                                                                                                       |
+| You (Settings)           | Profile-first account screen: cover wallpaper, overlapping avatar, continuous list with M3 inset dividers. Presence and theme open radio sheets.    |
 
 ## Heart (locked pair)
 

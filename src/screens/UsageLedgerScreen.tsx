@@ -31,7 +31,6 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { useBackBarrier } from '../lib/backGuard';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
 import { formatCount, formatRupees } from '../lib/rates';
@@ -42,6 +41,7 @@ import { BackButton } from '../components/BackButton';
 import { Icon, type IconName } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { RupeeAmount } from '../components/RupeeAmount';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 
 interface Props {
   onBack: () => void;
@@ -200,19 +200,11 @@ function Kpi({
 }
 
 export function UsageLedgerScreen({ onBack }: Props) {
-  /*
-   * This screen covers Home, and Home stays mounted underneath it (App.tsx
-   * renders pushed screens as overlays so returning never remounts Home's
-   * lists). Without this barrier Home's search guard — live whenever its search
-   * field is open — still hears the hardware back press from up here, closes a
-   * field nobody can see, and reports the press handled, so this screen never
-   * pops. See src/lib/backGuard.ts.
-   */
-  useBackBarrier();
-
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  // The bottom bar stays up on this pushed screen: the last row clears it.
+  const barOffset = useBottomBarOffset(TOKENS.space.xl);
   const { data, isLoading } = useUsageLedger();
   const { data: profile } = useProfile();
   const rows = data ?? [];
@@ -261,7 +253,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.scroll,
-            { paddingBottom: insets.bottom + TOKENS.space.xl },
+            { paddingBottom: barOffset },
           ]}>
           {/* Two up, above the rows. Equal `flex: 1` halves rather than a fixed
               width, so the pair survives every screen width without a

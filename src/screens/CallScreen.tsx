@@ -42,8 +42,8 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { track } from '../lib/telemetry';
-import { useBackBarrier, useBackGuard } from '../lib/backGuard';
 import { setKeepScreenOn } from '../lib/windowChrome';
+import { openRefill } from '../lib/routes/actions';
 
 /** Which way the call goes. Outgoing dials; incoming rings and offers answer. */
 export type CallDirection = 'out' | 'in';
@@ -69,11 +69,19 @@ interface Props {
    */
   onEnded: () => void;
   /**
-   * What a host needs to guard this screen's removal, published whenever it
-   * changes (the route adapter in step 7). The old tree passes nothing: its
-   * back goes through `useBackGuard` here.
+   * What the `Call` route needs to guard this screen's removal
+   * (`usePreventRemove`, nav-migration §4 3b), published whenever it changes.
+   * The route owns hardware back; this screen owns only the dialog it opens.
    */
   onGuard?: (guard: CallGuard) => void;
+  /**
+   * The call's server id, once known: at mount for an incoming call, when
+   * `start_call` returns for an outgoing one, and when an ALREADY_RINGING
+   * answer adopts the existing call. The route records it on the store's
+   * `activeCall` (`setActiveCallId`), so the glare decision can tell this
+   * call's own echo from a genuinely second call (nav-migration §3).
+   */
+  onCallId?: (callId: string) => void;
 }
 
 /** The call screen's removal guard, as its host reads it. */
@@ -83,6 +91,14 @@ export interface CallGuard {
   /** Ask before leaving: the same dialog hardware back opens. */
   openLeave: () => void;
 }
+
+/**
+ * The call's fixed dark base, whatever the theme. Exported so the `Call` route
+ * paints its stack `contentStyle` with it: native-stack draws the screen's
+ * background before React's first frame, and the theme background there
+ * flashed white under a light-mode push (nav-migration §1, B19).
+ */
+export const CALL_BASE = '#0B0B10';
 
 /** How long between heartbeats while a call is up; the ticker reads last_seen_at. */
 const HEARTBEAT_MS = 20_000;
@@ -189,22 +205,12 @@ export function CallScreen({
   medium,
   onEnded,
   onGuard,
+  onCallId,
 }: Props) {
-  /*
-   * This screen covers Home, and Home stays mounted underneath it (App.tsx
-   * renders pushed screens as overlays so returning never remounts Home's
-   * lists). Without this barrier Home's search guard — live whenever its search
-   * field is open — still hears the hardware back press from up here, closes a
-   * field nobody can see, and reports the press handled, so this screen never
-   * pops. See src/lib/backGuard.ts.
-   */
-  useBackBarrier();
-
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const setNotice = useStore(s => s.setNotice);
-  const openRefill = useStore(s => s.openRefill);
   const { data: providers } = useProviders();
   const provider = useMemo<ProviderSummary | null>(
     () => (providers ?? []).find(p => p.id === providerId) ?? null,
@@ -282,6 +288,14 @@ export function CallScreen({
   const [backdropFailed, setBackdropFailed] = useState(false);
 
   const [callId, setCallId] = useState<string | null>(incomingCallId);
+  // Every way `callId` becomes known reports it once to the route (`onCallId`).
+  const onCallIdRef = useRef(onCallId);
+  onCallIdRef.current = onCallId;
+  useEffect(() => {
+    if (callId !== null) {
+      onCallIdRef.current?.(callId);
+    }
+  }, [callId]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(direction === 'out');
   // An upgrade-from-audio call already has a callId on mount — skip 'starting'
@@ -332,10 +346,6 @@ export function CallScreen({
   // The red button stays immediate — that IS the explicit intent, as on every
   // phone — but back asks first (goal item 6, 2026-09-05: "no back mid-session").
   const [leaveDialogVisible, setLeaveDialogVisible] = useState(false);
-  const backGuard = useCallback(() => {
-    setLeaveDialogVisible(true);
-    return true;
-  }, []);
   /*
    * Leaving is a STATE, not a call (nav step 6). `onEnd` is the one door every
    * end path uses, and all it does is set `ending`; the effect below tells the
@@ -354,9 +364,6 @@ export function CallScreen({
   useEffect(() => {
     onGuard?.({ ending, openLeave: () => setLeaveDialogVisible(true) });
   }, [ending, onGuard]);
-  // Held while ending too: the old tree pops on `onEnded`, and a back that got
-  // past the guard in that one commit would pop a second screen.
-  useBackGuard(backGuard);
 
   // Outgoing needs the conversation the call belongs to; a member calling a
   // provider resolves it exactly as opening a chat does.
@@ -540,7 +547,7 @@ export function CallScreen({
     return () => {
       live = false;
     };
-  }, [direction, openedId, callId, medium, isMemberSide, incomingCallId, memberConsented, onEnd, setNotice, openRefill]);
+  }, [direction, openedId, callId, medium, isMemberSide, incomingCallId, memberConsented, onEnd, setNotice]);
 
   useEffect(() => {
     if (callId === null) return;
@@ -1841,7 +1848,7 @@ const makeStyles = (t: Theme) =>
       // The calm dark base (#4). Raw hex, deliberately off the accent palette;
       // the gradient fill and blurred photo sit on top of it.
       flex: 1,
-      backgroundColor: '#0B0B10',
+      backgroundColor: CALL_BASE,
     },
     fill: {
       position: 'absolute',

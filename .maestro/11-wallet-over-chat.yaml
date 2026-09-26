@@ -1,0 +1,49 @@
+# CUJ 11 — the wallet opens over a chat and closes back onto it.
+#
+# The wallet is a tall native sheet (ADR-0032 §7) presented over the chat, and
+# the chat stays live under it (useChatLive: Wallet was an overlay in the old
+# tree). Its back arrow and hardware back both dismiss it; the chat's composer
+# is right where it was.
+appId: com.companionchat
+name: Wallet sheet over a chat returns to the chat
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: 'Ada'
+    timeout: 20000
+- tapOn: 'Ada'
+- tapOn:
+    id: 'action-chat'
+- extendedWaitUntil:
+    visible:
+      id: 'chat-v2-input'
+    timeout: 10000
+
+- tapOn:
+    id: 'token-badge'
+- extendedWaitUntil:
+    visible:
+      id: 'recharge-wallet'
+    timeout: 10000
+- tapOn:
+    id: 'recharge-wallet-back'
+- extendedWaitUntil:
+    visible:
+      id: 'chat-v2-input'
+    timeout: 10000
+
+# Hardware back dismisses the sheet the same way.
+- tapOn:
+    id: 'token-badge'
+- extendedWaitUntil:
+    visible:
+      id: 'recharge-wallet'
+    timeout: 10000
+- back
+- extendedWaitUntil:
+    visible:
+      id: 'chat-v2-input'
+    timeout: 10000
+
+- takeScreenshot: artifacts/11-wallet-over-chat

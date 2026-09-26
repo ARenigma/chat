@@ -105,8 +105,10 @@ recorded here so a future agent does not re-open it without a new fact.
 14. **animate-expo governs every motion.** Stated deviations:
 
     - No `NativeTabs` (Bluesky structure; owner chose standard bottom-tabs)
-    - No `presentation:'modal'`/`'formSheet'` for Apply, Wallet or ChatRequest
-      (Bluesky pushes; sheets stay RN Modals as Bluesky's own dialogs do)
+    - ~~No `presentation:'modal'`/`'formSheet'` for Apply, Wallet or
+      ChatRequest~~ **REVERSED for ProviderDetail and Wallet** (owner,
+      2026-09-26; §7 below). Apply and ChatRequest stay pushed; the other
+      sheets and dialogs stay RN Modals, as Bluesky's own dialogs do.
     - Press 0.90, which exceeds animate-expo's 3% ceiling (owner decision)
     - Shell spring retuned below Bluesky's ~240ms
 
@@ -193,3 +195,58 @@ they live in the step-0 baseline commit.
   BASELINE is updated to the measured value in the step-1 commit.
 - The nav bar hairline and opaque surface replace Frost, which means
   `PappalBlurSurface` no longer wraps the bar. The bar's GPU layer is freed.
+
+---
+
+## 7. Reversal of ruling 14: the profile and the wallet are native sheets (2026-09-26)
+
+**Decision (Amit, 2026-09-26).** ProviderDetail (the provider profile) and
+Wallet (recharge) are presented as tall native slide-up sheets:
+`presentation: 'formSheet'`, one detent `sheetAllowedDetents: [0.92]`, swipe
+down to dismiss, `sheetCornerRadius` = `radius.sheet` (28). Apply and
+ChatRequest stay pushed. This reverses ruling 14 for those two screens only.
+
+**How it is built, from the docs** (react-navigation native-stack
+`presentation`; react-native-screens 4.28 `ScreenStackFragment` /
+`SheetDelegate`, where the Android form sheet is Material
+`BottomSheetBehavior` inside the tab's stack):
+
+- One fixed fraction, not `fitToContents`: both bodies scroll and fill with
+  `flex: 1`, and the docs state a `flex: 1` top container under
+  `fitToContents` does not display at all.
+- `sheetGrabberVisible` is iOS-only (it is stored and never drawn on Android),
+  so `Layout.Screen sheet` draws the M3 drag handle (`SheetGrabber`, shared
+  with the RN Modal `Sheet`) and clips the body to `radius.sheet` so the
+  profile hero does not square off the native corners. `sheetCornerRadius`
+  IS applied on Android (`Screen.onSheetCornerRadiusChange`).
+- A ScrollView inside the sheet sets `nestedScrollEnabled`, which the docs
+  require so `BottomSheetBehavior` can tell a scroll from a drag down.
+- Nested stacks and native headers are unsupported inside an Android sheet;
+  neither sheet has either. Neither holds a text field, so the sheet's own
+  keyboard handling (SheetDelegate's IME listener) is not exercised.
+- Both are `minimalShell`: the bottom bar overlays the tab's stack, so a sheet
+  inside that stack would otherwise be drawn under the bar.
+
+**Chat and Call from the profile sheet replace it.** On Android a card pushed
+over a form sheet detaches the sheet's fragment (`ScreenStack.onUpdate` keeps
+nothing under a non-translucent top), and a pop re-attaches it through its
+enter animator (`ScreenStackFragment.onCreateAnimator`), so the sheet would
+slide up again behind the chat's pop. So `action-chat` opens the chat in the
+sheet's place (`resolveOpenChat` origin `fromSheet`) and Call replaces it too
+(`startCall`'s `replace`); back from that chat returns to where the profile was
+opened from. An existing chat with the provider is returned to instead (one
+chat per peer), which pops the sheet with it when it sits over that chat.
+
+**Parity kept, and a question for the owner.** Ruling 9's lifetime parity
+treats ProviderDetail as covering a chat: under the old tree the chat
+unmounted beneath the profile and its paid session's lease stopped. The
+profile is now a sheet over a still-visible, dimmed chat, and the parity is
+kept (`useChatLive` keeps only Wallet and ChatRequest alive above a chat).
+Whether a profile sheet over a paid chat should keep the session billing is a
+product decision, not a navigation one.
+
+**Motion.** The sheet's slide is the platform's (BottomSheetBehavior's
+Animator), not ours; under the system "Remove animations" setting the
+Animator scale removes it. It is the "occasional" tier (animate-expo step 1),
+and its purpose is spatial consistency: the sheet comes from, and returns to,
+the bottom edge it is dragged towards.

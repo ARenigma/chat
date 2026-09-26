@@ -7,9 +7,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated from 'react-native-reanimated';
-import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
+import { useSearchBack } from '../hooks/useSearchBack';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { THEME_DEFAULT_MODE } from '../config';
 import { Button } from '../components/Button';
@@ -171,7 +171,6 @@ export function SettingsSheet({
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const { mode, setMode } = useThemeMode();
   const setNotice = useStore(s => s.setNotice);
   const queryClient = useQueryClient();
@@ -189,6 +188,13 @@ export function SettingsSheet({
    */
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
+  const barOffset = useBottomBarOffset(TOKENS.space.md);
+  // Hardware back leaves search first, as on Home (`useSearchBack`, nav §4).
+  const closeSearch = useCallback(() => {
+    setQuery('');
+    setSearching(false);
+  }, []);
+  useSearchBack(searching, closeSearch);
   const needle = query.trim().toLowerCase();
   const shows = (rowTitle: string) =>
     needle === '' || rowTitle.toLowerCase().includes(needle);
@@ -328,10 +334,7 @@ export function SettingsSheet({
         title="Settings"
         searching={searching}
         onSearchOpen={() => setSearching(true)}
-        onSearchClose={() => {
-          setQuery('');
-          setSearching(false);
-        }}
+        onSearchClose={closeSearch}
         query={query}
         onQueryChange={setQuery}
         searchPlaceholder="Search settings"
@@ -342,12 +345,10 @@ export function SettingsSheet({
         {...SCROLL_PHYSICS}
         contentContainerStyle={[
           styles.scroll,
-          // The host's offset when it gives one (the provider You tab, whose
-          // own nav owns the inset), else the member's overlay toolbar: its
-          // exact height, so content scrolls under the glass and clears it.
+          // The host's offset when it gives one, else the bottom bar's own
+          // offset (`useBottomBarOffset`), so the last row clears the bar.
           {
-            paddingBottom:
-              bottomOffset ?? insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.md,
+            paddingBottom: bottomOffset ?? barOffset,
           },
         ]}
       >

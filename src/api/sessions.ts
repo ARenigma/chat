@@ -20,6 +20,7 @@ import { keys, useConversationId } from './chat';
 import { useStore } from '../store/useStore';
 import { usageKeys } from './usage';
 import { providerKeys } from './provider';
+import { openWallet } from '../lib/routes/actions';
 
 type SessionChannel = 'chat' | 'audio' | 'video';
 type SessionStatus =
@@ -537,7 +538,6 @@ interface NotifyMachine {
  */
 export function useNotifyProvider(providerId: string): NotifyAction {
   const setNotice = useStore(s => s.setNotice);
-  const openWallet = useStore(s => s.openWallet);
   const queryClient = useQueryClient();
   const [machine, setMachine] = useState<NotifyMachine>({
     forId: providerId,
@@ -675,7 +675,6 @@ export function useNotifyProvider(providerId: string): NotifyAction {
     lookupFailed,
     mutate,
     setNotice,
-    openWallet,
     queryClient,
   ]);
 

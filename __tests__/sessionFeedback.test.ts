@@ -257,7 +257,7 @@ describe('one session, one prompt', () => {
     expect(sheet).toMatch(/if \(ASKED\.has\(pending\.sessionId\)\) \{\s*clearReview\(\);\s*return;\s*\}/);
     // And the sheet renders only for the session this mount claimed, so the
     // `ASKED` entry it just wrote cannot hide it.
-    expect(sheet).toContain('if (pending === null || askedFor !== pending.sessionId)');
+    expect(sheet).toContain('if (held || pending === null || askedFor !== pending.sessionId)');
     expect(sheet).toMatch(/const close = useCallback\(\(\) => \{[\s\S]{0,200}setAskedFor\(null\);/);
   });
 

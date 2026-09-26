@@ -14,7 +14,6 @@ import Animated, { useAnimatedStyle, useSharedValue, withSequence } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { useBackBarrier } from '../lib/backGuard';
 import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
 import { avatarImageSource } from '../lib/clayAvatars';
 import { genderLetter, initialOf } from '../lib/display';
@@ -39,6 +38,7 @@ import { TokenCounter } from '../components/TokenCounter';
 import { MetaChip } from '../components/MetaChip';
 import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { ScreenLoader } from '../components/ScreenLoader';
+import { openWallet } from '../lib/routes/actions';
 
 /**
  * The hero card's height, named because three things now depend on it agreeing:
@@ -53,6 +53,15 @@ interface Props {
   onOpenChat: (providerId: string) => void;
   /** Audio/video, each gated by its live admin control. */
   onStartCall: (providerId: string, channel: 'audio' | 'video') => void;
+  /**
+   * Presented as a tall native sheet (the `ProviderDetail` route, owner
+   * 2026-09-26, ADR-0032). The sheet's edge sits below the status bar, so the
+   * bar takes no top inset; and the page's vertical scroller turns on nested
+   * scrolling, which a ScrollView inside an Android form sheet needs so that
+   * BottomSheetBehavior tells a scroll from a drag down
+   * (https://reactnavigation.org/docs/native-stack-navigator#presentation).
+   */
+  sheet?: boolean;
 }
 
 /**
@@ -69,22 +78,11 @@ interface Props {
  * who has never opened the photo manager, and then to a warm gradient with the
  * person's mark — the same honest fallback as the featured card on Home.
  */
-export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCall }: Props) {
-  /*
-   * This screen covers Home, and Home stays mounted underneath it (App.tsx
-   * renders pushed screens as overlays so returning never remounts Home's
-   * lists). Without this barrier Home's search guard — live whenever its search
-   * field is open — still hears the hardware back press from up here, closes a
-   * field nobody can see, and reports the press handled, so this screen never
-   * pops. See src/lib/backGuard.ts.
-   */
-  useBackBarrier();
-
+export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCall, sheet = false }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
-  const openWallet = useStore(s => s.openWallet);
   useProfile();
   const { data: killSwitches } = useKillSwitches();
   const { data: economics } = useEconomicsConfig();
@@ -204,7 +202,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
 
   return (
     <View style={styles.root}>
-      <View style={[styles.bar, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
+      <View style={[styles.bar, { paddingTop: (sheet ? 0 : insets.top) + TOKENS.space['2xs'] }]}>
         <BackButton onPress={onBack} testID="detail-back" style={styles.barIcon} />
         <TokenCounter balance={balance} onPress={openWallet} />
       </View>
@@ -220,6 +218,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          nestedScrollEnabled={sheet}
           {...SCROLL_PHYSICS}
           contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + TOKENS.space.xl }]}>
           <Hero
@@ -450,7 +449,6 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               ))}
             </View>
           )}
-
 
         </ScrollView>
       )}

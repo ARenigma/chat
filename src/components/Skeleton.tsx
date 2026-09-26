@@ -11,6 +11,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { DURATION, EASE_BREATHE } from '../theme/motion';
 import { useStyles } from '../theme/ThemeProvider';
+import { useScreenFocused } from '../hooks/useScreenFocused';
 
 interface Props {
   width?: ViewStyle['width'];
@@ -32,8 +33,15 @@ interface Props {
 function SkeletonView({ width = '100%', height = 12, radius, style }: Props) {
   const styles = useStyles(makeStyles);
   const pulse = useSharedValue(0.5);
+  // Stopped while its screen is covered (native-stack keeps it mounted,
+  // nav-migration §5); true outside a navigator.
+  const screenFocused = useScreenFocused();
 
   useEffect(() => {
+    if (!screenFocused) {
+      cancelAnimation(pulse);
+      return;
+    }
     pulse.value = withRepeat(
       // EASE_BREATHE (a true sinusoid) rather than the weaker
       // `Easing.inOut(Easing.ease)` this used to hand-type: a shimmer is a
@@ -46,7 +54,7 @@ function SkeletonView({ width = '100%', height = 12, radius, style }: Props) {
       ReduceMotion.System,
     );
     return () => cancelAnimation(pulse);
-  }, [pulse]);
+  }, [pulse, screenFocused]);
 
   const animated = useAnimatedStyle(() => ({ opacity: pulse.value }));
 

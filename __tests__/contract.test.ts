@@ -945,7 +945,9 @@ describe('pipeline wiring', () => {
   });
 
   it('asserts the test IDs the flows select on still exist in the components', () => {
-    const haystack = sourceFiles()
+    // App.tsx too: the root exit dialog (`app-exit-dialog`, flows 09 and 12)
+    // is Root's, outside every screen.
+    const haystack = [...sourceFiles(), 'App.tsx']
       .map(f => read(f))
       .join('\n');
 
@@ -2355,27 +2357,30 @@ describe('the redesign holds its own invariants', () => {
     expect((chat.match(/<Avatar\b/g) ?? []).length).toBe(2);
   });
 
-  it('routes the back gesture through the parent map rather than branching inline', () => {
-    const app = read('App.tsx');
-    expect(app).toContain("BackHandler.addEventListener('hardwareBackPress'");
-    expect(app).toContain('memberParent(route)');
-    expect(app).toContain('providerParent(providerRoute)');
-    // The Recharge overlay closes before a screen pops: it sits above everything
-    // (zIndex 20) and is what the user most recently opened. Settings used to be a
-    // sheet that closed here too; it is a mounted route now and pops through the
-    // parent map like every other screen.
-    const handler = app.slice(
-      app.indexOf('const onBack ='),
-      app.indexOf('BackHandler.addEventListener'),
-    );
-    expect(handler.indexOf('closeWallet()')).toBeLessThan(
-      handler.indexOf('closeRefill()'),
-    );
-    expect(handler.indexOf('closeRefill()')).toBeLessThan(
-      handler.indexOf('memberParent'),
-    );
-    expect(app).toContain("openChat(id, 'chatsList')");
-    expect(app).toContain("from === 'chatsList'");
+  it('routes the back gesture through the navigator, with the root exit confirm last', () => {
+    /*
+     * Navigation step 7 (nav-migration §4). The parent map is gone: the
+     * NavigationContainer pops a stack, and a tab returns to the first tab
+     * (`backBehavior="initialRoute"`). App.tsx keeps exactly ONE hardware-back
+     * listener, Root's, registered at mount so it is consulted last, and all
+     * it does is hand back to Android before `ready` and otherwise ask
+     * "Leave Pappal?" at the root. The tour, wallet, refill and guard-stack
+     * branches are gone: the tour and the refill sheet are Modals, which take
+     * back themselves, and the wallet is a route the container pops.
+     */
+    const app = withoutComments(read('App.tsx'));
+    expect(app.match(/BackHandler\.addEventListener\(/g)?.length).toBe(1);
+    const handler = app.slice(app.indexOf('const onBack = () => {'), app.indexOf("BackHandler.addEventListener('hardwareBackPress', onBack)"));
+    expect(handler).toMatch(/if \(bootPhaseRef\.current !== 'ready'\) \{\s*return false;\s*\}\s*setExitDialogVisible\(true\);\s*return true;/);
+    expect(handler).not.toMatch(/memberParent|providerParent|consumeBack|closeWallet|closeRefill|useHomeTour/);
+    // The ChatsList door is the stack now: "See all" pushes, a row opens a chat
+    // above it, and back from that chat returns to the list.
+    expect(read('src/screens/routes/MemberRoutes.tsx')).toContain("onSeeAllChats={() => nav.push('ChatsList')}");
+    // Nothing but the container dispatches a source-less GO_BACK: that is how
+    // the chat's guard tells hardware back apart (nav-migration R14).
+    for (const file of ['App.tsx', 'src/Navigation.tsx', 'src/lib/routes/actions.ts', 'src/lib/intents.ts']) {
+      expect(withoutComments(read(file))).not.toContain('navigationRef.goBack(');
+    }
   });
 
   it('opens a Paper menu from a long-press on a conversation', () => {
@@ -3409,69 +3414,40 @@ describe('paid chat sessions expose their live lifecycle', () => {
      * The titles, not one title. 1845c2c split this dialog in two — 'Done for
      * now?' when the member is ending a live session, 'Leave this chat?' when
      * they are only walking away — as part of the "personal, not SaaS" copy
-     * pass. The assertion tracked the old single string and had been failing
-     * since; updated to the pair rather than deleted, because what it guards is
-     * that leaving a PAID session asks first, and that is still true.
+     * pass. What it guards is that leaving a PAID session asks first.
      */
     expect(chat).toContain("title: ending ? 'Done for now?' : 'Leave this chat?',");
     expect(chat).toContain('leaveIntent');
     expect(chat).toContain('testID="chat-v2-leave"');
     expect(chat).toContain("reason: 'manual'");
     expect(chat).toContain('onBack={requestLeave}');
-    // The screen does NOT subscribe to BackHandler itself: RN fires
-    // subscriptions last-registered-first, and App re-subscribes whenever the
-    // Recharge overlay toggles, so the chat's listener could be outranked and
-    // the chat popped mid-session. It holds a guard instead, and App consults
-    // the guard stack before any pop.
+    // The screen does NOT subscribe to BackHandler itself, nor hold a guard
+    // on the old stack: since navigation step 7 the Chat route owns removal.
     const code = withoutComments(chat);
     expect(code).not.toContain('BackHandler');
+    expect(code).not.toMatch(/useBackGuard|useBackBarrier/);
     /*
-     * This used to pin `useBackGuard(activeSession ? backGuard : null)`, and
-     * the widened condition is the NEW intent, not a loosened assertion.
-     *
-     * Two things changed on 2026-09-13. The guard now runs a ladder — reply bar
-     * first, then the paid session, then DECLINE — because ordering has to live
-     * in the ladder rather than in the stack: a reply bar and a session can
-     * appear in either order, and two separate guards would have made what back
-     * does depend on which happened first. And the last rung declining is what
-     * makes hardware back land exactly where the app-bar arrow does, through
-     * App.tsx's route handler, instead of the screen re-implementing the pop.
-     * So the guard is held whenever EITHER state is up, and only then — the
-     * "intercept only in the state that needs a decision" rule is intact.
+     * The route's guard (nav-migration §4, 3a; reactnavigation.org
+     * preventing-going-back): held while a paid session is live or a reply is
+     * open. Hardware back is the container's GO_BACK with no `source`, and it
+     * clears a reply first; an unpaid removal proceeds with the draft purged;
+     * a paid one keeps its own action and opens the same leave dialog the
+     * arrow opens. A confirmed exit passes the guard exactly once (A1).
      */
-    expect(code).toContain('useBackGuard(guarded ? backGuard : null)');
-    /*
-     * The ladder itself is a pure function now (`chatV2BackStep`, asserted as
-     * values in chatV2Parity.test.ts) rather than a chain of ifs inside the
-     * screen, so what is pinned here is that the screen spends it and that
-     * the money rung really opens the dialog.
-     */
-    expect(code).toMatch(
-      /const step = chatV2BackStep\(\{[\s\S]{0,300}sessionActive,\s*\}\);/,
-    );
-    expect(code).toMatch(
-      /case 'confirmLeave':[\s\S]{0,200}openLeave\('leave'\);\s*return true;/,
-    );
-    // ...and declines otherwise, so App's route handler owns the pop.
-    expect(code).toMatch(/default:[\s\S]{0,200}return false;/);
-    /*
-     * And the barrier, which is the defect the ladder alone would not have
-     * fixed. App.tsx keeps HomeScreen mounted under this overlay, so Home's
-     * search guard was still on the stack while the chat covered it: hardware
-     * back closed an invisible search field and reported the press handled, and
-     * the chat never popped. The app-bar arrow calls `requestLeave` directly,
-     * never touches the stack, and so kept working and hid it.
-     */
-    expect(code).toContain('useBackBarrier()');
-    expect(code).toContain(
-      "import { useBackBarrier, useBackGuard } from '../lib/backGuard'",
-    );
+    const route = withoutComments(read('src/screens/routes/ChatRoute.tsx'));
+    expect(route).toContain('usePreventRemove(sessionActive || replyActive, ({ data }) => {');
+    expect(route).toMatch(/if \(leaving\.current \|\| current === null\) \{\s*navigation\.dispatch\(data\.action\);/);
+    expect(route).toContain("const hardwareBack = data.action.type === 'GO_BACK' && data.action.source === undefined;");
+    expect(route).toMatch(/if \(hardwareBack && current\.replyActive\) \{\s*current\.clearReply\(\);\s*return;/);
+    expect(route).toMatch(/if \(!current\.sessionActive\) \{\s*current\.purgeDraft\(\);\s*leaving\.current = true;/);
+    expect(route).toMatch(/pendingExit\.current = \(\) => navigation\.dispatch\(data\.action\);\s*current\.openLeave\('leave'\);/);
+    // The screen's single exit is the route's `exit`, which replays that action.
+    expect(route).toContain('onBack={exit}');
+    expect(route).toMatch(/const go = pendingExit\.current \?\? \(\(\) => navigation\.goBack\(\)\);/);
+    // The screen publishes what the guard reads.
+    expect(code).toMatch(/onGuard\?\.\(\{\s*sessionActive,\s*replyActive: replyTo !== null,/);
+    // One App subscription, the root's.
     const app = withoutComments(read('App.tsx'));
-    const consumeAt = app.indexOf('if (consumeBack())');
-    const popAt = app.indexOf('const parent = memberParent(route)');
-    expect(consumeAt).toBeGreaterThan(-1);
-    expect(popAt).toBeGreaterThan(consumeAt);
-    // Guards are the only place screens decide back: one App subscription.
     expect(app.match(/BackHandler\.addEventListener\(/g)?.length).toBe(1);
   });
 
@@ -3489,14 +3465,19 @@ describe('paid chat sessions expose their live lifecycle', () => {
     expect(code).not.toContain('endCurrentSession');
 
     // CallScreen unmount hangs up, so a bare back was a silent hang-up. The red
-    // button stays immediate (that IS the intent); back asks.
+    // button stays immediate (that IS the intent); back asks, through the Call
+    // route's guard (nav-migration §4, 3b), which opens the screen's dialog.
     const call = withoutComments(read('src/screens/CallScreen.tsx'));
-    expect(call).toContain('useBackGuard(backGuard)');
+    expect(call).not.toMatch(/useBackGuard|useBackBarrier/);
     expect(call).toContain('testID="call-leave-dialog"');
     expect(call).toContain(
       'testID="call-end" glyph="callEnd" tone="danger" onPress={onEnd}',
     );
     expect(call).not.toContain('BackHandler');
+    const route = withoutComments(read('src/screens/routes/CallRoute.tsx'));
+    expect(route).toMatch(/usePreventRemove\(guard\?\.ending !== true, \(\{ data \}\) => \{\s*if \(leaving\.current\) \{\s*navigation\.dispatch\(data\.action\);\s*return;\s*\}\s*guard\?\.openLeave\(\);/);
+    // The call's own exit (onEnded) lets itself through, then goes to the chat.
+    expect(route).toMatch(/const onEnded = useCallback\(\(\) => \{\s*leaving\.current = true;\s*openChat\(peerId, 'callEnd', route\.key\);/);
   });
 
   it('surfaces inactivity warning and grace states from the server', () => {
@@ -5761,12 +5742,11 @@ describe('hardware back hands off to Android before boot is ready', () => {
     const app = withoutComments(read('App.tsx'));
     const onBack = app.slice(app.indexOf('const onBack = () => {'), app.indexOf('const sub = BackHandler.addEventListener'));
     expect(onBack).not.toBe('');
-    expect(onBack).toContain("if (bootPhaseRef.current !== 'ready') {");
-    // The guard must be the FIRST thing checked, not merely present somewhere
-    // -- a guard after the home-tour / overlay checks would still let those
-    // fire on a non-ready screen.
+    // The guard must be the FIRST thing checked: the exit dialog is the only
+    // other branch left since navigation step 7, and it must not open on a
+    // screen that is not ready.
     const guardIndex = onBack.indexOf("bootPhaseRef.current !== 'ready'");
-    const firstOtherBranchIndex = onBack.indexOf('useHomeTour.getState().active');
+    const firstOtherBranchIndex = onBack.indexOf('setExitDialogVisible(true)');
     expect(guardIndex).toBeGreaterThan(-1);
     expect(guardIndex).toBeLessThan(firstOtherBranchIndex);
     expect(onBack).toMatch(/if \(bootPhaseRef\.current !== 'ready'\) \{\s*return false;/);
@@ -5920,21 +5900,21 @@ describe('every incoming-signal realtime channel repairs on CHANNEL_ERROR/TIMED_
 
 describe('provider onboarding completing re-checks policy and permissions once', () => {
   it('onSubmitted calls onProviderOnboarded, which re-runs bootPhaseAfterAuth', () => {
-    const app = withoutComments(read('App.tsx'));
-    const onSubmittedStart = app.indexOf('onSubmitted={() => {');
-    const onSubmitted = app.slice(
-      onSubmittedStart,
-      app.indexOf("route.name === 'applicationStatus'", onSubmittedStart),
-    );
+    // The Apply route calls it (navigation step 7); Root defines it.
+    const route = withoutComments(read('src/screens/routes/MemberRoutes.tsx'));
+    const onSubmitted = route.slice(route.indexOf('onSubmitted={() => {'), route.indexOf('onGuard={onGuard}'));
+    expect(onSubmitted).toContain('clearProviderIntent();');
     expect(onSubmitted).toContain('onProviderOnboarded();');
 
+    const app = withoutComments(read('App.tsx'));
     const call = app.slice(
-      app.indexOf('onProviderOnboarded={() => {'),
-      app.indexOf('onProviderOnboarded={() => {') + 500,
+      app.indexOf('const onProviderOnboarded = useCallback(() => {'),
+      app.indexOf('const onProviderOnboarded = useCallback(() => {') + 500,
     );
     expect(call).toContain('await getSignedInProfile()');
     expect(call).toContain('await bootPhaseAfterAuth(profile)');
     expect(call).toContain('setBoot(nextBoot)');
+    expect(app).toContain('onProviderOnboarded={onProviderOnboarded}');
   });
 });
 
@@ -5951,17 +5931,18 @@ describe('provider onboarding completing re-checks policy and permissions once',
  * can be flipped mid-call.
  */
 describe('the foreground-return permission re-check does not tear down a live call', () => {
-  it('skips the re-gate while either tree is on the call screen', () => {
+  it('skips the re-gate while a call owns the screen, in either tree', () => {
     const app = withoutComments(read('App.tsx'));
     const listenerStart = app.indexOf("const sub = AppState.addEventListener('change'");
     const listener = app.slice(listenerStart, app.indexOf('return () => sub.remove();', listenerStart));
-    expect(listener).toContain(
-      "routeRef.current.name === 'call' || providerRouteRef.current.name === 'call'",
-    );
-    expect(listener).toMatch(/if \(onCallScreen\) \{\s*return;\s*\}/);
+    // `activeCall` is set when a Call route is dispatched and cleared when it
+    // unmounts, in both trees (nav-migration §3), so it is the one question.
+    expect(listener).toMatch(/if \(useStore\.getState\(\)\.activeCall !== null\) \{\s*return;\s*\}/);
     // The check must come BEFORE checkGate() runs, not merely appear
     // somewhere in the effect.
-    expect(listener.indexOf('onCallScreen')).toBeLessThan(listener.indexOf('await checkGate()'));
+    expect(listener.indexOf('activeCall !== null')).toBeLessThan(listener.indexOf('await checkGate()'));
+    // Coming back through the gate restores the stacks it unmounted.
+    expect(listener).toMatch(/regateRestore\.current = true;\s*setBoot\(\{ phase: 'permissions' \}\);/);
   });
 });
 
@@ -5985,17 +5966,18 @@ describe('a tapped message notification is held until `role` is known, not route
     expect(peerBranch).not.toContain('setPendingPeer(');
   });
 
-  it('applies openChat inside SignedIn applier, choosing the tree by role', () => {
-    // nav-migration §3: the intent applier inside SignedIn replaces the three
-    // pending-state effects. It branches on role to reach the correct tree.
-    const app = withoutComments(read('App.tsx'));
-    const applier = app.slice(
-      app.indexOf("case 'openChat':"),
-      app.indexOf("case 'openChatV2':"),
-    );
-    expect(applier).not.toBe('');
-    expect(applier).toContain("pushProvider({ name: 'chat', peerId: intent.peerId })");
-    expect(applier).toContain("pushRoute({ name: 'chat', providerId: intent.peerId, from: 'home' })");
+  it('applies openChat through the navigator\'s applier, in the tree that is mounted', () => {
+    // nav-migration §3: the applier is registered in the container's onReady
+    // (step 7) and plans the open with `resolveOpenChat`, which returns to an
+    // existing chat for that peer in any tab, or pushes in the role's
+    // conversations tab (HomeTab or ChatsTab).
+    const nav = withoutComments(read('src/Navigation.tsx'));
+    const applier = nav.slice(nav.indexOf("case 'openChat':"), nav.indexOf("case 'openChatV2':"));
+    expect(applier).toContain("openChat(intent.peerId, 'intent');");
+    expect(nav).toMatch(/const onReady = useCallback\(\(\) => \{[\s\S]{0,300}setIntentApplier\(applyIntent\);/);
+    expect(nav).toContain('useEffect(() => () => setIntentApplier(null), []);');
+    const actions = withoutComments(read('src/lib/routes/actions.ts'));
+    expect(actions).toContain("return root.routes.some(r => r.name === 'ChatsTab') ? 'ChatsTab' : 'HomeTab';");
   });
 
   it('the boot effect no longer sets a competing route for a notification tap', () => {
@@ -7242,26 +7224,22 @@ describe('search opens the way the reference app opens it, and the week has a ca
     // arrow worked while the system back button did nothing. Two presses in a
     // row and the member was still in the search field.
     //
-    // `searching` is local state in HomeScreen that no back guard knew about, so
-    // the press fell through to App.tsx's single subscription, which asks
-    // src/lib/backGuard.ts and then handles the ROUTE — and Home is the root, so
-    // there was nothing to pop and nothing happened. Every green build had this.
-    //
     // Android's custom-back guidance makes dismissing temporary UI state on back
     // a requirement, and says to intercept only in the state that needs it —
-    // which is why the guard is conditional rather than always registered.
+    // which is why the listener exists only while searching. Since navigation
+    // step 7 it is focus-scoped (`useSearchBack`): registered after the
+    // NavigationContainer's, so consulted first, and gone while Home is covered.
     const code = withoutComments(read('src/screens/HomeScreen.tsx'));
-    expect(code).toContain("import { useBackGuard } from '../lib/backGuard'");
-    // Conditional, and wired to the SAME handler the arrow calls, so the two
-    // routes out of search cannot diverge.
-    expect(code).toContain('useBackGuard(searching ? searchBackGuard : null)');
-    // The guard must report the press as HANDLED, or consumeBack falls through
-    // to App.tsx's route handler and the press does double duty.
-    expect(code).toMatch(
-      /const searchBackGuard = useCallback\(\(\) => \{\s*closeSearch\(\);\s*return true;/,
-    );
+    expect(code).toContain("import { useSearchBack } from '../hooks/useSearchBack'");
+    // Wired to the SAME handler the arrow calls, so the two routes out of
+    // search cannot diverge.
+    expect(code).toContain('useSearchBack(searching, closeSearch);');
     expect(code).toMatch(/const closeSearch = useCallback\(/);
-    expect(read('src/screens/HomeScreen.tsx')).toContain(
+    const hook = withoutComments(read('src/hooks/useSearchBack.ts'));
+    // Reports the press HANDLED, so the container does not also act on it.
+    expect(hook).toMatch(/closeSearch\(\);\s*return true;/);
+    expect(hook).toMatch(/if \(!searching\) \{\s*return undefined;/);
+    expect(read('src/hooks/useSearchBack.ts')).toContain(
       'developer.android.com/guide/navigation/custom-back/predictive-back-gesture',
     );
   });
@@ -7513,9 +7491,10 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
     expect(chat).toMatch(
       /if \(benchmarkReadOnly \|\| !isMemberSide \|\| displayName === ''\) \{\s*return;\s*\}\s*requestReview\(sessionId, displayName\);/,
     );
-    // One sheet for the whole app, because a session can end in a call too.
-    expect(withoutComments(read('App.tsx'))).toContain(
-      '<SessionFeedbackSheet />',
+    // One sheet for the whole app, because a session can end in a call too,
+    // held while a call owns the screen (A5; the member shell, step 7).
+    expect(withoutComments(read('src/shell/index.tsx'))).toContain(
+      '<SessionFeedbackSheet held={callUp} />',
     );
     const store = withoutComments(read('src/store/useStore.ts'));
     expect(store).toContain('pendingReview');
@@ -7705,14 +7684,19 @@ describe('a chat request rings, and can be answered either way', () => {
     expect(timeout.slice(0, 200)).not.toContain('decline');
   });
 
-  it('mounts the provider ChatRing via useIncomingChatRequests in SignedIn', () => {
+  it('rings the provider through useIncomingChatRequests in SignedIn and the ChatRequest route', () => {
     const app = withoutComments(read('App.tsx'));
     // Wired in task notifications-chat-ring (2026-09-20): providers receive
-    // in-app chat-request rings via useIncomingChatRequests + ChatRequestScreen.
+    // in-app chat-request rings via useIncomingChatRequests. Since navigation
+    // step 7 the ring is the `ChatRequest` route (minimal shell), pushed by the
+    // intent queue when the store starts ringing a request.
     expect(app).toContain('useIncomingChatRequests');
-    expect(app).toContain('<ChatRequestScreen');
+    expect(app).not.toContain('<ChatRequestScreen');
     // Only for providers (not members): the ring is guarded by role.
     expect(app).toContain("role === 'provider'");
+    const shell = withoutComments(read('src/shell/index.tsx'));
+    expect(shell).toContain("enqueueIntent({ type: 'chatRequest', requestId: ringingId, peerId: ringingPeer });");
+    expect(withoutComments(read('src/screens/routes/ProviderRoutes.tsx'))).toContain('<ChatRequestScreen request={request}');
     expect(withoutComments(readChat())).toContain(
       'testID="chat-v2-consent"',
     );
@@ -7921,16 +7905,13 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
     expect(settings).toContain(
       "isProvider ? 'Earnings by session' : 'Usage by session'",
     );
-    const app = withoutComments(read('App.tsx'));
-    expect(app).toContain("pushRoute({ name: 'usage' })");
-    expect(app).toContain("pushProvider({ name: 'usage', from: 'settings' })");
-    expect(app).toContain("from: 'chat'");
-    // And the route exists in both unions, with a parent that is Settings.
-    const routes = read('src/lib/routes.ts');
-    expect(routes.match(/name: 'usage'/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(routes).toMatch(
-      /case 'transactions':\s*\n\s*case 'usage':\s*\n\s*return \{ name: 'settings' \}/,
-    );
+    // Pushed from both You tabs and from the provider chat's earnings pill,
+    // and registered in both trees' stacks, so back pops to whichever opened it.
+    expect(withoutComments(read('src/screens/routes/MemberRoutes.tsx'))).toContain("onUsage={() => nav.push('Usage')}");
+    expect(withoutComments(read('src/screens/routes/ProviderRoutes.tsx'))).toContain("onOpenUsage={() => nav.push('Usage')}");
+    expect(withoutComments(read('src/screens/routes/ChatRoute.tsx'))).toContain("const onOpenEarnings = useCallback(() => nav.push('Usage'), [nav]);");
+    const nav = withoutComments(read('src/Navigation.tsx'));
+    expect(nav.match(/name="Usage" getComponent=\{\(\) => UsageRoute\}/g)?.length).toBe(2);
   });
 
   it('is registered in the harness with its suite', () => {
@@ -9155,17 +9136,23 @@ describe('nav route-library dependency contracts', () => {
  * mounts. These pins hold the seams that step 7 relies on.
  */
 describe('navigation step 6: provider split', () => {
-  it('composes the three provider tabs behind one push gate', () => {
-    const home = withoutComments(read('src/screens/ProviderHomeScreen.tsx'));
+  it('mounts the three provider tabs as tab roots behind one push gate', () => {
+    // Navigation step 7: ProviderHomeScreen is gone; the three screens it
+    // composed are the ChatsTab, SavedTab and YouTab roots, one AppState
+    // listener for the push gate above them (the provider shell).
+    const routes = withoutComments(read('src/screens/routes/ProviderRoutes.tsx'));
     for (const screen of ['ProviderChatsScreen', 'ProviderSavedScreen', 'ProviderYouScreen']) {
-      expect(home).toMatch(new RegExp(`<${screen}[\\s/>]`));
+      expect(routes).toMatch(new RegExp(`<${screen}[\\s/>]`));
     }
-    expect(home).toContain('<ProviderPushGateProvider>');
-    expect(home).toContain('<ProviderPushGate />');
-    // The badge reads the shell's reducer, not a second copy of it.
-    expect(home).toContain('useProviderWaitingCount()');
-    // Nothing tab-specific is left in the host.
-    expect(home).not.toMatch(/useSetAvailability|useProviderPhotos|<SettingsSheet|<FlashList/);
+    expect(routes.match(/<ProviderPushGate \/>/g)?.length).toBe(3);
+    expect(withoutComments(read('src/shell/index.tsx'))).toContain('<ProviderPushGateProvider>{children}</ProviderPushGateProvider>');
+    const nav = withoutComments(read('src/Navigation.tsx'));
+    expect(nav).toContain('<ChatsStack.Screen name="Chats" getComponent={() => ChatsRoute} />');
+    expect(nav).toContain('<SavedStack.Screen name="Saved" getComponent={() => SavedRoute} />');
+    expect(nav).toContain('<ProviderYouStack.Screen name="You" getComponent={() => ProviderYouRoute} />');
+    // The Chats badge reads the shell's reducer, not a second copy of it.
+    expect(read('src/shell/bottom-bar/BottomBar.tsx')).toContain('useBadgeCount: useProviderWaitingCount');
+    expect(existsSync(join(ROOT, 'src/screens/ProviderHomeScreen.tsx'))).toBe(false);
   });
 
   it('keeps the photo-remove confirmation with the only thing that opens it', () => {
@@ -9195,7 +9182,11 @@ describe('navigation step 6: Home waits for focus', () => {
     expect(hook).toMatch(/if \(!focused\) \{\s*return;\s*\}\s*dispatch\(\{ type: 'HOME_MOUNT' \}\)/);
     expect(hook).toContain('}, [focused, dispatch]);');
     const home = withoutComments(read('src/screens/HomeScreen.tsx'));
-    expect(home).toContain('useHomeSuggestions({ hasActiveCallOrRing: hasActiveCall, onOpenConversation, focused })');
+    // The campaign counts Home as shown while its own prompt route is on top.
+    expect(home).toMatch(/useHomeSuggestions\(\{\s*hasActiveCallOrRing: hasActiveCall,\s*onOpenConversation: onSuggestionChat \?\? onOpenConversation,\s*focused: campaignFocused,\s*\}\)/);
+    // And Home's route passes REAL focus since navigation step 7.
+    const route = withoutComments(read('src/screens/routes/MemberRoutes.tsx'));
+    expect(route).toMatch(/focused=\{focused\}\s*campaignFocused=\{focused \|\| suggestionOnTop\}/);
     expect(home).toMatch(/if \(!focused \|\| loading \|\| balance === null \|\| featured === null/);
     expect(home).toContain('}, [focused, loading, balance, featured, searching, tourComplete, firstUser]);');
     expect(home).toMatch(/if \(!focused \|\| loading \|\| balance === null \|\| searching \|\| tourSeen/);
@@ -9220,9 +9211,11 @@ describe('navigation step 6: the call screen ends through a state', () => {
     expect(call).toMatch(/useEffect\(\(\) => \{\s*if \(ending\) \{\s*onEndedRef\.current\(\);\s*\}\s*\}, \[ending\]\);/);
     // The host never hears a bare onEnd any more.
     expect(call).not.toMatch(/\bonEnd:\s*\(\)/);
-    const app = withoutComments(read('App.tsx'));
-    expect(app).not.toMatch(/<CallScreen[^>]*\bonEnd=/);
-    expect(app.match(/onEnded=\{/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // The one host is the Call route, both trees.
+    const route = withoutComments(read('src/screens/routes/CallRoute.tsx'));
+    expect(route).not.toMatch(/<CallScreen[^>]*\bonEnd=/);
+    expect(route).toContain('onEnded={onEnded}');
+    expect(withoutComments(read('App.tsx'))).not.toContain('<CallScreen');
   });
 
   it('publishes what a route needs to guard its removal', () => {
@@ -9301,7 +9294,7 @@ describe('navigation step 6: the chat gates what a covered chat must not do', ()
 
   it('publishes the guard and cleans up on blur', () => {
     expect(screen).toContain('export interface ChatV2Guard');
-    expect(screen).toMatch(/onGuard\?\.\(\{\s*sessionActive,\s*replyActive: replyTo !== null,\s*leaveVisible,\s*clearReply,\s*openLeave,\s*purgeDraft,\s*\}\)/);
+    expect(screen).toMatch(/onGuard\?\.\(\{\s*sessionActive,\s*replyActive: replyTo !== null,\s*leaveVisible,\s*clearReply,\s*openLeave,\s*purgeDraft,\s*conversationId: chat\.conversationId,\s*\}\)/);
     const blur = screen.slice(screen.indexOf('if (wasFocused.current && !focused)'));
     for (const close of [
       'setActionRequest(null)',
@@ -9320,5 +9313,216 @@ describe('navigation step 6: the chat gates what a covered chat must not do', ()
     const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
     expect(composer).toMatch(/if \(focused\) \{\s*return;\s*\}[\s\S]{0,200}writeDraftText\(id, textRef\.current\);[\s\S]{0,120}void discard\(\);/);
     expect(withoutComments(read('src/chat-v2/ChatHeaderV2.tsx'))).toMatch(/if \(!focused\) \{\s*setMenuVisible\(false\);/);
+  });
+});
+
+/**
+ * Navigation step 7: the switch (nav-migration §1–§5, ADR-0032). These pin the
+ * graph as the plan's §2 table states it, and the invariants the switch rests
+ * on, so a later edit that quietly changes one fails here and not on a device.
+ */
+describe('navigation step 7: the graph is the §2 table', () => {
+  const nav = withoutComments(read('src/Navigation.tsx'));
+  const app = withoutComments(read('App.tsx'));
+
+  /** The screen names a stack factory registers, in order. */
+  const registered = (fn: string): string[] => {
+    const body = nav.slice(nav.indexOf(`function ${fn}(`), nav.indexOf('\n}\n', nav.indexOf(`function ${fn}(`)));
+    return [...body.matchAll(/<Stack\.Screen name="(\w+)"/g)].map(m => m[1] as string);
+  };
+
+  it('registers every member push in every member tab stack', () => {
+    expect(registered('memberScreens')).toEqual([
+      'ChatsList',
+      'ProviderDetail',
+      'Chat',
+      'ChatV2',
+      'Call',
+      'Wallet',
+      'Apply',
+      'ApplicationStatus',
+      'Blocked',
+      'Usage',
+      'Invoices',
+      'Transactions',
+      'HomeSuggestion',
+    ]);
+    for (const stack of ['HomeStack', 'FavouritesStack', 'CallsStack', 'YouStack']) {
+      expect(nav).toContain(`{memberScreens(${stack}, background)}`);
+    }
+  });
+
+  it('registers every provider push in every provider tab stack', () => {
+    expect(registered('providerScreens')).toEqual([
+      'Chat',
+      'ChatV2',
+      'Call',
+      'ChatRequest',
+      'Payout',
+      'Blocked',
+      'Usage',
+    ]);
+    for (const stack of ['ChatsStack', 'SavedStack', 'ProviderYouStack']) {
+      expect(nav).toContain(`{providerScreens(${stack})}`);
+    }
+  });
+
+  it('names the tabs XTab with root X, as isTab expects', () => {
+    for (const [tab, root] of [
+      ['HomeTab', 'Home'],
+      ['FavouritesTab', 'Favourites'],
+      ['CallsTab', 'Calls'],
+      ['YouTab', 'You'],
+      ['ChatsTab', 'Chats'],
+      ['SavedTab', 'Saved'],
+    ]) {
+      expect(nav).toContain(`name="${tab}"`);
+      expect(nav).toContain(`name="${root}"`);
+    }
+    expect(nav).toContain('initialRouteName="HomeTab"');
+    expect(nav).toContain('initialRouteName="ChatsTab"');
+    // CallsTab is registered only behind its flag, so its button disappears too.
+    expect(nav).toContain('{CALLS_TAB_ENABLED ? <MemberTab.Screen name="CallsTab"');
+  });
+
+  it('keys the container by role and sets no getId', () => {
+    expect(app).toMatch(/<RoutesContainer\s+key=\{signedInRole\}/);
+    expect(nav).not.toContain('getId');
+    expect(`${app}${nav}`).not.toContain('reactNavigationIntegration');
+    // One container, one ref.
+    expect(nav.match(/<NavigationContainer\b/g)?.length).toBe(1);
+    expect(nav).toContain('ref={navigationRef}');
+  });
+
+  it('renders Layout.Screen in every route adapter', () => {
+    const files = readdirSync(join(ROOT, 'src/screens/routes')).filter(f => f.endsWith('Route.tsx') || f.endsWith('Routes.tsx'));
+    expect(files.sort()).toEqual(['CallRoute.tsx', 'ChatRoute.tsx', 'MemberRoutes.tsx', 'ProviderRoutes.tsx']);
+    for (const file of files) {
+      const source = withoutComments(read(`src/screens/routes/${file}`));
+      const adapters = source.split('export function ').slice(1);
+      expect(adapters.length).toBeGreaterThan(0);
+      for (const adapter of adapters) {
+        const name = adapter.slice(0, adapter.indexOf('('));
+        expect(`${name} ${adapter.includes('<Layout.Screen')}`).toBe(`${name} true`);
+      }
+    }
+  });
+
+  it('renders every navigator screen from a route adapter, and nothing from App.tsx', () => {
+    const routes = readdirSync(join(ROOT, 'src/screens/routes'))
+      .map(f => withoutComments(read(`src/screens/routes/${f}`)))
+      .join('\n');
+    for (const screen of [
+      'HomeScreen',
+      'FavouritesScreen',
+      'CallsScreen',
+      'SettingsSheet',
+      'ChatsListScreen',
+      'ProviderDetailScreen',
+      'WalletScreen',
+      'ProviderApplicationScreen',
+      'ProviderStatusScreen',
+      'BlockedUsersScreen',
+      'UsageLedgerScreen',
+      'InvoicesScreen',
+      'TransactionHistoryScreen',
+      'ProviderChatsScreen',
+      'ProviderSavedScreen',
+      'ProviderYouScreen',
+      'ProviderBankScreen',
+      'ChatRequestScreen',
+      'HomeSuggestionScreen',
+      'ChatScreenV2',
+      'CallScreen',
+    ]) {
+      expect(`${screen} ${new RegExp(`<${screen}[\\s/>]`).test(routes)}`).toBe(`${screen} true`);
+      expect(`${screen} ${new RegExp(`<${screen}[\\s/>]`).test(app)}`).toBe(`${screen} false`);
+    }
+  });
+
+  it('removes programmatically only by targeted actions, never deduped', () => {
+    const actions = withoutComments(read('src/lib/routes/actions.ts'));
+    expect(actions).toMatch(/\.\.\.StackActions\.pop\(1\),\s*source: routeKey,\s*target: stackKey,/);
+    const deduped = withoutComments(read('src/hooks/useNavigationDeduped.ts'));
+    // Forward navigation only: no pop, goBack, replace or dispatch through dedupe.
+    expect(deduped).not.toMatch(/\b(pop|popTo|popToTop|goBack|replace|dispatch):/);
+    for (const file of ['src/screens/routes/ChatRoute.tsx', 'src/screens/routes/CallRoute.tsx', 'src/screens/routes/MemberRoutes.tsx', 'src/screens/routes/ProviderRoutes.tsx']) {
+      const source = withoutComments(read(file));
+      expect(source).not.toMatch(/\bnav\.(pop|goBack|replace|dispatch)\(/);
+    }
+    // The ring and the prompt remove themselves by key when the store moves on.
+    expect(withoutComments(read('src/screens/routes/ProviderRoutes.tsx'))).toContain('removeSelf(route.key, navigation.getState().key);');
+    expect(withoutComments(read('src/screens/routes/MemberRoutes.tsx'))).toContain('removeSelf(route.key, navigation.getState().key);');
+  });
+
+  it('keeps the session-lifetime hooks in SignedIn, above the role splash', () => {
+    const signedIn = app.slice(app.indexOf('function SignedIn('), app.indexOf('function Shell('));
+    const splash = signedIn.indexOf('if (isPending) {');
+    expect(splash).toBeGreaterThan(-1);
+    for (const hook of [
+      'useIncomingCalls(selfId, onIncoming);',
+      'useIncomingChatRequests(role === \'provider\' ? selfId : undefined, onIncomingChatRequest);',
+      'usePresenceHeartbeat(role === \'provider\');',
+      "DeviceEventEmitter.addListener('chatRequestDeclined'",
+      'onForegroundPush({',
+      'useReportFullyDrawn(!isPending);',
+    ]) {
+      const at = signedIn.indexOf(hook);
+      expect(`${hook} ${at > -1 && at < splash}`).toBe(`${hook} true`);
+    }
+  });
+
+  it('boots straight into Apply, and restores stacks only after a re-gate', () => {
+    expect(nav).toMatch(/export const APPLY_INITIAL_STATE: InitialState = \{\s*routes: \[\s*\{\s*name: 'HomeTab',\s*state: \{ index: 1, routes: \[\{ name: 'Home' \}, \{ name: 'Apply', params: \{ from: 'home' \} \}\] \},/);
+    expect(app).toMatch(/signedInRole === 'member' && pendingProviderApply\s*\?\s*APPLY_INITIAL_STATE/);
+    // The route-enforcing effect and the boot setRoute are gone (A16, B12).
+    expect(app).not.toContain('setRoute(');
+    // Moments are never restored: a call, a ring, a prompt.
+    expect(nav).toContain("const NEVER_RESTORED: ReadonlySet<string> = new Set(['Call', 'ChatRequest', 'HomeSuggestion']);");
+    expect(app).toMatch(/if \(!regateRestore\.current\) \{\s*lastNavState\.current = null;\s*\}\s*\}, \[attempt\]\);/);
+  });
+
+  it('sends the first screen event from onReady and the rest from onStateChange', () => {
+    expect(nav).toMatch(/const onReady = useCallback\(\(\) => \{\s*const kind = screenKind\(navigationRef\.getRootState\(\)\);\s*lastKind\.current = kind;\s*trackScreenOpened\(kind\);/);
+    expect(nav).toContain('onStateChange={handleStateChange}');
+    expect(app).not.toContain('trackScreenOpened(');
+    // Every registered route has a legacy telemetry kind (R17).
+    const kinds = read('src/lib/routes/screenNames.ts');
+    for (const m of read('src/Navigation.tsx').matchAll(/Screen name="(\w+)"/g)) {
+      expect(`${m[1]} ${kinds.includes(`  ${m[1]}: '`)}`).toBe(`${m[1]} true`);
+    }
+  });
+
+  it('moves the wallet page and the refill exclusion into actions.ts', () => {
+    const actions = withoutComments(read('src/lib/routes/actions.ts'));
+    expect(actions).toMatch(/export function openWallet\(\): void \{\s*useStore\.getState\(\)\.closeRefill\(\);/);
+    expect(actions).toMatch(/export function openRefill\(\): void \{\s*closeWallet\(\);\s*useStore\.getState\(\)\.openRefill\(\);/);
+    expect(actions).toContain("CommonActions.navigate({ name: 'Wallet', pop: true })");
+    const store = withoutComments(read('src/store/useStore.ts'));
+    expect(store).not.toMatch(/walletVisible|openWallet|closeWallet/);
+    for (const file of ['src/components/TabTopBar.tsx', 'src/screens/ProviderDetailScreen.tsx', 'src/chat-v2/ChatScreenV2.tsx', 'src/api/sessions.ts']) {
+      expect(read(file)).toMatch(/import \{[^}]*openWallet[^}]*\} from '\.\.\/lib\/routes\/actions'/);
+    }
+    expect(read('src/screens/PaymentSheet.tsx')).toContain("import { closeWallet } from '../lib/routes/actions';");
+  });
+
+  it('replaces NAV_BAR_HEIGHT with the bar offset everywhere', () => {
+    const { sourceFiles: files } = { sourceFiles };
+    const users = files()
+      .filter(f => f !== 'src/components/FloatingToolbar.tsx')
+      .filter(f => /NAV_BAR_HEIGHT/.test(withoutComments(read(f))));
+    expect(users).toEqual([]);
+    for (const file of ['HomeScreen', 'FavouritesScreen', 'SettingsSheet', 'ChatsListScreen', 'TransactionHistoryScreen', 'InvoicesScreen', 'UsageLedgerScreen', 'BlockedUsersScreen', 'ProviderBankScreen']) {
+      expect(read(`src/screens/${file}.tsx`)).toContain('useBottomBarOffset(');
+    }
+  });
+
+  it('gives the live gates real focus where step 6 left a placeholder', () => {
+    expect(withoutComments(read('src/screens/HomeScreen.tsx'))).toContain('useProviderBusyWaits(directoryIds, { focused })');
+    expect(withoutComments(read('src/screens/FavouritesScreen.tsx'))).toContain('useProviderBusyWaits(ids, { focused })');
+    const chat = withoutComments(read('src/screens/routes/ChatRoute.tsx'));
+    expect(chat).toContain('const live = useChatLive();');
+    expect(chat).toContain('const focused = useIsFocused();');
+    expect(withoutComments(read('src/lib/routes/useChatLive.ts'))).toContain("new Set(['Wallet', 'ChatRequest'])");
   });
 });

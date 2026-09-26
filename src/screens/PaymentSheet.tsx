@@ -27,6 +27,7 @@ import {
   useCashfreeCheckout,
   useFirstRechargeDiscount,
 } from '../api/billing';
+import { closeWallet } from '../lib/routes/actions';
 
 interface Props {
   visible: boolean;
@@ -90,7 +91,6 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const closeRefill = useStore(s => s.closeRefill);
-  const closeWallet = useStore(s => s.closeWallet);
 
   const [method, setMethod] = useState<string>(METHODS[0]);
   const [mockPhase, setMockPhase] = useState<MockPhase>('idle');

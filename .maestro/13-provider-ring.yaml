@@ -1,0 +1,29 @@
+# CUJ 13 — a chat request rings as a route and Accept opens its chat.
+#
+# Needs a PROVIDER session and a member sending a first message meanwhile
+# (scripts/dev-session.mjs drives the member half). Navigation step 7: the ring
+# is the `ChatRequest` route pushed over whatever the provider is on; Accept
+# opens the chat in the ring's place.
+appId: com.companionchat
+name: Provider accepts a chat request
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: 'nav-chats'
+    timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: 'chat-ring'
+    timeout: 60000
+- tapOn:
+    id: 'chat-ring-accept'
+- extendedWaitUntil:
+    visible:
+      id: 'chat-v2-input'
+    timeout: 15000
+- assertNotVisible:
+    id: 'chat-ring'
+
+- takeScreenshot: artifacts/13-provider-ring

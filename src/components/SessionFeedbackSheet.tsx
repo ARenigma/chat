@@ -141,7 +141,13 @@ const RATING_WORD: Record<number, string> = {
   5: 'Exactly what I needed',
 };
 
-export function SessionFeedbackSheet() {
+/**
+ * `held` keeps the sheet down while a call owns the screen (nav-migration §5,
+ * A5): a session that ends because a call connected must not ask how it went
+ * over the call. The notice stays pending and is asked once the call is gone;
+ * held is not a dismissal, so the state and the claim survive it.
+ */
+export function SessionFeedbackSheet({ held = false }: { held?: boolean }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const pending = useStore(s => s.pendingReview);
@@ -170,7 +176,7 @@ export function SessionFeedbackSheet() {
   }, [clearReview]);
 
   useEffect(() => {
-    if (pending === null || askedFor === pending.sessionId) {
+    if (held || pending === null || askedFor === pending.sessionId) {
       return;
     }
     if (memberUnknown) {
@@ -200,7 +206,7 @@ export function SessionFeedbackSheet() {
     }
     ASKED.add(pending.sessionId);
     setAskedFor(pending.sessionId);
-  }, [pending, askedFor, wasTheMember, memberUnknown, clearReview]);
+  }, [held, pending, askedFor, wasTheMember, memberUnknown, clearReview]);
 
   const send = useCallback(() => {
     if (pending === null || rating === 0) {
@@ -218,7 +224,7 @@ export function SessionFeedbackSheet() {
     );
   }, [pending, rating, comment, submit, close]);
 
-  if (pending === null || askedFor !== pending.sessionId) {
+  if (held || pending === null || askedFor !== pending.sessionId) {
     return null;
   }
 

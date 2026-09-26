@@ -1028,9 +1028,12 @@ describe('device coverage matrix', () => {
 
   it('keeps the tab bar icon-only so 200% font scale cannot overflow it', () => {
     // The audit's 49dp-at-2x finding was a labelled tab row. The bar is now
-    // glyphs only; text scale has nothing to grow.
-    const bar = read('src/components/FloatingToolbar.tsx');
-    expect(bar).not.toMatch(/<Text[\s\S]*tab\.label/);
+    // glyphs only; text scale has nothing to grow. The bottom bar since
+    // navigation step 7 (icon-only for both roles, owner 2026-09-25): the label
+    // is the TalkBack name only.
+    const bar = read('src/shell/bottom-bar/BottomBar.tsx');
+    expect(bar).not.toMatch(/<Text\b/);
+    expect(bar).toContain('accessibilityLabel={tab.label}');
     expect(bar).toContain('<Icon');
     expect(read('src/components/Icon.tsx')).toContain(
       'allowFontScaling={false}',
@@ -1039,11 +1042,11 @@ describe('device coverage matrix', () => {
 
   it('implements the approved profile-first You settings destination', () => {
     const settings = read('src/screens/SettingsSheet.tsx');
-    const bar = read('src/components/FloatingToolbar.tsx');
+    const bar = read('src/shell/bottom-bar/BottomBar.tsx');
 
     // WhatsApp reference approved 2026-09-01: identity precedes utility rows,
     // and the bottom destination names the person rather than the mechanism.
-    expect(bar).toContain("key: 'settings', glyph: 'person', label: 'You'");
+    expect(bar).toMatch(/name: 'You',\s*glyph: 'person',\s*label: 'You'/);
     expect(settings).toContain('style={styles.profileHero}');
     expect(settings).toContain('style={styles.profileIdentity}');
     // The member account-type label under the avatar was removed (Amit,
@@ -1153,32 +1156,66 @@ describe('device coverage matrix', () => {
     expect(reducedBranch).not.toContain('transform');
   });
 
-  it('hides the bottom bar on a push instead of rebuilding it', () => {
-    // The bar is `position: 'absolute'`, so it never took layout from the
-    // content area — the conditional render bought nothing and cost a native
-    // RenderEffect blur surface plus eight animated children, destroyed and
-    // rebuilt on every push and every pop, inside the transition frame.
-    const bar = read('src/components/FloatingToolbar.tsx');
-    expect(bar).toContain("hidden: { display: 'none' }");
-    expect(bar).toMatch(/pointerEvents=\{visible \? 'auto' : 'none'\}/);
-    expect(bar).toMatch(/visible \? null : styles\.hidden/);
+  it('hides the bottom bar on a minimal-shell screen instead of rebuilding it', () => {
+    /*
+     * The bar is the tab navigator's own (`tabBar`), mounted once for the
+     * container's life and never rebuilt on a push. A screen that wants the
+     * whole window hides it with `Layout.Screen minimalShell`, focus-scoped,
+     * so a covered chat does not keep it hidden after the pop back to a root
+     * (Bluesky minimal-mode.tsx). Hidden means transparent AND out of touch
+     * and the accessibility tree (B32).
+     */
+    const bar = read('src/shell/bottom-bar/BottomBar.tsx');
+    expect(bar).toContain("importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}");
+    expect(bar).toContain("pointerEvents={hidden ? 'none' : 'auto'}");
+    const nav = read('src/Navigation.tsx');
+    expect(nav).toContain('<BottomBar {...props} tabs={MEMBER_TABS} />');
+    expect(nav).toContain('<BottomBar {...props} tabs={PROVIDER_TABS} />');
+    expect(read('App.tsx')).not.toContain('<FloatingToolbar');
 
-    const app = read('App.tsx');
-    // Rendered unconditionally now, with visibility derived from the exhaustive
-    // route classifier rather than a hand-written list of names that a new
-    // route can silently fall out of.
-    expect(app).toMatch(
-      /<FloatingToolbar\n\s+active=\{activeTab\}\n\s+visible=\{transitionFor\(route\) !== 'push'\}/,
-    );
-    expect(app).not.toMatch(
-      /route\.name === 'favourites' \? \(\s*<FloatingToolbar/,
-    );
-    // The highlighted tab sticks while hidden, so a hidden bar never animates
-    // its indicator.
-    expect(app).toContain('const lastTabRef = useRef<ToolbarKey>');
-    expect(app).toMatch(
-      /if \(tabFor !== null\) \{\s*\n\s*lastTabRef\.current = tabFor;/,
-    );
+    // Every full-window route is minimal; every other route keeps the bar.
+    const routes =
+      read('src/screens/routes/MemberRoutes.tsx') +
+      read('src/screens/routes/ProviderRoutes.tsx') +
+      read('src/screens/routes/ChatRoute.tsx') +
+      read('src/screens/routes/CallRoute.tsx');
+    const adapter = (name: string): string => {
+      const at = routes.indexOf(`export function ${name}(`);
+      expect(at).toBeGreaterThan(-1);
+      const next = routes.indexOf('export function ', at + 1);
+      return routes.slice(at, next === -1 ? undefined : next);
+    };
+    const MINIMAL = [
+      'ChatRoute',
+      'CallRoute',
+      'ApplyRoute',
+      'WalletRoute',
+      'ProviderDetailRoute',
+      'ChatRequestRoute',
+      'HomeSuggestionRoute',
+    ];
+    const WITH_BAR = [
+      'HomeRoute',
+      'FavouritesRoute',
+      'CallsRoute',
+      'YouRoute',
+      'ChatsListRoute',
+      'ApplicationStatusRoute',
+      'BlockedRoute',
+      'UsageRoute',
+      'InvoicesRoute',
+      'TransactionsRoute',
+      'ChatsRoute',
+      'SavedRoute',
+      'ProviderYouRoute',
+      'PayoutRoute',
+    ];
+    for (const name of MINIMAL) {
+      expect(`${name} ${/<Layout\.Screen[^>]*\bminimalShell\b/.test(adapter(name))}`).toBe(`${name} true`);
+    }
+    for (const name of WITH_BAR) {
+      expect(`${name} ${/\bminimalShell\b/.test(adapter(name))}`).toBe(`${name} false`);
+    }
   });
 
   it('ships the frame-timing tool MainActivity cites', () => {
@@ -2334,22 +2371,14 @@ describe('hardware back reaches the app', () => {
  * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
  */
 describe('W5#5 — renderToHardwareTextureAndroid decision is recorded', () => {
-  it('promotes a pushed screen to a texture only WHILE it moves', () => {
-    // The precondition this was held back for is met: on the S22 at 60Hz a
-    // push/pop landed 44.2% of frames inside budget with a 17.85ms p50, against
-    // the reference app's 97.5% and 7.55ms, while plain scrolling matched them almost
-    // exactly. So the texture is on for the animation and off the instant it
-    // settles -- a permanent one is ~8MB of GPU memory held while nothing moves.
+  it('leaves the texture decision with the JS layer it belonged to', () => {
+    // The toggle promoted PushedLayer, the JS push layer, to a texture while it
+    // moved. Navigation step 7 deleted the layer: a push is a native fragment
+    // transition now, composited by the platform, so there is no JS view left
+    // to promote. The motion.ts exports go in step 8 with their ban.
     const app = read('App.tsx');
-    expect(app).toContain(
-      'renderToHardwareTextureAndroid: transitioning.value',
-    );
-    expect(app).toContain('animatedProps={textureWhileMoving}');
-    // Driven on the UI thread, not through a JS round-trip behind the animation.
-    expect(app).toContain('useAnimatedProps(() => ({');
-    // And the release is guaranteed by the lock's own completion callback.
-    const motion = read('src/theme/motion.ts');
-    expect(motion).toContain('runOnJS(setTransitioning)(false)');
+    expect(app).not.toContain('renderToHardwareTextureAndroid');
+    expect(app).not.toContain('textureWhileMoving');
   });
 
   it('starts on geometry, and says why it no longer waits for DATA', () => {
@@ -3177,8 +3206,17 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     expect(screen).toContain('<LayoutAnimationConfig skipEntering skipExiting>');
   });
 
-  it('is not mounted yet: nothing outside src/shell and Layout imports it', () => {
-    expect(read('App.tsx')).not.toMatch(/from '\.\/src\/shell|components\/Layout'/);
+  it('is mounted by the navigator: the bar is the tab navigator\'s tabBar, a stable callback', () => {
+    // Step 7 mounts it. The callback is memoised with no deps, so the tab
+    // navigator does not re-create the bar on every render (Bluesky
+    // Navigation.tsx TabsNavigator).
+    const nav = read('src/Navigation.tsx');
+    expect(nav).toMatch(
+      /const tabBar = useCallback\(\(props: BottomTabBarProps\) => <BottomBar \{\.\.\.props\} tabs=\{MEMBER_TABS\} \/>, \[\]\)/,
+    );
+    expect(nav).toMatch(/tabBar=\{tabBar\}/);
+    // The shell state sits above Root, so the UpdateBanner can ride the bar.
+    expect(read('App.tsx')).toMatch(/<ShellStateProvider>\s*<Shell \/>\s*<\/ShellStateProvider>/);
   });
 });
 
@@ -3198,5 +3236,109 @@ describe('the category pager never rests between pages', () => {
     const pager = readFileSync(join(ROOT, 'src/components/ProviderPager.tsx'), 'utf8');
     expect(pager).toMatch(/pageScrollState === 'idle'\)\s*\{[\s\S]{0,200}Math\.round\(at\)/);
     expect(pager).toMatch(/scheduleOnRN\(snapToPage, nearest\)/);
+  });
+});
+
+/**
+ * Navigation step 7 (nav-migration §1, §9; ADR-0032). The navigator's options
+ * are read from the docs, not chosen: every one below names the page it comes
+ * from in src/Navigation.tsx.
+ */
+describe('step 7: the navigator follows the platform', () => {
+  const nav = read('src/Navigation.tsx');
+  const navCode = nav.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+  it('roots every tab at its first screen and never slides a tab', () => {
+    // Bluesky Navigation.tsx: initialRoute back, lazy tabs, headers off.
+    expect(navCode.match(/backBehavior="initialRoute"/g) ?? []).toHaveLength(2);
+    expect(navCode).toContain('const TAB_SCREEN_OPTIONS = { headerShown: false, lazy: true } as const;');
+    expect(navCode.match(/screenOptions=\{TAB_SCREEN_OPTIONS\}/g) ?? []).toHaveLength(2);
+    // bottom-tabs' default animation is 'none': tabs are peers (animate-expo step 1).
+    expect(navCode).not.toMatch(/animation:\s*'(shift|fade)'[\s\S]{0,40}lazy/);
+    expect(navCode).toContain("animation: reduced ? 'fade' : 'default'");
+  });
+
+  it('sets none of the options the platform owns or that are no-ops on Android', () => {
+    for (const banned of [
+      'slide_from_right',
+      'ios_from_right',
+      'fullScreenGestureEnabled',
+      'gestureEnabled',
+      'freezeOnBlur',
+      'enableFreeze',
+      'statusBarStyle',
+      'statusBarHidden',
+      'statusBarAnimation',
+      'navigationBarColor',
+      'navigationBarHidden',
+      'orientation:',
+      'getId',
+      'linking=',
+      'reactNavigationIntegration',
+    ]) {
+      expect(`${banned} ${navCode.includes(banned)}`).toBe(`${banned} false`);
+    }
+  });
+
+  it('presents exactly the profile and the wallet as tall native sheets (owner 2026-09-26)', () => {
+    // The REVERSAL of ruling 14, recorded in ADR-0032 and the header comment.
+    expect(nav).toContain('REVERSAL of the plan\'s ruling 14');
+    expect(navCode).toContain("presentation: 'formSheet'");
+    expect(navCode.match(/presentation:/g) ?? []).toHaveLength(1);
+    expect(navCode).toContain('sheetAllowedDetents: [SHEET_DETENT]');
+    expect(navCode).toContain('sheetCornerRadius: TOKENS.radius.sheet');
+    expect(navCode).toContain('sheetGrabberVisible: true');
+    expect(navCode).toMatch(/name="ProviderDetail" getComponent=\{\(\) => ProviderDetailRoute\} options=\{sheet\}/);
+    expect(navCode).toMatch(/name="Wallet" getComponent=\{\(\) => WalletRoute\} options=\{sheet\}/);
+    // Apply and ChatRequest stay pushed.
+    expect(navCode).toMatch(/name="Apply" getComponent=\{\(\) => ApplyRoute\} \/>/);
+    expect(navCode).toMatch(/name="ChatRequest" getComponent=\{\(\) => ChatRequestRoute\} \/>/);
+    // One fixed fraction, not fitToContents: both bodies fill with flex 1.
+    expect(navCode).toMatch(/const SHEET_DETENT = 0\.\d+;/);
+    expect(navCode).not.toContain("'fitToContents'");
+  });
+
+  it('works around the Android form sheet limits the docs name', () => {
+    // sheetGrabberVisible is iOS-only: the body draws the M3 handle itself.
+    const screen = read('src/components/Layout/Screen.tsx');
+    expect(screen).toContain('{sheet ? <SheetGrabber /> : null}');
+    expect(screen).toMatch(/sheet: \{\s*borderTopLeftRadius: TOKENS\.radius\.sheet,\s*borderTopRightRadius: TOKENS\.radius\.sheet,\s*overflow: 'hidden',/);
+    expect(read('src/components/Sheet.tsx')).toContain('export function SheetGrabber()');
+    // A nested ScrollView needs nestedScrollEnabled for BottomSheetBehavior.
+    expect(read('src/screens/ProviderDetailScreen.tsx')).toContain('nestedScrollEnabled={sheet}');
+    expect(read('src/screens/RechargeScreen.tsx')).toContain('nestedScrollEnabled={sheet}');
+    // Both sheet routes render the sheet body and hide the bar.
+    const member = read('src/screens/routes/MemberRoutes.tsx');
+    expect(member.match(/<Layout\.Screen sheet minimalShell>/g) ?? []).toHaveLength(2);
+    // A chat or call from the profile sheet REPLACES it rather than pushing over.
+    expect(member).toContain("useOpenChat('fromSheet')");
+    expect(member).toMatch(/startCall\(providerId, [^,]+, \{\s*source: route\.key,/);
+  });
+
+  it('paints the Call push with the call surface, not the theme background', () => {
+    expect(navCode).toContain('const CALL_OPTIONS: NativeStackNavigationOptions = { contentStyle: { backgroundColor: CALL_BASE } };');
+    expect(navCode.match(/name="Call" getComponent=\{\(\) => CallRoute\} options=\{CALL_OPTIONS\}/g) ?? []).toHaveLength(2);
+    expect(read('src/screens/CallScreen.tsx')).toContain("export const CALL_BASE = '#0B0B10';");
+  });
+
+  it('dismisses the IME on blur and stops covered loops', () => {
+    // https://developer.android.com/develop/ui/views/touch-and-input/keyboard-input/visibility
+    expect(read('src/hooks/useDismissKeyboardOnBlur.ts')).toContain('KeyboardController.dismiss()');
+    for (const file of ['src/screens/routes/ChatRoute.tsx', 'src/screens/routes/MemberRoutes.tsx']) {
+      expect(read(file)).toContain('useDismissKeyboardOnBlur();');
+    }
+    // Avatar's breath and the skeleton pulse stop on blur, safe outside a navigator.
+    expect(read('src/hooks/useScreenFocused.ts')).toContain('useContext(NavigationContext)');
+    expect(read('src/components/Avatar.tsx')).toContain('if (!breathing || !screenFocused) {');
+    expect(read('src/components/Skeleton.tsx')).toContain('if (!screenFocused) {');
+  });
+
+  it('keeps the root exit confirm as the stated predictive-back deviation', () => {
+    const app = read('App.tsx');
+    expect(app).toContain('https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture');
+    expect(app).toContain('https://developer.android.com/about/versions/16/behavior-changes-16');
+    // MainActivity names the flag only to say why it stays out of the manifest.
+    expect(read(MAIN_ACTIVITY)).toContain('https://developer.android.com/guide/fragments/animate');
+    expect(read('android/app/src/main/AndroidManifest.xml')).not.toContain('enableOnBackInvokedCallback');
   });
 });

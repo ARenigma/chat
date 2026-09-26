@@ -34,10 +34,9 @@ import { MemberProfileSheet } from '../components/MemberProfileSheet';
 import { M3Field } from '../components/TextField';
 import { SafetySheet } from '../screens/SafetySheet';
 import type { ReactionEmoji } from '../lib/database.types';
-import { useBackBarrier, useBackGuard } from '../lib/backGuard';
+import { openRefill, openWallet } from '../lib/routes/actions';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import type { VoiceDraft } from '../lib/voice';
-import { useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { chatV2PageDownBottom, type ChatV2CallPermissions } from './cells';
@@ -51,7 +50,6 @@ import { ChatSessionBarV2 } from './ChatSessionBarV2';
 import { chatV2Arrival, chatV2RowIds, chatV2ScrolledAway } from './chatState';
 import type { ChatV2ImageBody, ChatV2Row } from './rows';
 import {
-  chatV2BackStep,
   chatV2ConsentCopy,
   chatV2LeaveCopy,
   chatV2SessionBand,
@@ -101,8 +99,8 @@ interface Props {
   focused?: boolean;
   /**
    * What the route adapter needs for `usePreventRemove` (nav-migration §4,
-   * 3a), published whenever it changes. The old tree passes nothing and keeps
-   * `useBackGuard`.
+   * 3a), published whenever it changes. The adapter is the chat's single
+   * exit: hardware back reaches this screen only through it.
    */
   onGuard?: (guard: ChatV2Guard) => void;
 }
@@ -119,6 +117,8 @@ export interface ChatV2Guard {
   openLeave: (intent: ChatV2LeaveIntent) => void;
   /** An intentional exit drops the draft (see `leaveChat`). */
   purgeDraft: () => void;
+  /** The thread, once resolved: the adapter resets its peer activity on unmount. */
+  conversationId: string | undefined;
 }
 
 /** A dock height to lay out against before the first measurement lands. */
@@ -157,8 +157,6 @@ export function ChatScreenV2({
   const chat = useChatV2Controller(providerId, benchmarkReadOnly, { live, focused });
   const mutationOnStartCall = benchmarkReadOnly ? undefined : onStartCall;
   const { rows, sendText, sendVoice } = chat;
-  const openRefill = useStore(s => s.openRefill);
-  const openWallet = useStore(s => s.openWallet);
   const listRef = useRef<FlashListRef<ChatV2Row> | null>(null);
 
   /* ---- the dock, measured whole ----------------------------------------- */
@@ -477,71 +475,12 @@ export function ChatScreenV2({
 
   /* ---- back -------------------------------------------------------------- */
   /*
-   * The chat covers Home, and Home stays mounted underneath it, so a guard
-   * held by a covered screen is still on the stack. The barrier is this
-   * screen's floor: guards below it are not asked.
+   * Hardware back is the route's (`ChatRoute`'s `usePreventRemove`, nav §4
+   * 3a): it clears a reply first, asks before leaving a paid session, and
+   * otherwise pops. Every sheet and dialog here is an RN Modal, which takes
+   * back itself through `onRequestClose` before any listener hears it, so
+   * the old ladder's Modal steps (`chatV2BackStep`) never run on back.
    */
-  useBackBarrier();
-  const sheetOpen =
-    editing !== null ||
-    deleting !== null ||
-    safety.open ||
-    renaming ||
-    viewerImage !== null;
-  const backGuard = useCallback(() => {
-    const step = chatV2BackStep({
-      leaveDialogOpen: leaveVisible,
-      actionsOpen: actionRequest !== null,
-      sheetOpen,
-      replyOpen: replyTo !== null,
-      sessionActive,
-    });
-    switch (step) {
-      case 'closeLeaveDialog':
-        setLeaveVisible(false);
-        return true;
-      case 'closeActions':
-        setActionRequest(null);
-        return true;
-      case 'closeSheet':
-        setEditing(null);
-        setDeleting(null);
-        setRenaming(false);
-        setViewerImage(null);
-        setSafety({ open: false, messageId: null });
-        return true;
-      case 'clearReply':
-        setReplyTo(null);
-        return true;
-      case 'confirmLeave':
-        // Back must not silently leave a paid session: the same dialog the
-        // app-bar arrow opens.
-        openLeave('leave');
-        return true;
-      default:
-        // Declines, so App's route handler pops the screen — the same landing
-        // the arrow reaches, and the state Android says not to intercept.
-        return false;
-    }
-  }, [
-    actionRequest,
-    leaveVisible,
-    openLeave,
-    replyTo,
-    sessionActive,
-    sheetOpen,
-  ]);
-  /*
-   * Registered only while there is something to protect. A chat with nothing
-   * open and no session keeps ordinary navigation immediate.
-   */
-  const guarded =
-    leaveVisible ||
-    actionRequest !== null ||
-    sheetOpen ||
-    replyTo !== null ||
-    sessionActive;
-  useBackGuard(guarded ? backGuard : null);
 
   /* ---- the route's guard, and what a blur leaves behind ----------------- */
   const clearReply = useCallback(() => setReplyTo(null), []);
@@ -553,8 +492,9 @@ export function ChatScreenV2({
       clearReply,
       openLeave,
       purgeDraft,
+      conversationId: chat.conversationId,
     });
-  }, [onGuard, sessionActive, replyTo, leaveVisible, clearReply, openLeave, purgeDraft]);
+  }, [onGuard, sessionActive, replyTo, leaveVisible, clearReply, openLeave, purgeDraft, chat.conversationId]);
 
   /*
    * On blur, a covered chat leaves nothing above or under the next screen

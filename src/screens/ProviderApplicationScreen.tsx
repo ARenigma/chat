@@ -7,7 +7,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useBackBarrier } from '../lib/backGuard';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated from 'react-native-reanimated';
 import { topLevelIn } from '../theme/motion';
@@ -216,16 +215,6 @@ const ACCOUNT_SHAPE = /^[0-9]{9,18}$/;
  *      after-the-fact Providers list + suspend).
  */
 export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Props) {
-  /*
-   * This screen covers Home, and Home stays mounted underneath it (App.tsx
-   * renders pushed screens as overlays so returning never remounts Home's
-   * lists). Without this barrier Home's search guard — live whenever its search
-   * field is open — still hears the hardware back press from up here, closes a
-   * field nobody can see, and reports the press handled, so this screen never
-   * pops. See src/lib/backGuard.ts.
-   */
-  useBackBarrier();
-
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();

@@ -8,7 +8,6 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { useBackBarrier } from '../lib/backGuard';
 import { initialOf } from '../lib/display';
 import { timeOfDay } from '../lib/datetime';
 import { readPresence } from '../lib/presence';
@@ -29,6 +28,7 @@ import { Badge } from '../components/Badge';
 import { Divider } from '../components/Divider';
 import { compareConversations, visibleOnList } from '../lib/railPrefs';
 import { useRailPrefs } from '../store/useRailPrefs';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 
 interface Props {
   onBack: () => void;
@@ -60,18 +60,10 @@ function summaryLabel(conversation: ConversationSummary): string {
  * data as Home, so nothing new is fetched.
  */
 export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
-  /*
-   * This screen covers Home, and Home stays mounted underneath it (App.tsx
-   * renders pushed screens as overlays so returning never remounts Home's
-   * lists). Without this barrier Home's search guard — live whenever its search
-   * field is open — still hears the hardware back press from up here, closes a
-   * field nobody can see, and reports the press handled, so this screen never
-   * pops. See src/lib/backGuard.ts.
-   */
-  useBackBarrier();
-
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  // The bottom bar stays up on this pushed screen: the last row clears it.
+  const barOffset = useBottomBarOffset(TOKENS.space.xl);
   useProfile();
   const { data: conversations, isError: conversationsError, refetch: refetchConversations } =
     useConversations();
@@ -135,7 +127,7 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
           onScroll={onScroll}
           scrollEventThrottle={16}
           {...SCROLL_PHYSICS}
-          contentContainerStyle={{ paddingBottom: insets.bottom + TOKENS.space.xl }}
+          contentContainerStyle={{ paddingBottom: barOffset }}
           renderItem={renderRow}
           overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = 72; }}
         />

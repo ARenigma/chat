@@ -36,30 +36,25 @@ describe('V2 development fast loop', () => {
     // The queue applies the intent once SignedIn registers the applier (role resolved).
     expect(app).toContain("enqueueIntent({\n            type: 'openChatV2'");
     expect(app).toContain('benchmarkReadOnly: benchmarkReadOnlyLaunch');
-    // The intent applier inside SignedIn branches on role for both trees.
-    expect(app).toMatch(
-      /case 'openChatV2':[\s\S]{0,300}if \(role === 'member'\)[\s\S]{0,180}name: 'chatV2'[\s\S]{0,80}providerId: intent\.peerId/,
-    );
     /*
-     * The provider half, added 2026-09-19 with the parity sweep. The link used
-     * to be dropped on that tree, which left the side with the DIFFERENT
-     * shapes — no profile card, an earnings pill, a peer id
-     * `open_conversation` rejects — unexercised right up to the cutover. The
-     * role still picks the tree; both trees now have somewhere to send it.
+     * The navigator's intent applier (registered in onReady, step 7) pushes
+     * ChatV2 into the conversations tab of whichever tree is mounted, and
+     * both trees register it. The provider half, added 2026-09-19 with the
+     * parity sweep, keeps the side with the DIFFERENT shapes — no profile
+     * card, an earnings pill, a peer id `open_conversation` rejects —
+     * exercised.
      */
-    expect(app).toMatch(/pushProvider\(\{\s*name: 'chatV2'/);
+    const nav = read('src/Navigation.tsx');
+    expect(nav).toMatch(/case 'openChatV2':[\s\S]{0,600}chatTabOf\(root\)/);
+    expect(nav.match(/name="ChatV2"/g) ?? []).toHaveLength(2);
   });
 
   it('mounts an isolated V2 chat shell in the member tree', () => {
-    const app = read('App.tsx');
+    const route = read('src/screens/routes/ChatRoute.tsx');
     const shell = read('src/chat-v2/ChatScreenV2.tsx');
 
-    expect(app).toContain(
-      "import { ChatScreenV2 } from './src/chat-v2/ChatScreenV2'",
-    );
-    expect(app).toMatch(
-      /route\.name === 'chatV2'[\s\S]{0,500}<ChatScreenV2[\s\S]{0,160}providerId=\{route\.providerId\}[\s\S]{0,160}onBack=/,
-    );
+    expect(route).toContain("import { ChatScreenV2, type ChatV2Guard } from '../../chat-v2/ChatScreenV2'");
+    expect(route).toMatch(/<ChatScreenV2[\s\S]{0,120}providerId=\{peerId\}[\s\S]{0,160}onBack=\{exit\}/);
     expect(shell).toContain('testID="chat-v2-screen"');
     expect(shell).toContain('<ChatListV2');
     expect(shell).toContain('<ChatComposerV2');

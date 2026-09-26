@@ -1,11 +1,10 @@
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 import {
   backBarrierCount,
   backGuardCount,
   consumeBack,
-  registerBackBarrier,
   registerBackGuard,
 } from '../src/lib/backGuard';
 
@@ -84,189 +83,53 @@ describe('backGuard: the stack is the order', () => {
   });
 });
 
-describe('backGuard: a barrier is the floor of the screen on top', () => {
-  afterEach(() => {
-    expect(backGuardCount()).toBe(0);
-    expect(backBarrierCount()).toBe(0);
-  });
-
-  /*
-   * The defect this stack had until 2026-09-13, reproduced at the level it
-   * actually lives at.
-   *
-   * App.tsx keeps HomeScreen mounted under every pushed screen, so Home's
-   * search guard — registered while its search field is open — stayed on this
-   * stack while a chat covered Home. The chat had no guard of its own (no live
-   * session), so the press fell to Home's guard, which returned true after
-   * closing a search field nobody could see, and `consumeBack` reported the
-   * press as handled: App never popped the chat. The app-bar arrow calls the
-   * screen's own handler and never touches this stack, which is exactly why it
-   * kept working and hid the bug.
-   */
-  it('does not offer the press to a covered screen, so the covering screen pops', () => {
-    const calls: string[] = [];
-    const homeSearch = registerBackGuard(() => {
-      calls.push('home-search');
-      return true;
-    });
-    const chat = registerBackBarrier();
-
-    // Nothing open in the chat: the press must reach App.tsx's route handler.
-    expect(consumeBack()).toBe(false);
-    expect(calls).toEqual([]);
-
-    chat();
-    // Home uncovered again: its search guard answers back, as it must.
-    expect(consumeBack()).toBe(true);
-    expect(calls).toEqual(['home-search']);
-    homeSearch();
-  });
-
-  it('still consults the covering screen own guards, which sit above its barrier', () => {
-    // The ordering `useBackBarrier` buys with useLayoutEffect: the barrier is
-    // pushed before the screen's own guards, so it cuts off what is underneath
-    // without cutting off the screen holding it — a live paid session still
-    // gets its confirm dialog on hardware back.
-    const calls: string[] = [];
-    const homeSearch = registerBackGuard(() => {
-      calls.push('home-search');
-      return true;
-    });
-    const chat = registerBackBarrier();
-    const session = registerBackGuard(() => {
-      calls.push('chat-session');
-      return true;
-    });
-
-    expect(consumeBack()).toBe(true);
-    expect(calls).toEqual(['chat-session']);
-    session();
-    chat();
-    homeSearch();
-  });
-
-  it('stops at the topmost barrier only, so nested covers do not leak either', () => {
-    const calls: string[] = [];
-    const homeSearch = registerBackGuard(() => {
-      calls.push('home-search');
-      return true;
-    });
-    const list = registerBackBarrier();
-    const listGuard = registerBackGuard(() => {
-      calls.push('chats-list');
-      return true;
-    });
-    // A chat opened from the chats list covers BOTH screens under it.
-    const chat = registerBackBarrier();
-
-    expect(consumeBack()).toBe(false);
-    expect(calls).toEqual([]);
-
-    // Popping the chat hands back to the list, not past it to Home.
-    chat();
-    expect(consumeBack()).toBe(true);
-    expect(calls).toEqual(['chats-list']);
-
-    listGuard();
-    list();
-    homeSearch();
-  });
-
-  it('lets a guard above the barrier decline and fall through to the barrier', () => {
-    // A declining guard is not a handled press: the walk continues down and
-    // stops at the floor, which is still "not handled" so the caller navigates.
-    const calls: string[] = [];
-    const homeSearch = registerBackGuard(() => {
-      calls.push('home-search');
-      return true;
-    });
-    const chat = registerBackBarrier();
-    const chatGuard = registerBackGuard(() => {
-      calls.push('chat');
-      return false;
-    });
-
-    expect(consumeBack()).toBe(false);
-    expect(calls).toEqual(['chat']);
-
-    chatGuard();
-    chat();
-    homeSearch();
-  });
-});
-
-/**
- * The barrier only works if every covering screen drops one, and "remember to
- * add a line" is not a mechanism — it is a thing the ninth screen forgets.
- *
- * So the list is DERIVED from App.tsx rather than written here: any screen it
- * renders must either drop a barrier or be named below with a reason. A new
- * pushed screen fails this until its author makes that choice deliberately.
+/*
+ * Navigation step 7 (nav-migration §4): the guard stack's barriers are gone.
+ * They existed because the old tree kept Home mounted UNDER every pushed
+ * screen, so a covered screen's guard heard a press meant for the one on
+ * top. Under native-stack a covered screen hears nothing: tab roots register
+ * their search back only while focused (`useSearchBack`), and a route that
+ * must not simply leave stops its own removal with `usePreventRemove`
+ * (https://reactnavigation.org/docs/preventing-going-back). The stack above
+ * (`consumeBack`) is the library's own test until step 8 deletes it.
  */
-describe('every covering screen drops a barrier', () => {
-  const app = readFileSync(join(__dirname, '..', 'App.tsx'), 'utf8');
+describe('removals are guarded by the routes, not by barriers', () => {
+  const root = join(__dirname, '..');
+  const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
-  /*
-   * Screens that must NOT drop a barrier, each because it is not covering
-   * anything — a barrier here would silence guards that are legitimately live.
-   */
-  const EXEMPT: Record<string, string> = {
-    // The roots themselves. Home is what everything else covers, and its own
-    // search guard is the guard the barrier exists to silence.
-    HomeScreen: 'the member root — nothing is under it',
-    ProviderHomeScreen: 'the provider root — nothing is under it',
-    // Tabs, not pushes: they are siblings inside the home shell, rendered in a
-    // TabLayer, and back from one goes to Home rather than popping a layer.
-    FavouritesScreen: 'a tab inside the home shell, not a pushed layer',
-    CallsScreen: 'a tab inside the home shell, not a pushed layer',
-    // Pre-auth and full-screen takeovers. Nothing is mounted beneath them at
-    // all, so there is no covered guard to silence.
-    SplashScreen: 'pre-auth, nothing mounted beneath it',
-    OnboardingScreen: 'pre-auth, nothing mounted beneath it',
-    WelcomePappalScreen: 'pre-auth, nothing mounted beneath it',
-    ProfileSetupScreen: 'pre-auth, nothing mounted beneath it',
-    PermissionsScreen: 'pre-auth, nothing mounted beneath it',
-    PolicyGateScreen: 'pre-auth, nothing mounted beneath it',
-    // An overlay App.tsx closes itself, above consumeBack() in its own handler,
-    // so it never reaches the guard stack.
-    RechargeScreen: 'an overlay App.tsx closes before consumeBack() runs',
-    ChatRequestScreen: 'an overlay with its own 30 s countdown; back hardware press dismisses the ring naturally',
-  };
-
-  /** Screens that do not live in `src/screens`, by the name App.tsx renders. */
-  const ELSEWHERE: Record<string, string> = {
-    ChatScreenV2: 'src/chat-v2/ChatScreenV2.tsx',
-    ChatRequestScreen: 'src/components/ChatRequestScreen.tsx',
-  };
-
-  /*
-   * The `V\d+` tail is load-bearing: the chat screen is `ChatScreenV2`, and a
-   * pattern that stopped at `Screen\b` matched nothing there — so the one
-   * covering screen with a paid session behind its back press was the one
-   * screen this derivation could not see.
-   */
-  const rendered: readonly string[] = [...new Set(
-    [...app.matchAll(/<([A-Z][A-Za-z]*Screen(?:V\d+)?)\b/g)].flatMap(
-      ([, name]) => (name === undefined ? [] : [name]),
-    ),
-  )].sort();
-
-  it.each(rendered)('%s', name => {
-    const reason = EXEMPT[name];
-    if (reason !== undefined) {
-      expect(reason.length).toBeGreaterThan(0);
-      return;
-    }
-    const source = readFileSync(
-      join(__dirname, '..', ELSEWHERE[name] ?? `src/screens/${name}.tsx`),
-      'utf8',
-    );
-    expect(source).toContain('useBackBarrier()');
+  it('drops every useBackBarrier call and every useBackGuard use outside the library', () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry =>
+        entry.isDirectory()
+          ? walk(`${dir}/${entry.name}`)
+          : /\.tsx?$/.test(entry.name)
+            ? [`${dir}/${entry.name}`]
+            : [],
+      );
+    const offenders = [...walk('src'), 'App.tsx']
+      .filter(file => file !== 'src/lib/backGuard.ts')
+      .filter(file =>
+        /useBackBarrier\(|useBackGuard\(|consumeBack\(/.test(
+          read(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''),
+        ),
+      );
+    expect(offenders).toEqual([]);
   });
 
-  it('finds the screens at all, so a changed render shape cannot empty the list', () => {
-    // A regex that matched nothing would make every assertion above vacuous.
-    expect(rendered.length).toBeGreaterThanOrEqual(20);
-    expect(rendered).toContain('ChatScreenV2');
+  it.each([
+    ['src/screens/routes/ChatRoute.tsx', 'usePreventRemove(sessionActive || replyActive'],
+    ['src/screens/routes/CallRoute.tsx', "usePreventRemove(guard?.ending !== true"],
+    ['src/screens/routes/MemberRoutes.tsx', "usePreventRemove(phase !== 'verify'"],
+  ])('%s guards its own removal', (file, guard) => {
+    expect(read(file)).toContain(guard);
+  });
+
+  it('keeps search back focus-scoped on every tab root that searches', () => {
+    for (const file of ['src/screens/HomeScreen.tsx', 'src/screens/FavouritesScreen.tsx', 'src/screens/SettingsSheet.tsx']) {
+      expect(read(file)).toContain('useSearchBack(searching, closeSearch)');
+    }
+    const hook = read('src/hooks/useSearchBack.ts');
+    expect(hook).toContain('useFocusEffect(');
+    expect(hook).toContain("BackHandler.addEventListener('hardwareBackPress'");
   });
 });

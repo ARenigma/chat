@@ -595,15 +595,10 @@ function RingAction({
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     root: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      // Above every screen and both nav bars: an incoming ring is not a layer
-      // in the stack, it is the thing that is happening.
-      zIndex: 40,
-      elevation: 40,
+      // The `ChatRequest` route's whole screen since navigation step 7: the
+      // ring is pushed over whatever the provider was on (minimal shell, so
+      // the bar is gone too), not drawn over it at a zIndex.
+      flex: 1,
       backgroundColor: t.color.bg.base,
       alignItems: 'center',
       justifyContent: 'space-between',

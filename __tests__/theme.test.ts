@@ -758,71 +758,36 @@ describe('material 3 motion tokens', () => {
 describe('the app is wired to the M3 transitions', () => {
   const app = read('App.tsx');
 
-  it('pushes every overlay through the one PushedLayer', () => {
-    // Every pushed screen in both trees goes through the same layer: an
-    // effect-driven entrance (`useScreenEnter`, because `entering` does not run
-    // on this mount path) and the `screenOut` layout animation on the way out.
-    expect(app).toContain('function PushedLayer(');
-    expect(app).toContain('const enter = useScreenEnter();');
-    expect(app).toContain('onLayout={enter.onLayout}');
-    // Home's slide-in is kicked from the pop, not from an effect on the new route.
-    expect(app).toContain('revealHome();');
-    expect(app).toContain('useHomeRevealStyle()');
-    expect(app).toContain('exiting={screenOut}');
-    expect((app.match(/<PushedLayer/g) ?? []).length).toBeGreaterThanOrEqual(4);
-    // And never the old raw slide presets, nor an `entering` on a pushed overlay.
-    expect(app).not.toMatch(/SlideInRight|SlideOutRight/);
-    expect(app).not.toContain('entering={screenIn}');
-  });
-
-  it('fades the top-level tab layers rather than sliding them', () => {
+  it('leaves screen-to-screen motion to the native stack', () => {
     /*
-     * The tabs cross-fade on a shared value now, not on `entering`/`exiting`
-     * layout animations (Amit, 2026-09-04: tab switching was "slow and janky").
-     * A layout animation runs on mount/unmount of the whole subtree, so it
-     * competed with the remount it was meant to cover; `TabLayer` keeps every
-     * visited tab mounted and animates `opacity` only.
-     *
-     * What still has to hold is that the movement is a FADE and nothing slides:
-     * no translate on the tab layer, and a hidden tab leaves layout instead of
-     * being measured behind the active one.
-     *
-     * `display` moved OUT of the worklet on 2026-09-08 and this gate moved with
-     * it. Computing it inside `useAnimatedStyle` flipped the property on the UI
-     * thread, behind React's back, and Android's view flattening
-     * (NativeViewHierarchyOptimizer) did not rebuild the flattened children of
-     * the revealed subtree: the Favourites top bar came back with its wallet
-     * chip (a real view, it has a fill) and without its title or magnifier
-     * (flattened, they draw nothing of their own). It is React state now,
-     * hidden one fade-duration after the tab goes inactive, which is the same
-     * moment the worklet used to pick.
+     * Navigation step 7 (ADR-0032): no route layer is moved in JS any more.
+     * PushedLayer, TabLayer and the navDirection/revealHome/useScreenEnter
+     * pair that animated them are gone from App.tsx; a push and a pop are the
+     * platform's own transition, a fade under reduced motion (animate-expo
+     * step 9), and a tab switch does not animate at all (bottom-tabs'
+     * default 'none': tabs are peers, and never slide).
      */
-    const layer = app.slice(
-      app.indexOf('function TabLayer'),
-      app.indexOf('const { StartupTiming }'),
+    const nav = read('src/Navigation.tsx');
+    expect(app).not.toMatch(/function PushedLayer|function TabLayer|<PushedLayer|<TabLayer/);
+    expect(stripComments(app)).not.toMatch(
+      /useScreenEnter|screenOut|setNavDirection|revealHome|useHomeRevealStyle|transitioning|AfterPaint/,
     );
-    expect(layer).toContain('opacity: opacity.value');
-    expect(layer).toContain(
-      'const animated = useAnimatedStyle(() => ({ opacity: opacity.value }))',
-    );
-    expect(layer).toContain('laidOut ? null : HIDDEN_LAYER.hidden');
-    expect(layer).toContain(
-      'setTimeout(() => setLaidOut(false), FADE.duration)',
-    );
-    // Still no `display` computed on the UI thread — that is the defect above.
-    expect(layer).not.toMatch(/useAnimatedStyle[\s\S]*display:/);
-    expect(layer).not.toMatch(/translate[XY]/);
-    // And the tabs are mounted through it rather than conditionally rendered.
-    for (const tab of ['favourites', 'calls', 'settings']) {
-      expect(app).toContain(`<TabLayer active={route.name === '${tab}'}`);
-    }
+    expect(nav).toContain("animation: reduced ? 'fade' : 'default'");
+    expect(nav).toContain('const reduced = useReducedMotion();');
+    // Tabs carry no animation option at all, so the default 'none' holds.
+    const tabOptions = nav.slice(nav.indexOf('const TAB_SCREEN_OPTIONS'), nav.indexOf('function MemberTabs'));
+    expect(tabOptions).toContain('{ headerShown: false, lazy: true }');
+    expect(tabOptions).not.toMatch(/animation\s*:/);
+    // No hand-picked slide on any stack.
+    expect(stripComments(nav)).not.toMatch(/slide_from_right|ios_from_right|slide_from_left/);
   });
 
-  it('declares a back direction before every pop', () => {
-    // The hardware-back handler and the in-screen back paths must set the
-    // direction, or a pop would animate as a push.
-    expect(app).toContain("setNavDirection('back')");
-    expect(app).toContain("setNavDirection('forward')");
+  it('keeps entering animations from replaying under a native transition', () => {
+    // Every adapter renders Layout.Screen, which wraps its children in
+    // LayoutAnimationConfig skipEntering/skipExiting: the native stack is
+    // already moving the screen as a whole (nav-migration R3).
+    const screen = read('src/components/Layout/Screen.tsx');
+    expect(screen).toContain('<LayoutAnimationConfig skipEntering skipExiting>');
   });
 
   it('holds no raw transition builder in App.tsx', () => {
@@ -1369,9 +1334,9 @@ describe('spacing lives in tokens', () => {
     'src/screens/HomeScreen.tsx': ['padding: 3'],
     'src/screens/PolicyGateScreen.tsx': ['gap: 6'],
     // The provider inbox row (rowBody gap 3, unread pill 5) is on both lists
-    // since the step-6 split; the host keeps the tab badge's 5.
+    // since the step-6 split. The host's tab badge 5 went with ProviderHomeScreen
+    // in step 7: the bottom bar's Badge is on the scale.
     'src/screens/ProviderChatsScreen.tsx': ['gap: 3', 'paddingHorizontal: 5'],
-    'src/screens/ProviderHomeScreen.tsx': ['paddingHorizontal: 5'],
     'src/screens/ProviderSavedScreen.tsx': ['gap: 3', 'paddingHorizontal: 5'],
     'src/screens/RechargeScreen.tsx': ['paddingVertical: 3'],
   };
@@ -2229,12 +2194,11 @@ describe('accent budget is enforced in code, not just documented', () => {
       /*
        * The provider's own surface, split in navigation step 6: the wordmark
        * and unread pills (Chats), the unread pill (Saved), the earnings card
-       * and payout row (You), the tab badge (the host), and the push gate's
-       * one action. The same uses the single file carried before the split.
+       * and payout row (You), and the push gate's one action. The host's tab
+       * badge went with ProviderHomeScreen in navigation step 7.
        */
       'ProviderChatsScreen.tsx',
       'ProviderDetailScreen.tsx',
-      'ProviderHomeScreen.tsx',
       'ProviderPushGate.tsx',
       /*
        * The explore row, which JOINED this list on 2026-09-08 when it grew a
@@ -3142,18 +3106,18 @@ describe('recharge-theme: RechargeScreen is a compact non-scrolling M3 sheet', (
     expect(recharge).toContain('checked={selected}');
   });
 
-  it('preserves the wallet as a full-page route', () => {
-    // WalletScreen since navigation step 6: a props-driven page whose root
-    // carries `recharge-wallet`, hosted by RechargeWalletPage until `Wallet`
-    // is a route (step 7). The host only positions, moves and closes it.
-    expect(recharge).toContain('export function WalletScreen({ onBack }');
+  it('preserves the wallet as its own route, a tall native sheet', () => {
+    // WalletScreen is props-driven: its root carries `recharge-wallet`, and
+    // the `Wallet` route presents it as a form sheet (owner 2026-09-26,
+    // ADR-0032). The old store-flag host and its pushed layer are gone.
+    expect(recharge).toContain('export function WalletScreen({ onBack, sheet = false }');
     expect(recharge).toMatch(/<View testID="recharge-wallet" style=\{\[styles\.page/);
-    expect(recharge).toContain('<WalletScreen onBack={closeBack} />');
-    const screen = recharge.slice(
-      recharge.indexOf('export function WalletScreen'),
-      recharge.indexOf('export function RechargeWalletPage'),
-    );
+    expect(recharge).not.toMatch(/RechargeWalletPage|WalletLayer/);
+    const screen = recharge.slice(recharge.indexOf('export function WalletScreen'));
     expect(screen).not.toMatch(/walletVisible|closeWallet|setNavDirection/);
+    // A scroller in an Android form sheet needs nested scrolling to tell a
+    // scroll from a drag down (reactnavigation.org native-stack, presentation).
+    expect(screen).toContain('nestedScrollEnabled={sheet}');
     /*
      * #6 (user 2026-09-02): pick an amount, one Pay button, then the Cashfree
      * sheet owns payment-method choice. The "Pay with" method block is gone.
