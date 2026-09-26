@@ -151,6 +151,7 @@ import { TransactionHistoryScreen } from './src/screens/TransactionHistoryScreen
 import { UsageLedgerScreen } from './src/screens/UsageLedgerScreen';
 import { ChatRequestScreen, CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
+import { usePresenceHeartbeat } from './src/hooks/usePresenceHeartbeat';
 
 initSentry();
 // Wire live call API into the intent queue. Called once at module init so
@@ -1853,6 +1854,17 @@ function SignedIn({
     [role, conversations, setIncomingRequest],
   );
   useIncomingChatRequests(role === 'provider' ? selfId : undefined, onIncomingChatRequest);
+  /*
+   * The provider's presence heartbeat (migration 155): foreground, every 30 s
+   * while active, offline on background. At the top level with the role as its
+   * argument, beside the ring above, because a hook cannot sit inside the role
+   * branch below. A member passes false and never beats, and so does a role
+   * still loading (`undefined`), so a provider starts a moment late rather
+   * than anyone else ever starting at all. Sign-out does not wait for this tree to unmount: it
+   * halts the heartbeat and sends the offline itself, before the session is
+   * cleared (`leaveDevice` in src/api/auth.ts).
+   */
+  usePresenceHeartbeat(role === 'provider');
 
   /*
    * Where an accepted chat request goes: its chat, except over a call. The

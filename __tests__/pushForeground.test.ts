@@ -3629,6 +3629,11 @@ describe('sign-out drops the device session first and ends the old one on a clie
       supabaseStorage: {},
     }));
     const ghost = {
+      // The leaving provider's offline (migration 155) goes through here.
+      rpc: jest.fn(async (name: string, args: { p_online: boolean }) => {
+        events.push(`ghost rpc ${name} ${String(args.p_online)}`);
+        return { data: null, error: null };
+      }),
       auth: {
         setSession: jest.fn(async (tokens: { access_token: string; refresh_token: string }) => {
           events.push(`ghost setSession ${tokens.access_token}`);
@@ -3819,6 +3824,51 @@ describe('sign-out drops the device session first and ends the old one on a clie
     // Once per process.
     await next.auth.resumePendingSignOuts();
     expect(next.ghost.auth.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('says a provider offline as the leaving account, before the session is revoked', async () => {
+    /*
+     * Migration 155. The heartbeat is halted in the device half's synchronous
+     * step, so nothing more leaves through the app's client (which has lost
+     * the session by then), and the owed offline goes on the dropped
+     * session's own client BEFORE `/logout` ends that session.
+     */
+    const a = loadAuth();
+    const heartbeat = require('../src/lib/presenceHeartbeat') as typeof import('../src/lib/presenceHeartbeat');
+    const beats: boolean[] = [];
+    const stop = heartbeat.startPresenceHeartbeat({
+      appState: {
+        currentState: 'active',
+        addEventListener: () => ({ remove: () => undefined }),
+      },
+      send: async online => {
+        beats.push(online);
+        a.events.push(`app beat ${String(online)} ${a.store.has(SESSION_KEY) ? 'signed in' : 'signed out'}`);
+      },
+      intervalMs: 30_000,
+    });
+    expect(beats).toEqual([true]);
+    const out = a.auth.beginSignOut();
+    // Halted in the same step the session went: no timer is left to beat.
+    expect(a.store.has(SESSION_KEY)).toBe(false);
+    a.pushTeardown.open();
+    await out;
+    // The tree unmounting afterwards sends nothing through the app's client.
+    stop();
+    expect(beats).toEqual([true]);
+    expect(a.main.rpc).not.toHaveBeenCalled();
+    const offline = a.events.indexOf('ghost rpc presence_heartbeat false');
+    expect(offline).toBeGreaterThan(a.events.indexOf('ghost setSession access-A'));
+    expect(offline).toBeLessThan(a.events.indexOf('ghost signOut local'));
+    expect(a.events.filter(e => e.startsWith('ghost rpc'))).toHaveLength(1);
+  });
+
+  it('owes no offline when no heartbeat was running, as for a member', async () => {
+    const a = loadAuth();
+    const out = a.auth.beginSignOut();
+    a.pushTeardown.open();
+    await out;
+    expect(a.events.some(e => e.startsWith('ghost rpc'))).toBe(false);
   });
 
   it('drops a pending sign-out the server refused, rather than retrying it forever', async () => {
