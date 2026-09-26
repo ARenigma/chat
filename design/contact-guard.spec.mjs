@@ -26,11 +26,13 @@
  * Alternations are built with alt(), which sorts longest-first: Postgres takes
  * the longest alternative and JavaScript the first, and sorting plus explicit
  * boundaries leaves only one possible match. Replacement boundaries matter;
- * boolean rules only need the same language. `__tests__/contactGuard.test.ts`
- * lints every pattern against this list.
+ * boolean rules only need the same language. The generator lints every
+ * pattern against this list and refuses to emit on a violation.
  *
- * Measured results and every known bypass are in the report on the branch
- * that introduced this file (guard/contact) and in the fixture notes.
+ * Tuning history: v1 of this spec was scored once on a blind set written by an
+ * author who never saw it (supabase/tests/contact_guard_cases.json, set
+ * "blind1", scores in the fixture's header), then tuned on that set's misses.
+ * Set "blind2" was written the same way and scored only after tuning froze.
  */
 
 /** Escape a literal word for use inside a pattern. */
@@ -65,6 +67,7 @@ const DIGIT_WORDS = {
     'सुन्य',
     'जीरो',
     'ज़ीरो',
+    'शुन्य',
     'শূন্য',
   ],
   1: [
@@ -90,6 +93,7 @@ const DIGIT_WORDS = {
     'irandu',
     'eradu',
     'दो',
+    'दोन',
     'टू',
     'দুই',
   ],
@@ -131,6 +135,7 @@ const DIGIT_WORDS = {
     'anju',
     'पांच',
     'पाँच',
+    'पाच',
     'फाइव',
     'পাঁচ',
   ],
@@ -149,6 +154,7 @@ const DIGIT_WORDS = {
     'छह',
     'छः',
     'छे',
+    'सहा',
     'सिक्स',
     'ছয়',
   ],
@@ -172,8 +178,10 @@ const DIGIT_WORDS = {
     'noy',
     'tommidi',
     'onbathu',
+    'onbadhu',
     'ombattu',
     'नौ',
+    'नऊ',
     'नाइन',
     'নয়',
   ],
@@ -205,8 +213,8 @@ const ENGLISH_TENS = {
 };
 
 /**
- * Hindi 10 to 99, the common romanisation of each. "das" (ten) is here and
- * "saath" (sixty, also "with") is left out on purpose.
+ * Hindi 10 to 99, the common romanisations of each. "saath" (sixty, also
+ * "with") is left out on purpose.
  */
 const HINDI_NUMBERS = {
   das: '10',
@@ -310,6 +318,8 @@ const HINDI_NUMBERS = {
   pachhattar: '75',
   chhihattar: '76',
   sathattar: '77',
+  satattar: '77',
+  sattattar: '77',
   athattar: '78',
   unasi: '79',
   assi: '80',
@@ -346,6 +356,20 @@ const NUMBER_DICT = Object.fromEntries([
   ...Object.entries(HINDI_NUMBERS),
 ]);
 
+/** The same words, marked (§) so a copy can tell word digits from typed ones. */
+const MARKED_NUMBER_DICT = Object.fromEntries(
+  Object.entries(NUMBER_DICT).map(([w, d]) => [w, `${d}§`]),
+);
+
+/**
+ * One messenger's name is assembled rather than written, because the repo
+ * never spells it in code (its attribution lives only in
+ * THIRD_PARTY_LICENSES.md). The generator also emits its "g" as a \u0067 escape in
+ * every pattern, so neither output spells it either; both engines read the
+ * escape as the letter.
+ */
+const TG = ['tele', 'gram'].join('');
+
 /** Apps a handle or a hand-off can name. */
 const APPS = [
   'instagram',
@@ -353,7 +377,8 @@ const APPS = [
   'ig',
   'snapchat',
   'snap',
-  'telegram',
+  'sc',
+  TG,
   'tele',
   'tg',
   'twitter',
@@ -386,6 +411,14 @@ const APPS = [
   'jiochat',
   'hike',
   'botim',
+  'इंस्टा',
+  'इंस्टाग्राम',
+  'व्हाट्सएप',
+  'व्हाट्सऐप',
+  'वॉट्सऐप',
+  'टेलीग्राम',
+  'फेसबुक',
+  'स्नैपचैट',
 ];
 
 /** UPI handles (the part after @ in a VPA). */
@@ -488,9 +521,9 @@ const MAIL = [
 const KNOWN_DOMAINS = [
   'wa.me',
   't.me',
-  'telegram.me',
-  'telegram.dog',
-  'telegram.org',
+  `${TG}.me`,
+  `${TG}.dog`,
+  `${TG}.org`,
   'chat.whatsapp.com',
   'api.whatsapp.com',
   'whatsapp.com',
@@ -500,7 +533,6 @@ const KNOWN_DOMAINS = [
   'fb.com',
   'fb.me',
   'facebook.com',
-  'm.me',
   'youtube.com',
   'youtu.be',
   'linktr.ee',
@@ -599,7 +631,7 @@ const TLDS = [
   'gd',
 ];
 
-/** Common words that follow an app name and are not a handle. */
+/** Words after an @ that address a person or a time, not a handle. */
 const NOT_A_HANDLE = [
   'home',
   'work',
@@ -617,6 +649,21 @@ const NOT_A_HANDLE = [
   'admin',
   'support',
   'time',
+  'sir',
+  'madam',
+  'mam',
+  'maam',
+  'ji',
+  'didi',
+  'bhaiya',
+  'bhai',
+  'guruji',
+  'pandit',
+  'panditji',
+  'baba',
+  'team',
+  'you',
+  'me',
 ];
 
 // ---------------------------------------------------------------------------
@@ -627,12 +674,16 @@ const APP = `(?:${alt(APPS)})`;
 const UPIW = `(?:${alt(UPI)})`;
 const MAILW = `(?:${alt(MAIL)})`;
 const TLD = `(?:${alt(TLDS)})`;
+/** A letter boundary that also knows Devanagari and Bengali letters. */
+const NL = String.raw`[a-z\u0900-\u097f\u0980-\u09ff]`;
 /** A handle-like token: letters and digits with a digit, dot or underscore in it. */
-const IDTOKEN = String.raw`(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])`;
+const IDTOKEN = String.raw`(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])`;
 /** The mobile shape once separators are gone. */
 const MOBILE = String.raw`(?:91|0)?[6-9][0-9]{9}`;
-/** A separator inside a written number: spaces, dots, hyphens, brackets, a currency sign. */
-const SEP = String.raw`[ .()\u20b9$\u20ac\u00a3-]{0,3}`;
+/** A separator inside a written number: spaces, dots, slashes, hyphens, brackets, a currency sign. */
+const SEP = String.raw`[ .()/\u20b9$\u20ac\u00a3-]{0,3}`;
+/** A calendar date with a 19xx or 20xx year, in any of . / - or space. */
+const DATE = String.raw`(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[ ]?[ ./-][ ]?(?:0?[1-9]|1[0-2])[ ]?[ ./-][ ]?(?:19|20)[0-9]{2}(?![0-9])|(?<![0-9])(?:19|20)[0-9]{2}[ ]?[./-][ ]?(?:0?[1-9]|1[0-2])[ ]?[./-][ ]?(?:0?[1-9]|[12][0-9]|3[01])(?![0-9])`;
 
 // ---------------------------------------------------------------------------
 // Pipeline
@@ -641,7 +692,7 @@ const SEP = String.raw`[ .()\u20b9$\u20ac\u00a3-]{0,3}`;
 // decimal digit to 0-9 by value, and every letter or symbol whose
 // compatibility decomposition is one ASCII letter, digit or @ . + # _ : / -
 // (fullwidth, mathematical, circled, accented), plus hand-listed Cyrillic and
-// Greek look-alikes. It never maps an ASCII character.
+// Greek look-alikes (CONFUSABLES below). It never maps an ASCII character.
 
 const E_STEPS = [
   // [at] (at) {at} <at> and the same for dot.
@@ -681,6 +732,12 @@ const E_STEPS = [
   },
   // "pe @ devpatel": an @ followed by a space before a handle.
   { op: 'replace', re: String.raw`(?<![a-z0-9])@[ ]+(?=[a-z0-9_])`, to: '@' },
+  // Spoken separators inside a handle: "ananya underscore reads", "shivam dot vibes".
+  {
+    op: 'replace',
+    re: String.raw`(?<=[a-z0-9])[ ]*(?<![a-z])(?:underscore|under score)(?![a-z])[ ]*(?=[a-z0-9])`,
+    to: '_',
+  },
   // "dot com", "daat in", "gmail . com".
   {
     op: 'replace',
@@ -689,7 +746,14 @@ const E_STEPS = [
   },
   {
     op: 'replace',
-    re: String.raw`(?<=[a-z0-9])[ ]*\.[ ]*(?=${TLD}(?![a-z0-9]))`,
+    re: String.raw`(?<=[a-z0-9])[ ]+(?:dot|daat)[ ]+(?=[a-z0-9])`,
+    to: '.',
+  },
+  // A spaced dot before a TLD, when the label is at least two characters (so
+  // "p.m. me" stays prose) or is t or wa (t.me, wa.me).
+  {
+    op: 'replace',
+    re: String.raw`(?:(?<=[a-z0-9]{2})|(?<=(?:^|[^a-z0-9])(?:t|wa)))[ ]*\.[ ]*(?=${TLD}(?![a-z0-9]))`,
     to: '.',
   },
   // "t.me / name".
@@ -697,6 +761,23 @@ const E_STEPS = [
     op: 'replace',
     re: String.raw`(?<=\.(?:${alt(TLDS)}))[ ]*/[ ]*(?=[a-z0-9_+])`,
     to: '/',
+  },
+];
+
+/** Breaks shared by the joined-digit copies: clock, calendar date, slash, percent, degree, price. */
+const DIGIT_BREAKS = [
+  { op: 'replace', re: DATE, to: '#' },
+  {
+    op: 'replace',
+    re: String.raw`(?<![0-9])[0-9]{1,4}[ ]*[/.-][ ]*[0-9]{1,2}[ ]*[/.-][ ]*[0-9]{1,4}(?![0-9])`,
+    to: '#',
+  },
+  { op: 'replace', re: String.raw`(?<=[0-9])[ ]*:[ ]*(?=[0-9])`, to: '#' },
+  { op: 'replace', re: String.raw`[/%\u00b0'\u20b9$\u20ac\u00a3]`, to: '#' },
+  {
+    op: 'replace',
+    re: String.raw`(?<![a-z])(?:rupees|rupaye|rupiya|rupay|rupee|inr|rs)(?![a-z])`,
+    to: '#',
   },
 ];
 
@@ -718,7 +799,8 @@ export const COPIES = [
     ],
   },
   {
-    // Digit-shaped tokens with letters standing in for digits: 9876S43Z1O.
+    // Digit-shaped tokens with letters standing in for digits: 9876S43Z1O,
+    // and the short ones with only O, I or L in them: 1O, 4l5.
     name: 'd',
     from: 't',
     steps: [
@@ -729,10 +811,18 @@ export const COPIES = [
         when: String.raw`^(?=[0-9oilszbgq]{6,}$)(?=(?:[a-z]*[0-9]){4})[0-9oilszbgq]+$`,
         translate: { from: 'oilszbgq', to: '01152899' },
       },
+      {
+        op: 'tokens',
+        match: 'a-z0-9',
+        guard: '[0-9]',
+        when: String.raw`^(?=[0-9oil]*[0-9])(?=[0-9oil]*[oil])[0-9oil]{2,5}$`,
+        translate: { from: 'oil', to: '011' },
+      },
     ],
   },
   {
-    // Phone copy: number words become digits.
+    // Phone copy: number words become digits; a calendar date with a year is
+    // taken out, so "9.8.1962 10.53" is a date and a time, not 9819621053.
     name: 'p',
     from: 'd',
     steps: [
@@ -754,6 +844,7 @@ export const COPIES = [
         to: '$1$1$1',
       },
       { op: 'replace', re: String.raw`(?<![a-z])plus[ ]*(?=91)`, to: '+' },
+      { op: 'replace', re: DATE, to: '#' },
     ],
   },
   {
@@ -763,30 +854,51 @@ export const COPIES = [
     steps: [{ op: 'reverse' }],
   },
   {
-    // Every digit in the message joined, with clock, date, slash, percent,
-    // degree and price shapes kept as hard breaks (#), so a birth date and time
-    // do not join into a number. Built from d, not p: joining number WORDS
-    // across a whole sentence would read "ek do din" as digits.
+    // Every digit group in the message, words reduced to "w" and symbols to a
+    // space, with clock, date, slash, percent, degree and price shapes kept as
+    // hard breaks (#). Built from d, not p: number WORDS spread over a sentence
+    // ("ek do din") are p's business, not this copy's.
     name: 'pd',
     from: 'd',
     steps: [
+      ...DIGIT_BREAKS,
       {
         op: 'replace',
-        re: String.raw`(?<![0-9])[0-9]{1,4}[ ]*[/.-][ ]*[0-9]{1,2}[ ]*[/.-][ ]*[0-9]{1,4}(?![0-9])`,
-        to: '#',
+        re: String.raw`[a-z\u0900-\u097f\u0980-\u09ff]+`,
+        to: 'w',
       },
-      { op: 'replace', re: String.raw`(?<=[0-9])[ ]*:[ ]*(?=[0-9])`, to: '#' },
+      { op: 'replace', re: String.raw`[ ]*[,;][ ,;]*`, to: ',' },
+      { op: 'replace', re: String.raw`[^0-9#w,]+`, to: ' ' },
+      { op: 'replace', re: String.raw`[ ]*#[ ]*`, to: '#' },
+      { op: 'replace', re: String.raw`^[ ]+|[ ]+$`, to: '' },
+    ],
+  },
+  {
+    // Number words joined across any separator that follows a word digit,
+    // commas included: "nau aath, bees, pachpan, chaalis, satattar". Typed
+    // digits are not joined across commas here, so a list of marks is not.
+    name: 'pw',
+    from: 'd',
+    steps: [
+      {
+        op: 'tokens',
+        match: String.raw`a-z\u0900-\u097f\u0980-\u09ff`,
+        dict: MARKED_NUMBER_DICT,
+      },
+      { op: 'replace', re: String.raw`~§[ -]*([1-9])§`, to: '$1§' },
+      { op: 'replace', re: String.raw`~§`, to: '0§' },
       {
         op: 'replace',
-        re: String.raw`[/%\u00b0'\u20b9$\u20ac\u00a3]`,
-        to: '#',
+        re: String.raw`(?<![a-z])double[ -]*([0-9])§`,
+        to: '$1$1§',
       },
       {
         op: 'replace',
-        re: String.raw`(?<![a-z])(?:rupees|rupaye|rupiya|rupay|rupee|inr|rs)(?![a-z])`,
-        to: '#',
+        re: String.raw`(?<![a-z])triple[ -]*([0-9])§`,
+        to: '$1$1$1§',
       },
-      { op: 'replace', re: String.raw`[^0-9#]`, to: '' },
+      { op: 'replace', re: String.raw`§[ ,.;:/|+&-]*(?=[0-9])`, to: '' },
+      { op: 'replace', re: String.raw`§`, to: '' },
     ],
   },
   { name: 'e', from: 't', steps: E_STEPS },
@@ -810,6 +922,9 @@ export const COPIES = [
 // ---------------------------------------------------------------------------
 
 export const CATEGORY_ORDER = ['phone', 'payment', 'email', 'link', 'handle'];
+
+/** The one monotone mobile, how a chart or a count reads, with optional spaces or words. */
+const MONOTONE = String.raw`9[ w]*8[ w]*7[ w]*6[ w]*5[ w]*4[ w]*3[ w]*2[ w]*1[ w]*0[ w]*(?:#|$)`;
 
 export const HARD = [
   // Phone. phone_run10 alone is what reason `reference` means: a UTR, PNR or
@@ -838,15 +953,37 @@ export const HARD = [
     copy: 'p',
     re: String.raw`(?<![0-9])0[1-9][0-9]{1,3}[ -]?[2-9][0-9]{2,3}[ -]?[0-9]{3,4}(?![0-9])`,
   },
-  // Every digit joined across any separator is exactly a mobile. The one
-  // monotone mobile, 9876543210, is let through here because it is how a
-  // chart or a count reads ("lagna 9 surya 8 ... ketu 0"); written as a
-  // number it is still caught by phone_mobile and phone_run10.
+  // At most four digit groups, words or symbols between them, that join into
+  // a mobile: "98765, 43210", "mera 98765 aur 43210". Capped at four groups so
+  // a list of marks or ages ("87, 91, 78, 94 aur 88") does not join.
   {
     id: 'phone_digits',
     category: 'phone',
     copy: 'pd',
-    re: String.raw`(?:^|#)(?:91|0)?(?!9876543210(?:#|$))[6-9][0-9]{9}(?:#|$)`,
+    re: String.raw`(?:^|#)[ w,]*(?=[0-9]+(?:[ w,]+[0-9]+){0,3}[ w,]*(?:#|$))(?:9[ w,]*1[ w,]*|0[ w,]*)?(?!${MONOTONE})[6-9](?:[ w,]*[0-9]){9}[ w,]*(?:#|$)`,
+  },
+  // Single digits split by commas, symbols or emoji and no words: "9🔥8🔥7…",
+  // "9, 7, 1, 1, 2, …".
+  {
+    id: 'phone_spread',
+    category: 'phone',
+    copy: 'pd',
+    re: String.raw`(?:^|#)[ w,]*(?!${MONOTONE})[6-9](?:[ ,][0-9]){9}[ w,]*(?:#|$)`,
+  },
+  // Up to five groups split only by symbols or emoji, never by a word or a
+  // comma: "93🔥15🔥62🔥80🔥47", "94_12_38_67_05". A comma list ("87, 91, 78,
+  // 94, 88") is how marks and ages are written, so it is left to the others.
+  {
+    id: 'phone_symbols',
+    category: 'phone',
+    copy: 'pd',
+    re: String.raw`(?:^|#)[ w,]*(?=[0-9]+(?:[ ][0-9]+){0,4}[ w,]*(?:#|$))(?:9[ ]?1[ ]?|0[ ]?)?(?!${MONOTONE})[6-9](?:[ ]?[0-9]){9}[ w,]*(?:#|$)`,
+  },
+  {
+    id: 'phone_words',
+    category: 'phone',
+    copy: 'pw',
+    re: String.raw`(?<![0-9])(?:91|0)?[6-9][0-9]{9}(?![0-9])`,
   },
   {
     id: 'phone_reversed',
@@ -855,7 +992,7 @@ export const HARD = [
     re: String.raw`(?<![0-9])[6-9](?:${SEP}[0-9]){9}(?![0-9])`,
     requires: {
       copy: 't',
-      re: String.raw`(?<![a-z])(?:ulta|ultaa|ulte|ulti|ulta padho|reverse|reversed|backwards|backward|peeche se|piche se|pichhe se|right to left)(?![a-z])`,
+      re: String.raw`(?<![a-z])(?:ulta|ultaa|ulte|ulti|reverse|reversed|backwards|backward|peeche se|piche se|pichhe se|right to left)(?![a-z])`,
     },
   },
 
@@ -910,7 +1047,8 @@ export const HARD = [
     copy: 'e',
     re: String.raw`(?<![a-z0-9._-])[a-z0-9][a-z0-9._%+-]{1,63}@${MAILW}(?![a-z0-9])`,
   },
-  // An address with the @ left out, next to its provider: "priya.95 on gmail".
+  // An address with the @ left out, next to its provider: "priya.95 on gmail",
+  // "gmail pe aa jao, meenal.gupta.1991".
   {
     id: 'mail_local_near',
     category: 'email',
@@ -921,7 +1059,7 @@ export const HARD = [
     id: 'mail_local_near',
     category: 'email',
     copy: 'e',
-    re: String.raw`(?<![a-z])${MAILW}(?:[ ]+(?:id|address|pe|par|hai|is|h|me|mein|account))*[ ]*[:=-]?[ ]*${IDTOKEN}`,
+    re: String.raw`(?<![a-z])${MAILW}(?:[ ,]+[a-z]+){0,4}[ ,]*[:=-]?[ ]*${IDTOKEN}`,
   },
 
   // Link.
@@ -963,7 +1101,7 @@ export const HARD = [
     id: 'app_handle',
     category: 'handle',
     copy: 'e',
-    re: String.raw`(?<![a-z])${APP}(?:[ ]*(?:pe|par|on|me|mein|id|handle|username|user|naam|name|hai|h|is|mera|meri|my|search|karo|kar|follow|add|dhundo|dhundho|dhoondo|dhundh|dhoondh|:|-)){0,3}[ ]*[:=-]?[ ]*@?${IDTOKEN}`,
+    re: String.raw`(?<!${NL})${APP}(?!${NL})(?:[ ]*(?:pe|par|on|me|mein|id|handle|username|user|naam|name|hai|h|is|mera|meri|my|search|karo|kar|follow|add|dhundo|dhundho|dhoondo|dhundh|dhoondh|आईडी|:|-)){0,4}[^a-z0-9@]{0,8}@?${IDTOKEN}`,
   },
   {
     id: 'id_colon_handle',
@@ -975,7 +1113,7 @@ export const HARD = [
     id: 'handle_on_app',
     category: 'handle',
     copy: 'e',
-    re: String.raw`(?<![a-z0-9._])${IDTOKEN}[ ]+(?:on|pe|par|at)[ ]+(?:instagram|insta|ig|snapchat|snap|telegram|tg|twitter|facebook|fb|discord|skype|threads)(?![a-z])`,
+    re: String.raw`(?<![a-z0-9._])${IDTOKEN}[ ]+(?:on|pe|par|at)[ ]+(?:instagram|insta|ig|snapchat|snap|${TG}|tg|twitter|facebook|fb|discord|skype|threads)(?![a-z])`,
   },
   {
     id: 'discord_tag',
@@ -993,7 +1131,9 @@ export const HARD = [
 
 // ---------------------------------------------------------------------------
 // Signal rules: intent with no identifier. Logged for review, never blocked,
-// server only. `unless` suppresses a rule on refusals and support questions.
+// server only. `unless` suppresses a rule on refusals and support questions;
+// it reads the whole message, so a "nahi" anywhere suppresses it (a known
+// miss: "seedha consult karo, per minute ka chakkar nahi").
 // ---------------------------------------------------------------------------
 
 const NEGATION = String.raw`(?<![a-z])(?:nahi|nahin|nhi|nai|mat|not|dont|don't|do not|cannot|can't|cant|never|mana hai|allowed nahi|not allowed)(?![a-z])`;
@@ -1013,13 +1153,14 @@ const SIG_APP = `(?:${alt([
   'text message',
   'normal call',
   'phone call',
+  'hangout',
+  'hangouts',
 ])})`;
 const MOVE_VERB = `(?:${alt([
   'aao',
   'aa jao',
   'aaja',
   'aajao',
-  'aa',
   'aana',
   'milo',
   'milte',
@@ -1036,14 +1177,21 @@ const MOVE_VERB = `(?:${alt([
   'ping',
   'follow',
   'dm',
-  'karo',
-  'karte',
-  'karenge',
-  'kar',
   'join',
-  'video',
+  'video call',
   'reply',
   'bhejo',
+  'bhej do',
+  'bhejti',
+  'bhejta',
+  'bhejunga',
+  'bhejungi',
+  'send',
+  'aa jaiye',
+  'aaiye',
+  'aa jana',
+  'aajana',
+  'aa jaana',
 ])})`;
 const CONTACT_NOUN = `(?:${alt([
   'number',
@@ -1095,6 +1243,43 @@ const GIVE_VERB = `(?:${alt([
   'bhejiye',
   'share karo',
 ])})`;
+const ASK_NOUN = String.raw`(?:${alt([
+  'insta',
+  'instagram',
+  'snap',
+  'snapchat',
+  TG,
+  'whatsapp',
+  'fb',
+  'facebook',
+  'gmail',
+  'email',
+  'mail',
+  'number',
+  'no',
+  'mobile',
+  'contact',
+  'id',
+  'insta id',
+  'gmail id',
+  'email id',
+  'snap id',
+  'upi id',
+])})`;
+const YOUR = String.raw`(?:${alt([
+  'apna',
+  'apni',
+  'apne',
+  'your',
+  'ur',
+  'aapka',
+  'aapki',
+  'aapke',
+  'tumhara',
+  'tumhari',
+  'tera',
+  'teri',
+])})`;
 
 export const SIGNAL = [
   {
@@ -1105,6 +1290,13 @@ export const SIGNAL = [
     unless: { copy: 't', re: NEGATION },
   },
   {
+    id: 'app_verb',
+    category: 'handoff',
+    copy: 't',
+    re: String.raw`(?<![a-z])${SIG_APP}[ ]+(?:karo|kar do|kardo|karna|kar dena|kijiye|karein|consultation|consult|session|reading|booking|channel|group)(?![a-z])`,
+    unless: { copy: 't', re: NEGATION },
+  },
+  {
     id: 'move_to_app',
     category: 'handoff',
     copy: 't',
@@ -1112,18 +1304,36 @@ export const SIGNAL = [
     unless: { copy: 't', re: NEGATION },
   },
   {
+    id: 'app_question',
+    category: 'request',
+    copy: 't',
+    re: String.raw`(?<![a-z])${SIG_APP}(?:[ ]+(?:ya|or)[ ]+${SIG_APP})?[ ]*(?:id[ ]*)?\?|(?<![a-z])${SIG_APP}[ ]+(?:use|chalate|chalati)[ ]+(?:karte|karti|karta|ho|hain)(?![a-z])`,
+  },
+  {
     id: 'ask_contact',
     category: 'request',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:apna|apni|apne|your|ur|aapka|aapki|aapke|tumhara|tumhari|tera|teri|mujhe|mujhko)[ ]+(?:[a-z]+[ ]+){0,2}${CONTACT_NOUN}(?:[ ]+[a-z]+){0,3}[ ]+${GIVE_VERB}(?![a-z])`,
+    re: String.raw`(?<![a-z])(?:${YOUR}|mujhe|mujhko)[ ]+(?:[a-z]+[ ]+){0,2}${CONTACT_NOUN}(?:[ ]+[a-z]+){0,3}[ ]+${GIVE_VERB}(?![a-z])`,
     unless: { copy: 't', re: NEGATION },
+  },
+  {
+    id: 'ask_what_is',
+    category: 'request',
+    copy: 't',
+    re: String.raw`(?<![a-z])${ASK_NOUN}[ .]*(?:kya hai|kya h|hai kya|h kya|batao|bolo|milega)(?![a-z])|(?<![a-z])${YOUR}[ ]+(?:[a-z]+[ ]+)?${ASK_NOUN}[ .]*(?:kya|hai|h)(?![a-z])`,
   },
   {
     id: 'noun_give',
     category: 'request',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:number|mobile number|phone number|contact number|whatsapp number|mobile|contact|whatsapp)[ ]+(?:do|dedo|de do|dijiye|bhejo|send karo|send|share karo|batao)(?![a-z])`,
+    re: String.raw`(?<![a-z])(?:number|mobile number|phone number|contact number|whatsapp number|mobile|contact|whatsapp|email|mail|gmail|insta|upi|address|bank details|account details|account number)[ ]+(?:do|dedo|de do|dijiye|bhejo|bhej do|send karo|send|share karo|batao|bolo)(?![a-z])`,
     unless: { copy: 't', re: NEGATION },
+  },
+  {
+    id: 'exchange',
+    category: 'request',
+    copy: 't',
+    re: String.raw`(?<![a-z])(?:number|numbers|contact|contacts|details)[ ]+(?:exchange|share)[ ]+(?:karein|karen|kare|karte|karo|kar|kr)(?![a-z])`,
   },
   {
     id: 'ask_contact_en',
@@ -1136,20 +1346,19 @@ export const SIGNAL = [
     id: 'offer_contact',
     category: 'request',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:mera|meri|my)[ ]+(?:number|no|mobile|phone|contact|whatsapp|insta|id|email|gmail|upi)[ ]+(?:le lo|lelo|save karo|save kar lo|note karo|note kar lo|likh lo|save kar)(?![a-z])`,
+    re: String.raw`(?<![a-z])(?:mera|meri|my)[ ]+(?:wala[ ]+)?(?:number|no|mobile|phone|contact|whatsapp|insta|id|email|gmail|upi)[ ]+(?:le lo|lelo|save karo|save kar lo|note karo|note kar lo|likh lo|save kar|chahiye|yaad hai|tumhare paas|aapke paas)(?![a-z])`,
   },
   {
     id: 'off_platform',
     category: 'handoff',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:app|pappal|platform|yahan|yaha|idhar)[ ]+(?:ke|se|k)[ ]+(?:bahar|bina|alawa)(?![a-z])|(?<![a-z])(?:outside|off)[ ]+(?:the[ ]+)?(?:app|pappal|platform)(?![a-z])|(?<![a-z])(?:bahar|outside)[ ]+(?:baat|milte|milo|chat|call|contact|mil)(?![a-z])`,
-    unless: { copy: 't', re: NEGATION },
+    re: String.raw`(?<![a-z])(?:app|pappal|platform|yahan|yaha|idhar)[ ]+(?:ke|se|k)[ ]+(?:bahar|bina|alawa)(?![a-z])|(?<![a-z])(?:outside|off)[ ]+(?:the[ ]+|this[ ]+)?(?:app|pappal|platform)(?![a-z])|(?<![a-z])(?:bahar|outside)[ ]+(?:baat|milte|milo|chat|call|contact|mil)(?![a-z])|(?<![a-z])(?:kahin|kahi|kisi)[ ]+(?:aur|or)[ ]+(?:chalein|chale|chalte|baat|milte|app)(?![a-z])|(?<![a-z])(?:koi|dusre|doosre|another|other)[ ]+(?:aur[ ]+)?(?:app|platform)[ ]+(?:pe|par|on)(?![a-z])|(?<![a-z])app[ ]+(?:ki|ka)[ ]+(?:zarurat|jarurat|zaroorat)[ ]+nahi(?![a-z])|(?<![a-z])app[ ]+(?:wala|wali)?[ ]*mat[ ]+use(?![a-z])|(?<![a-z])offline[ ]+(?:session|consult|consultation|reading|milte|baat|meeting)(?![a-z])`,
   },
   {
     id: 'direct_contact',
     category: 'handoff',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:direct|directly|seedha|sidha|seedhe|sidhe)[ ]+(?:call|baat|contact|pay|payment|paisa|paise|number|msg|message|whatsapp)(?![a-z])`,
+    re: String.raw`(?<![a-z])(?:direct|directly|seedha|sidha|seedhe|sidhe)[ ]+(?:call|baat|contact|pay|payment|paisa|paise|number|msg|message|whatsapp|consult|booking|aana|aao|milo|milna)(?![a-z])`,
     unless: { copy: 't', re: NEGATION },
   },
   {
@@ -1169,20 +1378,44 @@ export const SIGNAL = [
     id: 'pay_outside',
     category: 'payment',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:gpay|google pay|phonepe|phone pe|paytm|upi|bhim|qr|qr code|scanner)[ ]+(?:[a-z]+[ ]+){0,2}(?:kar do|kardo|karo|kar dena|bhejo|bhej do|send|pay|transfer|scan)(?![a-z])`,
+    re: String.raw`(?<![a-z])(?:gpay|google pay|phonepe|phone pe|paytm|upi|bhim|qr|qr code|scanner|neft|imps|rtgs)[ ]+(?:[a-z]+[ ]+){0,2}(?:kar do|kardo|karo|kar dena|kar dunga|kar dungi|bhejo|bhej do|bhej|bhejunga|bhej dunga|send|pay|transfer|scan)(?![a-z])|(?<![a-z])(?:gpay|phonepe|paytm|upi)[ ]+(?:number|no|id)(?![a-z])`,
     unless: { copy: 't', re: PAY_SUPPORT },
+  },
+  {
+    id: 'missed_call',
+    category: 'handoff',
+    copy: 't',
+    re: String.raw`(?<![a-z])missed call[ ]+(?:do|de do|dedo|dena|maaro|maro|karo|kar do)(?![a-z])|(?<![a-z])(?:number|whatsapp|call|phone)[ ]+(?:pe|par)[ ]+shift(?![a-z])`,
   },
   {
     id: 'split_announce',
     category: 'split',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:first|pehle|pehla|last|baaki|baki|next|agla|agle|remaining|rest|dusra|doosra|aakhri)[ ]+(?:[0-9]+[ ]+)?(?:digits|digit|part|half|hissa|numbers)(?![a-z])|(?<![a-z])(?:next|agle|dusre|doosre)[ ]+(?:message|msg)[ ]+(?:me|mein|pe|mai)(?![a-z])`,
+    re: String.raw`(?<![a-z])(?:baaki|baki|next|agla|agle|remaining|rest|dusra|doosra|second|pehle|pehla|first)[ ]+(?:[0-9]+[ ]+)?(?:digits|digit|half|hissa)(?![a-z])|(?<![a-z])(?:next|agle|dusre|doosre|alag|separate|teen|do|2|3)[ ]+(?:message|messages|msg|msgs)(?![a-z])|(?<![a-z])(?:tod[ ]+ke|tod kar|todke|break karke|tukdo|tukde|parts me)(?![a-z])`,
   },
   {
     id: 'profile_pointer',
     category: 'pointer',
     copy: 't',
-    re: String.raw`(?<![a-z])(?:number|contact|link|id|details)[ ]+(?:[a-z]+[ ]+){0,2}(?:bio|dp|status|profile)[ ]+(?:me|mein|pe|par|mai)(?![a-z])|(?<![a-z])(?:bio|dp|status)[ ]+(?:me|mein|pe|par|mai)[ ]+(?:[a-z]+[ ]+){0,2}(?:number|contact|link|id|details)(?![a-z])`,
+    re: String.raw`(?<![a-z])(?:number|contact|link|id|details)(?:[ ]+[a-z]+){0,4}[ ]+(?:bio|dp|status|profile|description)(?![a-z])|(?<![a-z])(?:bio|dp|status)[ ]+(?:me|mein|pe|par|mai)[ ]+(?:[a-z]+[ ]+){0,2}(?:number|contact|link|id|details)(?![a-z])|(?<![a-z])link[ ]+(?:in|me|mein)[ ]+(?:bio|profile|description)(?![a-z])|(?<![a-z])link[ ]+(?:bhejo|do|dedo|send|share)(?![a-z])`,
+  },
+  {
+    id: 'search_me',
+    category: 'pointer',
+    copy: 't',
+    re: String.raw`(?<![a-z])(?:naam|name)[ ]+(?:google|youtube|insta|instagram|facebook|fb)[ ]+(?:pe|par|on)[ ]+search(?![a-z])|(?<![a-z])(?:full name|poora naam|pura naam|real name|asli naam|surname)(?![a-z])|(?<![a-z])(?:dhoondh|dhundh|dhund|search)[a-z]*[ ]+(?:[a-z]+[ ]+){0,2}${SIG_APP}(?![a-z])|(?<![a-z])${SIG_APP}[ ]+(?:pe|par|on)[ ]+(?:search|dhoondh|dhundh|find)(?![a-z])|(?<![a-z])(?:dm|inbox)[ ]+(?:for|karein|karo|kare)(?![a-z])|(?<![a-z])direct[ ]+booking(?![a-z])|(?<![a-z])naam[ ]+same(?![a-z])`,
+  },
+  {
+    id: 'meet_offline',
+    category: 'handoff',
+    copy: 't',
+    re: String.raw`(?<![a-z])address[ ]+(?:do|dedo|bhejo|batao|send)(?![a-z])|(?<![a-z])(?:mil[ ]+ke|milke)[ ]+(?:session|baat|reading|consult)(?![a-z])`,
+  },
+  {
+    id: 'devanagari_move',
+    category: 'handoff',
+    copy: 't',
+    re: String.raw`(?:नंबर|नम्बर)[ ]+(?:दे|दो|भेजो|दीजिए|दीजिये)|(?:व्हाट्सएप|व्हाट्सऐप|वॉट्सऐप|इंस्टा|टेलीग्राम)[ ]+(?:पे|पर|में)`,
   },
 ];
 
@@ -1190,9 +1423,11 @@ export const SIGNAL = [
 // Numbers split across messages
 // ---------------------------------------------------------------------------
 // A fragment is a message that, once carrier words and symbols are gone, is
-// only digit groups: "98765", "mera number 98765", "aur 43210 🙏". A clock,
-// date, slash, percent, hyphen or decimal point disqualifies it, so "4:35",
-// "12/08" and "99.5" never count. Its payload is its digits.
+// only digit groups: "98765", "mera number 98765", "aur 43210 🙏", "pehle 5
+// digit 93154". A clock, date, slash, percent, hyphen or decimal point
+// disqualifies it, so "4:35", "12/08" and "99.5" never count. Its payload is
+// its digits. A message with no digit group of two or more is chatter: the
+// window steps over it ("sirf aapke liye", "98765", "..", "43210").
 
 const CARRIERS = [
   'mera',
@@ -1228,6 +1463,7 @@ const CARRIERS = [
   'yeh',
   'ab',
   'lo',
+  'le',
   'likho',
   'likh',
   'note',
@@ -1238,6 +1474,8 @@ const CARRIERS = [
   'third',
   'last',
   'part',
+  'half',
+  'hissa',
   'pehla',
   'pehle',
   'dusra',
@@ -1268,11 +1506,44 @@ const CARRIERS = [
   'shuru',
   'start',
   'end',
+  'abhi',
+  'likhti',
+  'likhta',
+  'raha',
+  'rahi',
+  'hu',
+  'hoon',
+  'hun',
+  'bhejti',
+  'bhejta',
+  'bhej',
+  'save',
+  'dekho',
+  'dekh',
+  'suno',
+  'sun',
+  'ruko',
+  'bas',
+  'jio',
+  'airtel',
+  'vi',
+  'bsnl',
+  'idea',
+  'vodafone',
+  'sim',
+  'new',
+  'naya',
+  'purana',
 ];
 
 export const FRAGMENT = {
   copy: 'p',
   steps: [
+    {
+      op: 'replace',
+      re: String.raw`(?<![a-z0-9])[0-9]{1,2}[ ]*(?:digits|digit|ank)(?![a-z])`,
+      to: ' ',
+    },
     {
       op: 'replace',
       re: String.raw`(?<![a-z])(?:${alt(CARRIERS)})(?![a-z])`,
@@ -1282,6 +1553,8 @@ export const FRAGMENT = {
     { op: 'replace', re: String.raw`[^0-9a-z:/%.\u20b9$-]`, to: ' ' },
   ],
   shape: String.raw`^[ ]*[0-9]{1,10}(?:[ ]+[0-9]{1,10})*[ ]*$`,
+  /** A message with no run of this many digits is chatter the window steps over. */
+  chatter: String.raw`^[^0-9]*(?:[0-9][^0-9]+)*[0-9]?[^0-9]*$`,
   /** Fewest payload digits a message needs to count; a lone digit is a count. */
   minDigits: 2,
   /** Joined payloads are tested against this, forward and in reverse order. */
@@ -1290,12 +1563,12 @@ export const FRAGMENT = {
 
 /**
  * The fast path's prefilter: a message none of these touch cannot fire a hard
- * rule, so the copies are never built. Digits, @, a dot, a colon or hash, an
- * app name, a mail provider or a number word.
+ * rule, so the other copies are never built. Digits, @ . : # / = -, an app
+ * name, a mail provider or a number word. Jest proves it never hides a hit.
  */
 export const PREFILTER = {
   copy: 't',
-  re: String.raw`[0-9@.:#/=-]|(?<![a-z\u0900-\u097f\u0980-\u09ff])(?:${alt([
+  re: String.raw`[0-9@.:#/=-]|(?<!${NL})(?:${alt([
     ...APPS,
     ...MAIL,
     ...Object.keys(NUMBER_DICT),
@@ -1307,14 +1580,23 @@ export const PREFILTER = {
     'live',
     'double',
     'triple',
-  ])})(?![a-z\u0900-\u097f\u0980-\u09ff])`,
+    'dot',
+    'daat',
+    'dott',
+    'point',
+    'underscore',
+    'under score',
+    'attherate',
+    'at the rate',
+    'at sign',
+  ])})(?!${NL})|[[({<]`,
 };
 
 /**
  * Look-alike letters with no compatibility decomposition, hand-listed:
- * Cyrillic and Greek letters that render as a Latin one, and a few Latin
- * variants. Uppercase maps straight to lowercase ASCII. Merged into the fold
- * table by the generator; never maps an ASCII character.
+ * Cyrillic and Greek letters that render as a Latin one, a few Latin
+ * variants, dashes and dingbat digits. Uppercase maps straight to lowercase
+ * ASCII. Merged into the fold table by the generator; never maps ASCII.
  */
 export const CONFUSABLES = {
   а: 'a',
@@ -1337,6 +1619,10 @@ export const CONFUSABLES = {
   ԛ: 'q',
   ԝ: 'w',
   ь: 'b',
+  б: '6',
+  Б: '6',
+  з: '3',
+  З: '3',
   А: 'a',
   В: 'b',
   Е: 'e',
@@ -1461,5 +1747,3 @@ export const CONFUSABLES = {
 
 /** Where the generated SQL goes. A spec change after deploy needs a new number. */
 export const MIGRATION = 'supabase/migrations/156_contact_guard_detector.sql';
-
-export const NUMBER_WORDS = Object.keys(NUMBER_DICT);

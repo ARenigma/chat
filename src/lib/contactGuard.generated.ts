@@ -13,7 +13,7 @@
  */
 
 
-export const CONTACT_GUARD_SPEC = "b1845bc559e74978b914c7f8a63fdc5843e304ff393c5231cfe19580ca5d6320";
+export const CONTACT_GUARD_SPEC = "b0130d3b8b91ef45b5d02df9ec8d7a8c634f8d15b8699ffde9fbb6b534e6f682";
 
 export type ContactCategory = "phone" | "payment" | "email" | "link" | "handle";
 
@@ -29,62 +29,81 @@ const SOURCES: ReadonlyArray<readonly [string, string]> = [
   ["^(?=[0-9oilszbgq]{6,}$)(?=(?:[a-z]*[0-9]){4})[0-9oilszbgq]+$", "u"],
   ["[0-9]", "u"],
   ["[a-z0-9]+", "gu"],
+  ["^(?=[0-9oil]*[0-9])(?=[0-9oil]*[oil])[0-9oil]{2,5}$", "u"],
   ["[a-z\\u0900-\\u097f\\u0980-\\u09ff]+", "gu"],
   ["~[ -]*([1-9])(?![0-9])", "gu"],
   ["~", "gu"],
   ["(?<![a-z])double[ -]*([0-9])", "gu"],
   ["(?<![a-z])triple[ -]*([0-9])", "gu"],
   ["(?<![a-z])plus[ ]*(?=91)", "gu"],
+  ["(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[ ]?[ ./-][ ]?(?:0?[1-9]|1[0-2])[ ]?[ ./-][ ]?(?:19|20)[0-9]{2}(?![0-9])|(?<![0-9])(?:19|20)[0-9]{2}[ ]?[./-][ ]?(?:0?[1-9]|1[0-2])[ ]?[./-][ ]?(?:0?[1-9]|[12][0-9]|3[01])(?![0-9])", "gu"],
   ["(?<![0-9])[0-9]{1,4}[ ]*[/.-][ ]*[0-9]{1,2}[ ]*[/.-][ ]*[0-9]{1,4}(?![0-9])", "gu"],
   ["(?<=[0-9])[ ]*:[ ]*(?=[0-9])", "gu"],
   ["[/%\\u00b0'\\u20b9$\\u20ac\\u00a3]", "gu"],
   ["(?<![a-z])(?:rupees|rupaye|rupiya|rupay|rupee|inr|rs)(?![a-z])", "gu"],
-  ["[^0-9#]", "gu"],
+  ["[ ]*[,;][ ,;]*", "gu"],
+  ["[^0-9#w,]+", "gu"],
+  ["[ ]*#[ ]*", "gu"],
+  ["^[ ]+|[ ]+$", "gu"],
+  ["~§[ -]*([1-9])§", "gu"],
+  ["~§", "gu"],
+  ["(?<![a-z])double[ -]*([0-9])§", "gu"],
+  ["(?<![a-z])triple[ -]*([0-9])§", "gu"],
+  ["§[ ,.;:/|+&-]*(?=[0-9])", "gu"],
+  ["§", "gu"],
   ["[ ]*[[({<][ ]*(?:at|@)[ ]*[\\])}>][ ]*", "gu"],
   ["[ ]*[[({<][ ]*(?:dot|\\.)[ ]*[\\])}>][ ]*", "gu"],
   ["[ ]*(?<![a-z])(?:at the rate of|at the rate|attherate|at-the-rate|at sign)(?![a-z])[ ]*", "gu"],
   ["(?<=[a-z0-9])[ ]+(?:at|@)[ ]+(?=(?:jupiteraxis|barodampay|freecharge|googlemail|okhdfcbank|protonmail|rediffmail|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|hotmail|okicici|outlook|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|icloud|okaxis|proton|ptaxis|pthdfc|rediff|waaxis|axisb|gmail|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|yahoo|ymail|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|live|mahb|tjsb|uboi|utbi|yapl|zoho|aol|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))", "gu"],
   ["(?<=[a-z0-9])[ ]*@[ ]*(?=(?:jupiteraxis|barodampay|freecharge|googlemail|okhdfcbank|protonmail|rediffmail|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|hotmail|okicici|outlook|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|icloud|okaxis|proton|ptaxis|pthdfc|rediff|waaxis|axisb|gmail|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|yahoo|ymail|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|live|mahb|tjsb|uboi|utbi|yapl|zoho|aol|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9])|[a-z0-9-]+\\.(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws)(?![a-z0-9]))", "gu"],
   ["(?<![a-z0-9])@[ ]+(?=[a-z0-9_])", "gu"],
+  ["(?<=[a-z0-9])[ ]*(?<![a-z])(?:underscore|under score)(?![a-z])[ ]*(?=[a-z0-9])", "gu"],
   ["[ ]*(?<![a-z])(?:dot|daat|dott|point)(?![a-z])[ ]*(?=(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws)(?![a-z0-9]))", "gu"],
-  ["(?<=[a-z0-9])[ ]*\\.[ ]*(?=(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws)(?![a-z0-9]))", "gu"],
+  ["(?<=[a-z0-9])[ ]+(?:dot|daat)[ ]+(?=[a-z0-9])", "gu"],
+  ["(?:(?<=[a-z0-9]{2})|(?<=(?:^|[^a-z0-9])(?:t|wa)))[ ]*\\.[ ]*(?=(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws)(?![a-z0-9]))", "gu"],
   ["(?<=\\.(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws))[ ]*/[ ]*(?=[a-z0-9_+])", "gu"],
   ["(?<=(?:^|[^a-z0-9])[a-z0-9]) (?=[a-z0-9](?:[^a-z0-9]|$))", "gu"],
-  ["(?<![a-z])(?:remaining|continue|contact|doosra|mobile|number|second|teesra|baaki|bacha|dusra|first|likho|madam|pehla|pehle|phone|shuru|start|third|aage|baki|bhai|cont|didi|haan|hain|karo|last|likh|mera|mere|meri|next|nmbr|note|okay|part|phir|plus|rest|then|wala|wali|and|aur|end|fir|hai|han|hmm|kar|mam|nbr|num|sir|the|yeh|ab|he|is|ji|ka|ki|lo|my|no|of|ok|ph|se|ye|h)(?![a-z])", "gu"],
+  ["(?<![a-z0-9])[0-9]{1,2}[ ]*(?:digits|digit|ank)(?![a-z])", "gu"],
+  ["(?<![a-z])(?:remaining|continue|vodafone|contact|airtel|bhejta|bhejti|doosra|likhta|likhti|mobile|number|purana|second|teesra|baaki|bacha|dekho|dusra|first|hissa|likho|madam|pehla|pehle|phone|shuru|start|third|aage|abhi|baki|bhai|bhej|bsnl|cont|dekh|didi|haan|hain|half|hoon|idea|karo|last|likh|mera|mere|meri|naya|next|nmbr|note|okay|part|phir|plus|raha|rahi|rest|ruko|save|suno|then|wala|wali|and|aur|bas|end|fir|hai|han|hmm|hun|jio|kar|mam|nbr|new|num|sim|sir|sun|the|yeh|ab|he|hu|is|ji|ka|ki|le|lo|my|no|of|ok|ph|se|vi|ye|h)(?![a-z])", "gu"],
   ["[.!?]+[ ]*$", "gu"],
   ["[^0-9a-z:/%.\\u20b9$-]", "gu"],
   ["(?:(?<![a-z0-9])[a-z]{4}0[a-z0-9]{6}(?![a-z0-9]))", "u"],
-  ["(?:(?<![0-9])(?:(?:\\+|00)[ ]*91[ .-]*|91[ .-]+|0[ .-]*)?[6-9](?:[ .()\\u20b9$\\u20ac\\u00a3-]{0,3}[0-9]){9}(?![0-9]))|(?:[0-9]{10})|(?:(?:\\+|(?<![0-9])00)[ ]*[1-9](?:[ .()-]{0,2}[0-9]){7,13}(?![0-9]))|(?:(?<![0-9])0[1-9][0-9]{1,3}[ -]?[2-9][0-9]{2,3}[ -]?[0-9]{3,4}(?![0-9]))|(?:(?<![a-z])(?:a/c|acct|account|khata|ac)(?:[ .]*(?:no|number|num|nmbr))?[ .:#-]*[0-9](?:[ -]?[0-9]){8,17}(?![0-9]))", "u"],
-  ["(?:(?:^|#)(?:91|0)?(?!9876543210(?:#|$))[6-9][0-9]{9}(?:#|$))", "u"],
-  ["(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{1,63}@(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))|(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{2,63}@(?!(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z0-9]))[a-z]{2,20}(?![a-z0-9.@]))|(?:(?<![a-z0-9._%+-])[a-z0-9][a-z0-9._%+-]{0,63}@(?!(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,24}(?![a-z0-9]))|(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._%+-]{1,63}@(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z0-9]))|(?:(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])(?:[ ]+(?:on|pe|par|ka|ki|at|wala|wali|in|hai|is|h))?[ ]+(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z]))|(?:(?<![a-z])(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?:[ ]+(?:id|address|pe|par|hai|is|h|me|mein|account))*[ ]*[:=-]?[ ]*(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_]))|(?:(?<![a-z])(?:https?|ftp)[ ]*:[ ]*/[ ]*/|(?<![a-z0-9])www[ ]*\\.[ ]*[a-z0-9])|(?:(?<![a-z0-9])(?:chat\\.whatsapp\\.com|api\\.whatsapp\\.com|join\\.skype\\.com|instagram\\.com|sharechat\\.com|facebook\\.com|linkedin\\.com|signal\\.group|snapchat\\.com|telegram\\.dog|telegram\\.org|whatsapp\\.com|discord\\.com|shorturl\\.at|telegram\\.me|threads\\.net|tinyurl\\.com|twitter\\.com|youtube\\.com|discord\\.gg|instagr\\.am|forms\\.gle|linktr\\.ee|signal\\.me|skype\\.com|snap\\.com|youtu\\.be|cutt\\.ly|lnkd\\.in|bit\\.ly|fb\\.com|goo\\.gl|fb\\.me|ig\\.me|is\\.gd|rb\\.gy|wa\\.me|x\\.com|m\\.me|t\\.co|t\\.me)(?![a-z0-9]))|(?:(?<![a-z0-9@._-])(?=[a-z0-9-]*[a-z])[a-z0-9][a-z0-9-]{1,62}(?:\\.[a-z0-9-]{2,62})*\\.(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws)(?![a-z0-9]))|(?:(?<![a-z0-9._@])@(?!(?:everyone|evening|morning|support|office|pappal|admin|night|there|ghar|here|home|noon|time|work|all)(?![a-z0-9._]))(?![0-9]{1,2}(?:[:.][0-9]{2})?(?:am|pm|baje|bje)?(?![a-z0-9_]))(?![0-9]+(?![a-z_]))[a-z0-9_](?:[a-z0-9_]|\\.(?=[a-z0-9_])){2,29}(?![a-z0-9_]))|(?:(?<![a-z])(?:clubhouse|instagram|pinterest|sharechat|facebook|linkedin|snapchat|telegram|whatsapp|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|reddit|signal|tiktok|watsap|wechat|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|tg|yt)(?:[ ]*(?:pe|par|on|me|mein|id|handle|username|user|naam|name|hai|h|is|mera|meri|my|search|karo|kar|follow|add|dhundo|dhundho|dhoondo|dhundh|dhoondh|:|-)){0,3}[ ]*[:=-]?[ ]*@?(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_]))|(?:(?<![a-z])(?<!(?:order|txn|transaction|booking|session|ticket|ref|payment|utr|upi|call|meeting|reference|tracking|customer|employee|roll|student|aadhaar|pan) )(?:(?:clubhouse|instagram|pinterest|sharechat|facebook|linkedin|snapchat|telegram|whatsapp|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|reddit|signal|tiktok|watsap|wechat|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|tg|yt)[ ]+)?(?:id|username|user name|userid|user id|handle)[ ]*[:=-][ ]*@?(?:(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])|[a-z]{6,30}(?![a-z0-9_])))|(?:(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])[ ]+(?:on|pe|par|at)[ ]+(?:instagram|insta|ig|snapchat|snap|telegram|tg|twitter|facebook|fb|discord|skype|threads)(?![a-z]))|(?:(?<![a-z0-9_.])[a-z0-9_.]{2,32}#[0-9]{4}(?![0-9]))|(?:(?<![a-z])live[ ]*:[ ]*[a-z][a-z0-9]*[._0-9][a-z0-9._-]*)", "u"],
-  ["(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{1,63}@(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))|(?:(?<![a-z0-9._%+-])[a-z0-9][a-z0-9._%+-]{0,63}@(?!(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,24}(?![a-z0-9]))|(?:(?<![a-z0-9])(?:chat\\.whatsapp\\.com|api\\.whatsapp\\.com|join\\.skype\\.com|instagram\\.com|sharechat\\.com|facebook\\.com|linkedin\\.com|signal\\.group|snapchat\\.com|telegram\\.dog|telegram\\.org|whatsapp\\.com|discord\\.com|shorturl\\.at|telegram\\.me|threads\\.net|tinyurl\\.com|twitter\\.com|youtube\\.com|discord\\.gg|instagr\\.am|forms\\.gle|linktr\\.ee|signal\\.me|skype\\.com|snap\\.com|youtu\\.be|cutt\\.ly|lnkd\\.in|bit\\.ly|fb\\.com|goo\\.gl|fb\\.me|ig\\.me|is\\.gd|rb\\.gy|wa\\.me|x\\.com|m\\.me|t\\.co|t\\.me)(?![a-z0-9]))", "u"],
-  ["[0-9@.:#/=-]|(?<![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:chauhattar|chhihattar|chhiyasath|googlemail|pachhattar|protonmail|rediffmail|chauranve|chauvalis|chhiyalis|chhiyanve|clubhouse|instagram|paintalis|pinterest|saintalis|sathattar|seventeen|sharechat|taintalis|athattar|atthavan|bahattar|chauntis|chaurasi|chausath|chawalis|chhabbis|chhappan|chhattis|chhiyasi|eighteen|facebook|fourteen|ikhattar|linkedin|nineteen|ninyanve|pachanve|pachchis|painsath|sattanve|sattavan|sattawan|snapchat|telegram|thirteen|tihattar|unhattar|username|whatsapp|adtalis|arattai|artalis|athanve|atharah|athawan|atthais|bayalis|chaalis|chabbis|chappan|chattis|chaubis|chaudah|chautis|chauvan|chauwan|discord|enimidi|fifteen|hotmail|iktalis|ikyanve|ikyavan|ikyawan|jiochat|moondru|naalugu|ombattu|onbathu|outlook|pachaas|pachasi|pachpan|paintis|pandrah|poojyam|sadsath|saintis|sataees|sattais|sattasi|seventy|shoonya|sixteen|taintis|tetalis|threads|tiranve|tirsath|tommidi|twitter|untalis|watsapp|whatsap|youtube|adsath|ainthu|arsath|athais|athara|athasi|baanve|baawan|basath|battis|bayasi|byalis|chalis|chauda|chobis|double|eighty|eleven|fourty|gyarah|handle|icloud|ikkees|iksath|ikyasi|irandu|naalku|naangu|nabbey|navasi|nawasi|ninety|paanch|pachas|pachis|pandra|proton|pujyam|reddit|rediff|satrah|sattar|shunno|shunya|shunyo|signal|thirty|tiktok|tirasi|tirpan|trepan|triple|twelve|twenty|unchas|unsath|watsap|wechat|adtis|artis|baees|banve|barah|bavan|botim|chaar|chhah|chhai|chheh|chhoy|eight|eradu|fifty|forty|gmail|gyara|ikkis|iktis|insta|moodu|moonu|mooru|naalu|nabbe|okati|ondru|paach|panch|rendu|satra|seven|sifar|sixty|skype|solah|sonne|sunna|sunya|terah|tetis|theen|three|unasi|unees|unnis|untis|yahoo|ymail|ज़ीरो|शून्य|सिक्स|सुन्य|শূন্য|aaru|aath|aidu|anju|assi|atth|bais|bara|bees|chah|char|cheh|chha|chhe|entu|ettu|ezhu|five|four|hike|http|josh|live|nine|ondu|onnu|panj|saat|saha|satt|snap|sola|teen|tees|teis|tele|tera|tinn|tran|wtsp|zero|zoho|जीरो|थ्री|नाइन|पाँच|पांच|फाइव|सेवन|পাঁচ|aat|aol|das|don|doo|dui|edu|ekk|elu|ikk|imo|kik|koo|moj|nau|nav|noy|one|six|ten|tin|two|www|चार|तीन|फोर|सात|চার|ছয়|তিন|দুই|নয়|সাত|do|ek|fb|id|ig|tg|yt|आठ|एक|एट|छः|छह|छे|टू|दो|नौ|वन|আট|এক)(?![a-z\\u0900-\\u097f\\u0980-\\u09ff])", "u"],
-  ["(?<![0-9])(?:(?:\\+|00)[ ]*91[ .-]*|91[ .-]+|0[ .-]*)?[6-9](?:[ .()\\u20b9$\\u20ac\\u00a3-]{0,3}[0-9]){9}(?![0-9])", "u"],
+  ["(?:(?<![0-9])(?:(?:\\+|00)[ ]*91[ .-]*|91[ .-]+|0[ .-]*)?[6-9](?:[ .()/\\u20b9$\\u20ac\\u00a3-]{0,3}[0-9]){9}(?![0-9]))|(?:[0-9]{10})|(?:(?:\\+|(?<![0-9])00)[ ]*[1-9](?:[ .()-]{0,2}[0-9]){7,13}(?![0-9]))|(?:(?<![0-9])0[1-9][0-9]{1,3}[ -]?[2-9][0-9]{2,3}[ -]?[0-9]{3,4}(?![0-9]))|(?:(?<![a-z])(?:a/c|acct|account|khata|ac)(?:[ .]*(?:no|number|num|nmbr))?[ .:#-]*[0-9](?:[ -]?[0-9]){8,17}(?![0-9]))", "u"],
+  ["(?:(?:^|#)[ w,]*(?=[0-9]+(?:[ w,]+[0-9]+){0,3}[ w,]*(?:#|$))(?:9[ w,]*1[ w,]*|0[ w,]*)?(?!9[ w]*8[ w]*7[ w]*6[ w]*5[ w]*4[ w]*3[ w]*2[ w]*1[ w]*0[ w]*(?:#|$))[6-9](?:[ w,]*[0-9]){9}[ w,]*(?:#|$))|(?:(?:^|#)[ w,]*(?!9[ w]*8[ w]*7[ w]*6[ w]*5[ w]*4[ w]*3[ w]*2[ w]*1[ w]*0[ w]*(?:#|$))[6-9](?:[ ,][0-9]){9}[ w,]*(?:#|$))|(?:(?:^|#)[ w,]*(?=[0-9]+(?:[ ][0-9]+){0,4}[ w,]*(?:#|$))(?:9[ ]?1[ ]?|0[ ]?)?(?!9[ w]*8[ w]*7[ w]*6[ w]*5[ w]*4[ w]*3[ w]*2[ w]*1[ w]*0[ w]*(?:#|$))[6-9](?:[ ]?[0-9]){9}[ w,]*(?:#|$))", "u"],
+  ["(?:(?<![0-9])(?:91|0)?[6-9][0-9]{9}(?![0-9]))", "u"],
+  ["(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{1,63}@(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))|(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{2,63}@(?!(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z0-9]))[a-z]{2,20}(?![a-z0-9.@]))|(?:(?<![a-z0-9._%+-])[a-z0-9][a-z0-9._%+-]{0,63}@(?!(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,24}(?![a-z0-9]))|(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._%+-]{1,63}@(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z0-9]))|(?:(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])(?:[ ]+(?:on|pe|par|ka|ki|at|wala|wali|in|hai|is|h))?[ ]+(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z]))|(?:(?<![a-z])(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?:[ ,]+[a-z]+){0,4}[ ,]*[:=-]?[ ]*(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_]))|(?:(?<![a-z])(?:https?|ftp)[ ]*:[ ]*/[ ]*/|(?<![a-z0-9])www[ ]*\\.[ ]*[a-z0-9])|(?:(?<![a-z0-9])(?:chat\\.whatsapp\\.com|api\\.whatsapp\\.com|join\\.skype\\.com|instagram\\.com|sharechat\\.com|facebook\\.com|linkedin\\.com|signal\\.group|snapchat\\.com|tele\\u0067ram\\.dog|tele\\u0067ram\\.org|whatsapp\\.com|discord\\.com|shorturl\\.at|tele\\u0067ram\\.me|threads\\.net|tinyurl\\.com|twitter\\.com|youtube\\.com|discord\\.gg|instagr\\.am|forms\\.gle|linktr\\.ee|signal\\.me|skype\\.com|snap\\.com|youtu\\.be|cutt\\.ly|lnkd\\.in|bit\\.ly|fb\\.com|goo\\.gl|fb\\.me|ig\\.me|is\\.gd|rb\\.gy|wa\\.me|x\\.com|t\\.co|t\\.me)(?![a-z0-9]))|(?:(?<![a-z0-9@._-])(?=[a-z0-9-]*[a-z])[a-z0-9][a-z0-9-]{1,62}(?:\\.[a-z0-9-]{2,62})*\\.(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws)(?![a-z0-9]))|(?:(?<![a-z0-9._@])@(?!(?:everyone|panditji|evening|morning|support|bhaiya|guruji|office|pandit|pappal|admin|madam|night|there|baba|bhai|didi|ghar|here|home|maam|noon|team|time|work|all|mam|sir|you|ji|me)(?![a-z0-9._]))(?![0-9]{1,2}(?:[:.][0-9]{2})?(?:am|pm|baje|bje)?(?![a-z0-9_]))(?![0-9]+(?![a-z_]))[a-z0-9_](?:[a-z0-9_]|\\.(?=[a-z0-9_])){2,29}(?![a-z0-9_]))|(?:(?<![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:इंस्टाग्राम|clubhouse|instagram|pinterest|sharechat|टेलीग्राम|व्हाट्सएप|व्हाट्सऐप|facebook|linkedin|snapchat|tele\\u0067ram|whatsapp|स्नैपचैट|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|वॉट्सऐप|reddit|signal|tiktok|watsap|wechat|इंस्टा|फेसबुक|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|sc|tg|yt)(?![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:[ ]*(?:pe|par|on|me|mein|id|handle|username|user|naam|name|hai|h|is|mera|meri|my|search|karo|kar|follow|add|dhundo|dhundho|dhoondo|dhundh|dhoondh|आईडी|:|-)){0,4}[^a-z0-9@]{0,8}@?(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_]))|(?:(?<![a-z])(?<!(?:order|txn|transaction|booking|session|ticket|ref|payment|utr|upi|call|meeting|reference|tracking|customer|employee|roll|student|aadhaar|pan) )(?:(?:इंस्टाग्राम|clubhouse|instagram|pinterest|sharechat|टेलीग्राम|व्हाट्सएप|व्हाट्सऐप|facebook|linkedin|snapchat|tele\\u0067ram|whatsapp|स्नैपचैट|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|वॉट्सऐप|reddit|signal|tiktok|watsap|wechat|इंस्टा|फेसबुक|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|sc|tg|yt)[ ]+)?(?:id|username|user name|userid|user id|handle)[ ]*[:=-][ ]*@?(?:(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])|[a-z]{6,30}(?![a-z0-9_])))|(?:(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])[ ]+(?:on|pe|par|at)[ ]+(?:instagram|insta|ig|snapchat|snap|tele\\u0067ram|tg|twitter|facebook|fb|discord|skype|threads)(?![a-z]))|(?:(?<![a-z0-9_.])[a-z0-9_.]{2,32}#[0-9]{4}(?![0-9]))|(?:(?<![a-z])live[ ]*:[ ]*[a-z][a-z0-9]*[._0-9][a-z0-9._-]*)", "u"],
+  ["(?:(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{1,63}@(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))|(?:(?<![a-z0-9._%+-])[a-z0-9][a-z0-9._%+-]{0,63}@(?!(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,24}(?![a-z0-9]))|(?:(?<![a-z0-9])(?:chat\\.whatsapp\\.com|api\\.whatsapp\\.com|join\\.skype\\.com|instagram\\.com|sharechat\\.com|facebook\\.com|linkedin\\.com|signal\\.group|snapchat\\.com|tele\\u0067ram\\.dog|tele\\u0067ram\\.org|whatsapp\\.com|discord\\.com|shorturl\\.at|tele\\u0067ram\\.me|threads\\.net|tinyurl\\.com|twitter\\.com|youtube\\.com|discord\\.gg|instagr\\.am|forms\\.gle|linktr\\.ee|signal\\.me|skype\\.com|snap\\.com|youtu\\.be|cutt\\.ly|lnkd\\.in|bit\\.ly|fb\\.com|goo\\.gl|fb\\.me|ig\\.me|is\\.gd|rb\\.gy|wa\\.me|x\\.com|t\\.co|t\\.me)(?![a-z0-9]))", "u"],
+  ["[0-9@.:#/=-]|(?<![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:at the rate|under score|इंस्टाग्राम|chauhattar|chhihattar|chhiyasath|googlemail|pachhattar|protonmail|rediffmail|underscore|attherate|chauranve|chauvalis|chhiyalis|chhiyanve|clubhouse|instagram|paintalis|pinterest|saintalis|sathattar|sattattar|seventeen|sharechat|taintalis|टेलीग्राम|व्हाट्सएप|व्हाट्सऐप|athattar|atthavan|bahattar|chauntis|chaurasi|chausath|chawalis|chhabbis|chhappan|chhattis|chhiyasi|eighteen|facebook|fourteen|ikhattar|linkedin|nineteen|ninyanve|pachanve|pachchis|painsath|satattar|sattanve|sattavan|sattawan|snapchat|tele\\u0067ram|thirteen|tihattar|unhattar|username|whatsapp|स्नैपचैट|adtalis|arattai|artalis|at sign|athanve|atharah|athawan|atthais|bayalis|chaalis|chabbis|chappan|chattis|chaubis|chaudah|chautis|chauvan|chauwan|discord|enimidi|fifteen|hotmail|iktalis|ikyanve|ikyavan|ikyawan|jiochat|moondru|naalugu|ombattu|onbadhu|onbathu|outlook|pachaas|pachasi|pachpan|paintis|pandrah|poojyam|sadsath|saintis|sataees|sattais|sattasi|seventy|shoonya|sixteen|taintis|tetalis|threads|tiranve|tirsath|tommidi|twitter|untalis|watsapp|whatsap|youtube|वॉट्सऐप|adsath|ainthu|arsath|athais|athara|athasi|baanve|baawan|basath|battis|bayasi|byalis|chalis|chauda|chobis|double|eighty|eleven|fourty|gyarah|handle|icloud|ikkees|iksath|ikyasi|irandu|naalku|naangu|nabbey|navasi|nawasi|ninety|paanch|pachas|pachis|pandra|proton|pujyam|reddit|rediff|satrah|sattar|shunno|shunya|shunyo|signal|thirty|tiktok|tirasi|tirpan|trepan|triple|twelve|twenty|unchas|unsath|watsap|wechat|इंस्टा|फेसबुक|adtis|artis|baees|banve|barah|bavan|botim|chaar|chhah|chhai|chheh|chhoy|eight|eradu|fifty|forty|gmail|gyara|ikkis|iktis|insta|moodu|moonu|mooru|naalu|nabbe|okati|ondru|paach|panch|point|rendu|satra|seven|sifar|sixty|skype|solah|sonne|sunna|sunya|terah|tetis|theen|three|unasi|unees|unnis|untis|yahoo|ymail|ज़ीरो|शुन्य|शून्य|सिक्स|सुन्य|শূন্য|aaru|aath|aidu|anju|assi|atth|bais|bara|bees|chah|char|cheh|chha|chhe|daat|dott|entu|ettu|ezhu|five|four|hike|http|josh|live|nine|ondu|onnu|panj|saat|saha|satt|snap|sola|teen|tees|teis|tele|tera|tinn|tran|wtsp|zero|zoho|जीरो|थ्री|नाइन|पाँच|पांच|फाइव|सेवन|পাঁচ|aat|aol|das|don|doo|dot|dui|edu|ekk|elu|ikk|imo|kik|koo|moj|nau|nav|noy|one|six|ten|tin|two|www|चार|तीन|दोन|पाच|फोर|सहा|सात|চার|ছয়|তিন|দুই|নয়|সাত|do|ek|fb|id|ig|sc|tg|yt|आठ|एक|एट|छः|छह|छे|टू|दो|नऊ|नौ|वन|আট|এক)(?![a-z\\u0900-\\u097f\\u0980-\\u09ff])|[[({<]", "u"],
+  ["(?<![0-9])(?:(?:\\+|00)[ ]*91[ .-]*|91[ .-]+|0[ .-]*)?[6-9](?:[ .()/\\u20b9$\\u20ac\\u00a3-]{0,3}[0-9]){9}(?![0-9])", "u"],
   ["[0-9]{10}", "u"],
   ["(?:\\+|(?<![0-9])00)[ ]*[1-9](?:[ .()-]{0,2}[0-9]){7,13}(?![0-9])", "u"],
   ["(?<![0-9])0[1-9][0-9]{1,3}[ -]?[2-9][0-9]{2,3}[ -]?[0-9]{3,4}(?![0-9])", "u"],
-  ["(?:^|#)(?:91|0)?(?!9876543210(?:#|$))[6-9][0-9]{9}(?:#|$)", "u"],
-  ["(?<![0-9])[6-9](?:[ .()\\u20b9$\\u20ac\\u00a3-]{0,3}[0-9]){9}(?![0-9])", "u"],
-  ["(?<![a-z])(?:ulta|ultaa|ulte|ulti|ulta padho|reverse|reversed|backwards|backward|peeche se|piche se|pichhe se|right to left)(?![a-z])", "u"],
+  ["(?:^|#)[ w,]*(?=[0-9]+(?:[ w,]+[0-9]+){0,3}[ w,]*(?:#|$))(?:9[ w,]*1[ w,]*|0[ w,]*)?(?!9[ w]*8[ w]*7[ w]*6[ w]*5[ w]*4[ w]*3[ w]*2[ w]*1[ w]*0[ w]*(?:#|$))[6-9](?:[ w,]*[0-9]){9}[ w,]*(?:#|$)", "u"],
+  ["(?:^|#)[ w,]*(?!9[ w]*8[ w]*7[ w]*6[ w]*5[ w]*4[ w]*3[ w]*2[ w]*1[ w]*0[ w]*(?:#|$))[6-9](?:[ ,][0-9]){9}[ w,]*(?:#|$)", "u"],
+  ["(?:^|#)[ w,]*(?=[0-9]+(?:[ ][0-9]+){0,4}[ w,]*(?:#|$))(?:9[ ]?1[ ]?|0[ ]?)?(?!9[ w]*8[ w]*7[ w]*6[ w]*5[ w]*4[ w]*3[ w]*2[ w]*1[ w]*0[ w]*(?:#|$))[6-9](?:[ ]?[0-9]){9}[ w,]*(?:#|$)", "u"],
+  ["(?<![0-9])(?:91|0)?[6-9][0-9]{9}(?![0-9])", "u"],
+  ["(?<![0-9])[6-9](?:[ .()/\\u20b9$\\u20ac\\u00a3-]{0,3}[0-9]){9}(?![0-9])", "u"],
+  ["(?<![a-z])(?:ulta|ultaa|ulte|ulti|reverse|reversed|backwards|backward|peeche se|piche se|pichhe se|right to left)(?![a-z])", "u"],
   ["(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{1,63}@(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9])", "u"],
   ["(?<![a-z0-9])[a-z]{4}0[a-z0-9]{6}(?![a-z0-9])", "u"],
   ["(?<![a-z])(?:a/c|acct|account|khata|ac)(?:[ .]*(?:no|number|num|nmbr))?[ .:#-]*[0-9](?:[ -]?[0-9]){8,17}(?![0-9])", "u"],
   ["(?<![a-z0-9._-])[a-z0-9][a-z0-9._-]{2,63}@(?!(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z0-9]))[a-z]{2,20}(?![a-z0-9.@])", "u"],
   ["(?<![a-z0-9._%+-])[a-z0-9][a-z0-9._%+-]{0,63}@(?!(?:jupiteraxis|barodampay|freecharge|okhdfcbank|timecosmos|wahdfcbank|yesbankltd|amazonpay|idfcfirst|niyoicici|okbizaxis|unionbank|axisbank|hdfcbank|idfcbank|naviaxis|superyes|tapicici|abfspay|allbank|equitas|federal|okicici|phonepe|pingpay|waicici|yesbank|yescred|airtel|aubank|okaxis|ptaxis|pthdfc|waaxis|axisb|icici|ikwik|indus|kotak|oksbi|paytm|ptsbi|ptyes|wasbi|andb|apay|bhim|citi|cnrb|gpay|hsbc|kmbl|mahb|tjsb|uboi|utbi|yapl|apl|axl|boi|dbs|dlb|fbl|ibl|jio|kbl|kvb|pnb|rbl|sbi|sib|slc|upi|ybl)(?![a-z0-9]))[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,24}(?![a-z0-9])", "u"],
   ["(?<![a-z0-9._-])[a-z0-9][a-z0-9._%+-]{1,63}@(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z0-9])", "u"],
-  ["(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])(?:[ ]+(?:on|pe|par|ka|ki|at|wala|wali|in|hai|is|h))?[ ]+(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z])", "u"],
-  ["(?<![a-z])(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?:[ ]+(?:id|address|pe|par|hai|is|h|me|mein|account))*[ ]*[:=-]?[ ]*(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])", "u"],
+  ["(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])(?:[ ]+(?:on|pe|par|ka|ki|at|wala|wali|in|hai|is|h))?[ ]+(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?![a-z])", "u"],
+  ["(?<![a-z])(?:googlemail|protonmail|rediffmail|hotmail|outlook|icloud|proton|rediff|gmail|yahoo|ymail|live|zoho|aol)(?:[ ,]+[a-z]+){0,4}[ ,]*[:=-]?[ ]*(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])", "u"],
   ["(?<![a-z])(?:https?|ftp)[ ]*:[ ]*/[ ]*/|(?<![a-z0-9])www[ ]*\\.[ ]*[a-z0-9]", "u"],
-  ["(?<![a-z0-9])(?:chat\\.whatsapp\\.com|api\\.whatsapp\\.com|join\\.skype\\.com|instagram\\.com|sharechat\\.com|facebook\\.com|linkedin\\.com|signal\\.group|snapchat\\.com|telegram\\.dog|telegram\\.org|whatsapp\\.com|discord\\.com|shorturl\\.at|telegram\\.me|threads\\.net|tinyurl\\.com|twitter\\.com|youtube\\.com|discord\\.gg|instagr\\.am|forms\\.gle|linktr\\.ee|signal\\.me|skype\\.com|snap\\.com|youtu\\.be|cutt\\.ly|lnkd\\.in|bit\\.ly|fb\\.com|goo\\.gl|fb\\.me|ig\\.me|is\\.gd|rb\\.gy|wa\\.me|x\\.com|m\\.me|t\\.co|t\\.me)(?![a-z0-9])", "u"],
+  ["(?<![a-z0-9])(?:chat\\.whatsapp\\.com|api\\.whatsapp\\.com|join\\.skype\\.com|instagram\\.com|sharechat\\.com|facebook\\.com|linkedin\\.com|signal\\.group|snapchat\\.com|tele\\u0067ram\\.dog|tele\\u0067ram\\.org|whatsapp\\.com|discord\\.com|shorturl\\.at|tele\\u0067ram\\.me|threads\\.net|tinyurl\\.com|twitter\\.com|youtube\\.com|discord\\.gg|instagr\\.am|forms\\.gle|linktr\\.ee|signal\\.me|skype\\.com|snap\\.com|youtu\\.be|cutt\\.ly|lnkd\\.in|bit\\.ly|fb\\.com|goo\\.gl|fb\\.me|ig\\.me|is\\.gd|rb\\.gy|wa\\.me|x\\.com|t\\.co|t\\.me)(?![a-z0-9])", "u"],
   ["(?<![a-z0-9@._-])(?=[a-z0-9-]*[a-z])[a-z0-9][a-z0-9-]{1,62}(?:\\.[a-z0-9-]{2,62})*\\.(?:astrology|services|academy|digital|network|website|online|social|studio|cloud|email|media|space|store|today|world|blog|care|chat|club|guru|help|host|info|life|link|live|love|news|page|shop|site|tech|yoga|app|art|bio|biz|com|dev|fun|gle|ink|net|one|org|pro|top|vip|xyz|ai|am|be|cc|ee|gd|gg|in|io|ly|me|to|tv|uk|us|ws)(?![a-z0-9])", "u"],
-  ["(?<![a-z0-9._@])@(?!(?:everyone|evening|morning|support|office|pappal|admin|night|there|ghar|here|home|noon|time|work|all)(?![a-z0-9._]))(?![0-9]{1,2}(?:[:.][0-9]{2})?(?:am|pm|baje|bje)?(?![a-z0-9_]))(?![0-9]+(?![a-z_]))[a-z0-9_](?:[a-z0-9_]|\\.(?=[a-z0-9_])){2,29}(?![a-z0-9_])", "u"],
-  ["(?<![a-z])(?:clubhouse|instagram|pinterest|sharechat|facebook|linkedin|snapchat|telegram|whatsapp|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|reddit|signal|tiktok|watsap|wechat|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|tg|yt)(?:[ ]*(?:pe|par|on|me|mein|id|handle|username|user|naam|name|hai|h|is|mera|meri|my|search|karo|kar|follow|add|dhundo|dhundho|dhoondo|dhundh|dhoondh|:|-)){0,3}[ ]*[:=-]?[ ]*@?(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])", "u"],
-  ["(?<![a-z])(?<!(?:order|txn|transaction|booking|session|ticket|ref|payment|utr|upi|call|meeting|reference|tracking|customer|employee|roll|student|aadhaar|pan) )(?:(?:clubhouse|instagram|pinterest|sharechat|facebook|linkedin|snapchat|telegram|whatsapp|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|reddit|signal|tiktok|watsap|wechat|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|tg|yt)[ ]+)?(?:id|username|user name|userid|user id|handle)[ ]*[:=-][ ]*@?(?:(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])|[a-z]{6,30}(?![a-z0-9_]))", "u"],
-  ["(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z0-9_][a-z0-9_.]{3,29}(?![a-z0-9_])[ ]+(?:on|pe|par|at)[ ]+(?:instagram|insta|ig|snapchat|snap|telegram|tg|twitter|facebook|fb|discord|skype|threads)(?![a-z])", "u"],
+  ["(?<![a-z0-9._@])@(?!(?:everyone|panditji|evening|morning|support|bhaiya|guruji|office|pandit|pappal|admin|madam|night|there|baba|bhai|didi|ghar|here|home|maam|noon|team|time|work|all|mam|sir|you|ji|me)(?![a-z0-9._]))(?![0-9]{1,2}(?:[:.][0-9]{2})?(?:am|pm|baje|bje)?(?![a-z0-9_]))(?![0-9]+(?![a-z_]))[a-z0-9_](?:[a-z0-9_]|\\.(?=[a-z0-9_])){2,29}(?![a-z0-9_])", "u"],
+  ["(?<![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:इंस्टाग्राम|clubhouse|instagram|pinterest|sharechat|टेलीग्राम|व्हाट्सएप|व्हाट्सऐप|facebook|linkedin|snapchat|tele\\u0067ram|whatsapp|स्नैपचैट|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|वॉट्सऐप|reddit|signal|tiktok|watsap|wechat|इंस्टा|फेसबुक|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|sc|tg|yt)(?![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:[ ]*(?:pe|par|on|me|mein|id|handle|username|user|naam|name|hai|h|is|mera|meri|my|search|karo|kar|follow|add|dhundo|dhundho|dhoondo|dhundh|dhoondh|आईडी|:|-)){0,4}[^a-z0-9@]{0,8}@?(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])", "u"],
+  ["(?<![a-z])(?<!(?:order|txn|transaction|booking|session|ticket|ref|payment|utr|upi|call|meeting|reference|tracking|customer|employee|roll|student|aadhaar|pan) )(?:(?:इंस्टाग्राम|clubhouse|instagram|pinterest|sharechat|टेलीग्राम|व्हाट्सएप|व्हाट्सऐप|facebook|linkedin|snapchat|tele\\u0067ram|whatsapp|स्नैपचैट|arattai|discord|jiochat|threads|twitter|watsapp|whatsap|youtube|वॉट्सऐप|reddit|signal|tiktok|watsap|wechat|इंस्टा|फेसबुक|botim|insta|skype|hike|josh|snap|tele|wtsp|imo|kik|koo|moj|fb|ig|sc|tg|yt)[ ]+)?(?:id|username|user name|userid|user id|handle)[ ]*[:=-][ ]*@?(?:(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])|[a-z]{6,30}(?![a-z0-9_]))", "u"],
+  ["(?<![a-z0-9._])(?=[a-z0-9_.]*[a-z])(?=[a-z0-9_.]*[0-9_.])[a-z_][a-z0-9_.]{3,29}(?![a-z0-9_])[ ]+(?:on|pe|par|at)[ ]+(?:instagram|insta|ig|snapchat|snap|tele\\u0067ram|tg|twitter|facebook|fb|discord|skype|threads)(?![a-z])", "u"],
   ["(?<![a-z0-9_.])[a-z0-9_.]{2,32}#[0-9]{4}(?![0-9])", "u"],
   ["(?<![a-z])live[ ]*:[ ]*[a-z][a-z0-9]*[._0-9][a-z0-9._-]*", "u"],
   ["^[ ]*[0-9]{1,10}(?:[ ]+[0-9]{1,10})*[ ]*$", "u"],
   ["^(?:91|0)?[6-9][0-9]{9}$", "u"],
+  ["^[^0-9]*(?:[0-9][^0-9]+)*[0-9]?[^0-9]*$", "u"],
   ["[^0-9]", "gu"],
 ];
 
@@ -119,8 +138,8 @@ function re(i: number): RegExp {
   return R[i] as RegExp;
 }
 
-const FOLD_FROM = "ª²³·¹ºÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝàáâãäåçèéêëìíîïñòóôõöùúûüýÿĀāĂăĄąĆćĈĉĊċČčĎďĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĨĩĪīĬĭĮįİıĴĵĶķĹĺĻļĽľŃńŅņŇňŌōŎŏŐőŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſƠơƯưǍǎǏǐǑǒǓǔǕǖǗǘǙǚǛǜǞǟǠǡǦǧǨǩǪǫǬǭǰǴǵǸǹǺǻȀȁȂȃȄȅȆȇȈȉȊȋȌȍȎȏȐȑȒȓȔȕȖȗȘșȚțȞȟȦȧȨȩȪȫȬȭȮȯȰȱȲȳɑɡɢɩɪɴʀʏʙʜʟʰʲʳʷʸˡˢˣΑΒΕΖΗΙΚΜΝΟΡΤΥΧαβεικνορτυχωЅІЈАВЕКМНОРСТУХЬавекмнорстухьёѕіїјԛԝսօ٠١٢٣٤٥٦٧٨٩٫۰۱۲۳۴۵۶۷۸۹߀߁߂߃߄߅߆߇߈߉०१२३४५६७८९০১২৩৪৫৬৭৮৯੦੧੨੩੪੫੬੭੮੯૦૧૨૩૪૫૬૭૮૯୦୧୨୩୪୫୬୭୮୯௦௧௨௩௪௫௬௭௮௯౦౧౨౩౪౫౬౭౮౯೦೧೨೩೪೫೬೭೮೯൦൧൨൩൪൫൬൭൮൯෦෧෨෩෪෫෬෭෮෯๐๑๒๓๔๕๖๗๘๙໐໑໒໓໔໕໖໗໘໙༠༡༢༣༤༥༦༧༨༩၀၁၂၃၄၅၆၇၈၉႐႑႒႓႔႕႖႗႘႙០១២៣៤៥៦៧៨៩᠐᠑᠒᠓᠔᠕᠖᠗᠘᠙᥆᥇᥈᥉᥊᥋᥌᥍᥎᥏᧐᧑᧒᧓᧔᧕᧖᧗᧘᧙᪀᪁᪂᪃᪄᪅᪆᪇᪈᪉᪐᪑᪒᪓᪔᪕᪖᪗᪘᪙᭐᭑᭒᭓᭔᭕᭖᭗᭘᭙᮰᮱᮲᮳᮴᮵᮶᮷᮸᮹᱀᱁᱂᱃᱄᱅᱆᱇᱈᱉᱐᱑᱒᱓᱔᱕᱖᱗᱘᱙ᴀᴄᴅᴇᴊᴋᴍᴏᴘᴛᴜᴠᴡᴢᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵀᵁᵂᵃᵇᵈᵉᵍᵏᵐᵒᵖᵗᵘᵛᵢᵣᵤᵥᶜᶠᶻḀḁḂḃḄḅḆḇḈḉḊḋḌḍḎḏḐḑḒḓḔḕḖḗḘḙḚḛḜḝḞḟḠḡḢḣḤḥḦḧḨḩḪḫḬḭḮḯḰḱḲḳḴḵḶḷḸḹḺḻḼḽḾḿṀṁṂṃṄṅṆṇṈṉṊṋṌṍṎṏṐṑṒṓṔṕṖṗṘṙṚṛṜṝṞṟṠṡṢṣṤṥṦṧṨṩṪṫṬṭṮṯṰṱṲṳṴṵṶṷṸṹṺṻṼṽṾṿẀẁẂẃẄẅẆẇẈẉẊẋẌẍẎẏẐẑẒẓẔẕẖẗẘẙẛẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ‐‑‒–—―•․⁰ⁱ⁴⁵⁶⁷⁸⁹⁺ⁿ₀₁₂₃₄₅₆₇₈₉₊ₐₑₒₓₕₖₗₘₙₚₛₜℂℊℋℌℍℎℐℑℒℓℕℙℚℛℜℝℤℨKÅℬℭℯℰℱℳℴℹⅅⅆⅇⅈⅉⅠⅤⅩⅬⅭⅮⅯⅰⅴⅹⅼⅽⅾⅿ−①②③④⑤⑥⑦⑧⑨ⒶⒷⒸⒹⒺⒻⒼⒽⒾⒿⓀⓁⓂⓃⓄⓅⓆⓇⓈⓉⓊⓋⓌⓍⓎⓏⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ⓪⓵⓶⓷⓸⓹⓺⓻⓼⓽⓿❶❷❸❹❺❻❼❽❾➀➁➂➃➄➅➆➇➈➊➋➌➍➎➏➐➑➒ⱼⱽ。꘠꘡꘢꘣꘤꘥꘦꘧꘨꘩ꜱ꟱ꟲꟳꟴ꣐꣑꣒꣓꣔꣕꣖꣗꣘꣙꤀꤁꤂꤃꤄꤅꤆꤇꤈꤉꧐꧑꧒꧓꧔꧕꧖꧗꧘꧙꧰꧱꧲꧳꧴꧵꧶꧷꧸꧹꩐꩑꩒꩓꩔꩕꩖꩗꩘꩙꯰꯱꯲꯳꯴꯵꯶꯷꯸꯹﬩︓︳︴﹍﹎﹏﹒﹕﹟﹢﹣﹫＃＋－．／０１２３４５６７８９：＠ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ＿ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ｡𐒠𐒡𐒢𐒣𐒤𐒥𐒦𐒧𐒨𐒩𐞥𐴰𐴱𐴲𐴳𐴴𐴵𐴶𐴷𐴸𐴹𐵀𐵁𐵂𐵃𐵄𐵅𐵆𐵇𐵈𐵉𑁦𑁧𑁨𑁩𑁪𑁫𑁬𑁭𑁮𑁯𑃰𑃱𑃲𑃳𑃴𑃵𑃶𑃷𑃸𑃹𑄶𑄷𑄸𑄹𑄺𑄻𑄼𑄽𑄾𑄿𑇐𑇑𑇒𑇓𑇔𑇕𑇖𑇗𑇘𑇙𑋰𑋱𑋲𑋳𑋴𑋵𑋶𑋷𑋸𑋹𑑐𑑑𑑒𑑓𑑔𑑕𑑖𑑗𑑘𑑙𑓐𑓑𑓒𑓓𑓔𑓕𑓖𑓗𑓘𑓙𑙐𑙑𑙒𑙓𑙔𑙕𑙖𑙗𑙘𑙙𑛀𑛁𑛂𑛃𑛄𑛅𑛆𑛇𑛈𑛉𑛐𑛑𑛒𑛓𑛔𑛕𑛖𑛗𑛘𑛙𑛚𑛛𑛜𑛝𑛞𑛟𑛠𑛡𑛢𑛣𑜰𑜱𑜲𑜳𑜴𑜵𑜶𑜷𑜸𑜹𑣠𑣡𑣢𑣣𑣤𑣥𑣦𑣧𑣨𑣩𑥐𑥑𑥒𑥓𑥔𑥕𑥖𑥗𑥘𑥙𑯰𑯱𑯲𑯳𑯴𑯵𑯶𑯷𑯸𑯹𑱐𑱑𑱒𑱓𑱔𑱕𑱖𑱗𑱘𑱙𑵐𑵑𑵒𑵓𑵔𑵕𑵖𑵗𑵘𑵙𑶠𑶡𑶢𑶣𑶤𑶥𑶦𑶧𑶨𑶩𑷠𑷡𑷢𑷣𑷤𑷥𑷦𑷧𑷨𑷩𑽐𑽑𑽒𑽓𑽔𑽕𑽖𑽗𑽘𑽙𖄰𖄱𖄲𖄳𖄴𖄵𖄶𖄷𖄸𖄹𖩠𖩡𖩢𖩣𖩤𖩥𖩦𖩧𖩨𖩩𖫀𖫁𖫂𖫃𖫄𖫅𖫆𖫇𖫈𖫉𖭐𖭑𖭒𖭓𖭔𖭕𖭖𖭗𖭘𖭙𖵰𖵱𖵲𖵳𖵴𖵵𖵶𖵷𖵸𖵹𜳖𜳗𜳘𜳙𜳚𜳛𜳜𜳝𜳞𜳟𜳠𜳡𜳢𜳣𜳤𜳥𜳦𜳧𜳨𜳩𜳪𜳫𜳬𜳭𜳮𜳯𜳰𜳱𜳲𜳳𜳴𜳵𜳶𜳷𜳸𜳹𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳𝐴𝐵𝐶𝐷𝐸𝐹𝐺𝐻𝐼𝐽𝐾𝐿𝑀𝑁𝑂𝑃𝑄𝑅𝑆𝑇𝑈𝑉𝑊𝑋𝑌𝑍𝑎𝑏𝑐𝑑𝑒𝑓𝑔𝑖𝑗𝑘𝑙𝑚𝑛𝑜𝑝𝑞𝑟𝑠𝑡𝑢𝑣𝑤𝑥𝑦𝑧𝑨𝑩𝑪𝑫𝑬𝑭𝑮𝑯𝑰𝑱𝑲𝑳𝑴𝑵𝑶𝑷𝑸𝑹𝑺𝑻𝑼𝑽𝑾𝑿𝒀𝒁𝒂𝒃𝒄𝒅𝒆𝒇𝒈𝒉𝒊𝒋𝒌𝒍𝒎𝒏𝒐𝒑𝒒𝒓𝒔𝒕𝒖𝒗𝒘𝒙𝒚𝒛𝒜𝒞𝒟𝒢𝒥𝒦𝒩𝒪𝒫𝒬𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹𝒻𝒽𝒾𝒿𝓀𝓁𝓂𝓃𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏𝓐𝓑𝓒𝓓𝓔𝓕𝓖𝓗𝓘𝓙𝓚𝓛𝓜𝓝𝓞𝓟𝓠𝓡𝓢𝓣𝓤𝓥𝓦𝓧𝓨𝓩𝓪𝓫𝓬𝓭𝓮𝓯𝓰𝓱𝓲𝓳𝓴𝓵𝓶𝓷𝓸𝓹𝓺𝓻𝓼𝓽𝓾𝓿𝔀𝔁𝔂𝔃𝔄𝔅𝔇𝔈𝔉𝔊𝔍𝔎𝔏𝔐𝔑𝔒𝔓𝔔𝔖𝔗𝔘𝔙𝔚𝔛𝔜𝔞𝔟𝔠𝔡𝔢𝔣𝔤𝔥𝔦𝔧𝔨𝔩𝔪𝔫𝔬𝔭𝔮𝔯𝔰𝔱𝔲𝔳𝔴𝔵𝔶𝔷𝔸𝔹𝔻𝔼𝔽𝔾𝕀𝕁𝕂𝕃𝕄𝕆𝕊𝕋𝕌𝕍𝕎𝕏𝕐𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫𝕬𝕭𝕮𝕯𝕰𝕱𝕲𝕳𝕴𝕵𝕶𝕷𝕸𝕹𝕺𝕻𝕼𝕽𝕾𝕿𝖀𝖁𝖂𝖃𝖄𝖅𝖆𝖇𝖈𝖉𝖊𝖋𝖌𝖍𝖎𝖏𝖐𝖑𝖒𝖓𝖔𝖕𝖖𝖗𝖘𝖙𝖚𝖛𝖜𝖝𝖞𝖟𝖠𝖡𝖢𝖣𝖤𝖥𝖦𝖧𝖨𝖩𝖪𝖫𝖬𝖭𝖮𝖯𝖰𝖱𝖲𝖳𝖴𝖵𝖶𝖷𝖸𝖹𝖺𝖻𝖼𝖽𝖾𝖿𝗀𝗁𝗂𝗃𝗄𝗅𝗆𝗇𝗈𝗉𝗊𝗋𝗌𝗍𝗎𝗏𝗐𝗑𝗒𝗓𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝘠𝘡𝘢𝘣𝘤𝘥𝘦𝘧𝘨𝘩𝘪𝘫𝘬𝘭𝘮𝘯𝘰𝘱𝘲𝘳𝘴𝘵𝘶𝘷𝘸𝘹𝘺𝘻𝘼𝘽𝘾𝘿𝙀𝙁𝙂𝙃𝙄𝙅𝙆𝙇𝙈𝙉𝙊𝙋𝙌𝙍𝙎𝙏𝙐𝙑𝙒𝙓𝙔𝙕𝙖𝙗𝙘𝙙𝙚𝙛𝙜𝙝𝙞𝙟𝙠𝙡𝙢𝙣𝙤𝙥𝙦𝙧𝙨𝙩𝙪𝙫𝙬𝙭𝙮𝙯𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡𝟢𝟣𝟤𝟥𝟦𝟧𝟨𝟩𝟪𝟫𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿𞅀𞅁𞅂𞅃𞅄𞅅𞅆𞅇𞅈𞅉𞋰𞋱𞋲𞋳𞋴𞋵𞋶𞋷𞋸𞋹𞓰𞓱𞓲𞓳𞓴𞓵𞓶𞓷𞓸𞓹𞗱𞗲𞗳𞗴𞗵𞗶𞗷𞗸𞗹𞗺𞥐𞥑𞥒𞥓𞥔𞥕𞥖𞥗𞥘𞥙🄫🄬🄰🄱🄲🄳🄴🄵🄶🄷🄸🄹🄺🄻🄼🄽🄾🄿🅀🅁🅂🅃🅄🅅🅆🅇🅈🅉🯰🯱🯲🯳🯴🯵🯶🯷🯸🯹";
-const FOLD_TO = "a23.1oaaaaaaceeeeiiiinooooouuuuyaaaaaaceeeeiiiinooooouuuuyyaaaaaaccccccccddeeeeeeeeeegggggggghhiiiiiiiiiijjkkllllllnnnnnnoooooorrrrrrssssssssttttuuuuuuuuuuuuwwyyyzzzzzzsoouuaaiioouuuuuuuuuuaaaaggkkoooojggnnaaaaaaeeeeiiiioooorrrruuuusstthhaaeeooooooooyyaggiinrybhlhjrwylsxabezhikmnoptyxabeikvoptuxwsijabekmhopctyxbabekmhopctyxbesiijqwuo0123456789.012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789acdejkmoptuvwzabdeghijklmnoprtuwabdegkmoptuviruvcfzaabbbbbbccddddddddddeeeeeeeeeeffgghhhhhhhhhhiiiikkkkkkllllllllmmmmmmnnnnnnnnoooooooopppprrrrrrrrssssssssssttttttttuuuuuuuuuuvvvvwwwwwwwwwwxxxxyyzzzzzzhtwysaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeiiiioooooooooooooooooooooooouuuuuuuuuuuuuuyyyyyyyy------..0i456789+n0123456789+aeoxhklmnpstcghhhhiillnpqrrrzzkabceefmoiddeijivxlcdmivxlcdm-123456789abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz01234567890123456789123456789123456789jv.0123456789sscfq012345678901234567890123456789012345678901234567890123456789+:_____.:#+-@#+-./0123456789:@abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz.0123456789q012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefgijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzacdgjknopqstuvwxyzabcdfhijklmnpqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabdefgjklmnopqstuvwxyabcdefghijklmnopqrstuvwxyzabdefgijklmostuvwxyabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789crabcdefghijklmnopqrstuvwxyz0123456789";
+const FOLD_FROM = "ª²³·¹ºÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝàáâãäåçèéêëìíîïñòóôõöùúûüýÿĀāĂăĄąĆćĈĉĊċČčĎďĒēĔĕĖėĘęĚěĜĝĞğĠġĢģĤĥĨĩĪīĬĭĮįİıĴĵĶķĹĺĻļĽľŃńŅņŇňŌōŎŏŐőŔŕŖŗŘřŚśŜŝŞşŠšŢţŤťŨũŪūŬŭŮůŰűŲųŴŵŶŷŸŹźŻżŽžſƠơƯưǍǎǏǐǑǒǓǔǕǖǗǘǙǚǛǜǞǟǠǡǦǧǨǩǪǫǬǭǰǴǵǸǹǺǻȀȁȂȃȄȅȆȇȈȉȊȋȌȍȎȏȐȑȒȓȔȕȖȗȘșȚțȞȟȦȧȨȩȪȫȬȭȮȯȰȱȲȳɑɡɢɩɪɴʀʏʙʜʟʰʲʳʷʸˡˢˣΑΒΕΖΗΙΚΜΝΟΡΤΥΧαβεικνορτυχωЅІЈАБВЕЗКМНОРСТУХЬабвезкмнорстухьёѕіїјԛԝսօ٠١٢٣٤٥٦٧٨٩٫۰۱۲۳۴۵۶۷۸۹߀߁߂߃߄߅߆߇߈߉०१२३४५६७८९০১২৩৪৫৬৭৮৯੦੧੨੩੪੫੬੭੮੯૦૧૨૩૪૫૬૭૮૯୦୧୨୩୪୫୬୭୮୯௦௧௨௩௪௫௬௭௮௯౦౧౨౩౪౫౬౭౮౯೦೧೨೩೪೫೬೭೮೯൦൧൨൩൪൫൬൭൮൯෦෧෨෩෪෫෬෭෮෯๐๑๒๓๔๕๖๗๘๙໐໑໒໓໔໕໖໗໘໙༠༡༢༣༤༥༦༧༨༩၀၁၂၃၄၅၆၇၈၉႐႑႒႓႔႕႖႗႘႙០១២៣៤៥៦៧៨៩᠐᠑᠒᠓᠔᠕᠖᠗᠘᠙᥆᥇᥈᥉᥊᥋᥌᥍᥎᥏᧐᧑᧒᧓᧔᧕᧖᧗᧘᧙᪀᪁᪂᪃᪄᪅᪆᪇᪈᪉᪐᪑᪒᪓᪔᪕᪖᪗᪘᪙᭐᭑᭒᭓᭔᭕᭖᭗᭘᭙᮰᮱᮲᮳᮴᮵᮶᮷᮸᮹᱀᱁᱂᱃᱄᱅᱆᱇᱈᱉᱐᱑᱒᱓᱔᱕᱖᱗᱘᱙ᴀᴄᴅᴇᴊᴋᴍᴏᴘᴛᴜᴠᴡᴢᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵀᵁᵂᵃᵇᵈᵉᵍᵏᵐᵒᵖᵗᵘᵛᵢᵣᵤᵥᶜᶠᶻḀḁḂḃḄḅḆḇḈḉḊḋḌḍḎḏḐḑḒḓḔḕḖḗḘḙḚḛḜḝḞḟḠḡḢḣḤḥḦḧḨḩḪḫḬḭḮḯḰḱḲḳḴḵḶḷḸḹḺḻḼḽḾḿṀṁṂṃṄṅṆṇṈṉṊṋṌṍṎṏṐṑṒṓṔṕṖṗṘṙṚṛṜṝṞṟṠṡṢṣṤṥṦṧṨṩṪṫṬṭṮṯṰṱṲṳṴṵṶṷṸṹṺṻṼṽṾṿẀẁẂẃẄẅẆẇẈẉẊẋẌẍẎẏẐẑẒẓẔẕẖẗẘẙẛẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ‐‑‒–—―•․⁰ⁱ⁴⁵⁶⁷⁸⁹⁺ⁿ₀₁₂₃₄₅₆₇₈₉₊ₐₑₒₓₕₖₗₘₙₚₛₜℂℊℋℌℍℎℐℑℒℓℕℙℚℛℜℝℤℨKÅℬℭℯℰℱℳℴℹⅅⅆⅇⅈⅉⅠⅤⅩⅬⅭⅮⅯⅰⅴⅹⅼⅽⅾⅿ−①②③④⑤⑥⑦⑧⑨ⒶⒷⒸⒹⒺⒻⒼⒽⒾⒿⓀⓁⓂⓃⓄⓅⓆⓇⓈⓉⓊⓋⓌⓍⓎⓏⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ⓪⓵⓶⓷⓸⓹⓺⓻⓼⓽⓿❶❷❸❹❺❻❼❽❾➀➁➂➃➄➅➆➇➈➊➋➌➍➎➏➐➑➒ⱼⱽ。꘠꘡꘢꘣꘤꘥꘦꘧꘨꘩ꜱ꟱ꟲꟳꟴ꣐꣑꣒꣓꣔꣕꣖꣗꣘꣙꤀꤁꤂꤃꤄꤅꤆꤇꤈꤉꧐꧑꧒꧓꧔꧕꧖꧗꧘꧙꧰꧱꧲꧳꧴꧵꧶꧷꧸꧹꩐꩑꩒꩓꩔꩕꩖꩗꩘꩙꯰꯱꯲꯳꯴꯵꯶꯷꯸꯹﬩︓︳︴﹍﹎﹏﹒﹕﹟﹢﹣﹫＃＋－．／０１２３４５６７８９：＠ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ＿ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ｡𐒠𐒡𐒢𐒣𐒤𐒥𐒦𐒧𐒨𐒩𐞥𐴰𐴱𐴲𐴳𐴴𐴵𐴶𐴷𐴸𐴹𐵀𐵁𐵂𐵃𐵄𐵅𐵆𐵇𐵈𐵉𑁦𑁧𑁨𑁩𑁪𑁫𑁬𑁭𑁮𑁯𑃰𑃱𑃲𑃳𑃴𑃵𑃶𑃷𑃸𑃹𑄶𑄷𑄸𑄹𑄺𑄻𑄼𑄽𑄾𑄿𑇐𑇑𑇒𑇓𑇔𑇕𑇖𑇗𑇘𑇙𑋰𑋱𑋲𑋳𑋴𑋵𑋶𑋷𑋸𑋹𑑐𑑑𑑒𑑓𑑔𑑕𑑖𑑗𑑘𑑙𑓐𑓑𑓒𑓓𑓔𑓕𑓖𑓗𑓘𑓙𑙐𑙑𑙒𑙓𑙔𑙕𑙖𑙗𑙘𑙙𑛀𑛁𑛂𑛃𑛄𑛅𑛆𑛇𑛈𑛉𑛐𑛑𑛒𑛓𑛔𑛕𑛖𑛗𑛘𑛙𑛚𑛛𑛜𑛝𑛞𑛟𑛠𑛡𑛢𑛣𑜰𑜱𑜲𑜳𑜴𑜵𑜶𑜷𑜸𑜹𑣠𑣡𑣢𑣣𑣤𑣥𑣦𑣧𑣨𑣩𑥐𑥑𑥒𑥓𑥔𑥕𑥖𑥗𑥘𑥙𑯰𑯱𑯲𑯳𑯴𑯵𑯶𑯷𑯸𑯹𑱐𑱑𑱒𑱓𑱔𑱕𑱖𑱗𑱘𑱙𑵐𑵑𑵒𑵓𑵔𑵕𑵖𑵗𑵘𑵙𑶠𑶡𑶢𑶣𑶤𑶥𑶦𑶧𑶨𑶩𑷠𑷡𑷢𑷣𑷤𑷥𑷦𑷧𑷨𑷩𑽐𑽑𑽒𑽓𑽔𑽕𑽖𑽗𑽘𑽙𖄰𖄱𖄲𖄳𖄴𖄵𖄶𖄷𖄸𖄹𖩠𖩡𖩢𖩣𖩤𖩥𖩦𖩧𖩨𖩩𖫀𖫁𖫂𖫃𖫄𖫅𖫆𖫇𖫈𖫉𖭐𖭑𖭒𖭓𖭔𖭕𖭖𖭗𖭘𖭙𖵰𖵱𖵲𖵳𖵴𖵵𖵶𖵷𖵸𖵹𜳖𜳗𜳘𜳙𜳚𜳛𜳜𜳝𜳞𜳟𜳠𜳡𜳢𜳣𜳤𜳥𜳦𜳧𜳨𜳩𜳪𜳫𜳬𜳭𜳮𜳯𜳰𜳱𜳲𜳳𜳴𜳵𜳶𜳷𜳸𜳹𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳𝐴𝐵𝐶𝐷𝐸𝐹𝐺𝐻𝐼𝐽𝐾𝐿𝑀𝑁𝑂𝑃𝑄𝑅𝑆𝑇𝑈𝑉𝑊𝑋𝑌𝑍𝑎𝑏𝑐𝑑𝑒𝑓𝑔𝑖𝑗𝑘𝑙𝑚𝑛𝑜𝑝𝑞𝑟𝑠𝑡𝑢𝑣𝑤𝑥𝑦𝑧𝑨𝑩𝑪𝑫𝑬𝑭𝑮𝑯𝑰𝑱𝑲𝑳𝑴𝑵𝑶𝑷𝑸𝑹𝑺𝑻𝑼𝑽𝑾𝑿𝒀𝒁𝒂𝒃𝒄𝒅𝒆𝒇𝒈𝒉𝒊𝒋𝒌𝒍𝒎𝒏𝒐𝒑𝒒𝒓𝒔𝒕𝒖𝒗𝒘𝒙𝒚𝒛𝒜𝒞𝒟𝒢𝒥𝒦𝒩𝒪𝒫𝒬𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵𝒶𝒷𝒸𝒹𝒻𝒽𝒾𝒿𝓀𝓁𝓂𝓃𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏𝓐𝓑𝓒𝓓𝓔𝓕𝓖𝓗𝓘𝓙𝓚𝓛𝓜𝓝𝓞𝓟𝓠𝓡𝓢𝓣𝓤𝓥𝓦𝓧𝓨𝓩𝓪𝓫𝓬𝓭𝓮𝓯𝓰𝓱𝓲𝓳𝓴𝓵𝓶𝓷𝓸𝓹𝓺𝓻𝓼𝓽𝓾𝓿𝔀𝔁𝔂𝔃𝔄𝔅𝔇𝔈𝔉𝔊𝔍𝔎𝔏𝔐𝔑𝔒𝔓𝔔𝔖𝔗𝔘𝔙𝔚𝔛𝔜𝔞𝔟𝔠𝔡𝔢𝔣𝔤𝔥𝔦𝔧𝔨𝔩𝔪𝔫𝔬𝔭𝔮𝔯𝔰𝔱𝔲𝔳𝔴𝔵𝔶𝔷𝔸𝔹𝔻𝔼𝔽𝔾𝕀𝕁𝕂𝕃𝕄𝕆𝕊𝕋𝕌𝕍𝕎𝕏𝕐𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫𝕬𝕭𝕮𝕯𝕰𝕱𝕲𝕳𝕴𝕵𝕶𝕷𝕸𝕹𝕺𝕻𝕼𝕽𝕾𝕿𝖀𝖁𝖂𝖃𝖄𝖅𝖆𝖇𝖈𝖉𝖊𝖋𝖌𝖍𝖎𝖏𝖐𝖑𝖒𝖓𝖔𝖕𝖖𝖗𝖘𝖙𝖚𝖛𝖜𝖝𝖞𝖟𝖠𝖡𝖢𝖣𝖤𝖥𝖦𝖧𝖨𝖩𝖪𝖫𝖬𝖭𝖮𝖯𝖰𝖱𝖲𝖳𝖴𝖵𝖶𝖷𝖸𝖹𝖺𝖻𝖼𝖽𝖾𝖿𝗀𝗁𝗂𝗃𝗄𝗅𝗆𝗇𝗈𝗉𝗊𝗋𝗌𝗍𝗎𝗏𝗐𝗑𝗒𝗓𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝘠𝘡𝘢𝘣𝘤𝘥𝘦𝘧𝘨𝘩𝘪𝘫𝘬𝘭𝘮𝘯𝘰𝘱𝘲𝘳𝘴𝘵𝘶𝘷𝘸𝘹𝘺𝘻𝘼𝘽𝘾𝘿𝙀𝙁𝙂𝙃𝙄𝙅𝙆𝙇𝙈𝙉𝙊𝙋𝙌𝙍𝙎𝙏𝙐𝙑𝙒𝙓𝙔𝙕𝙖𝙗𝙘𝙙𝙚𝙛𝙜𝙝𝙞𝙟𝙠𝙡𝙢𝙣𝙤𝙥𝙦𝙧𝙨𝙩𝙪𝙫𝙬𝙭𝙮𝙯𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡𝟢𝟣𝟤𝟥𝟦𝟧𝟨𝟩𝟪𝟫𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿𞅀𞅁𞅂𞅃𞅄𞅅𞅆𞅇𞅈𞅉𞋰𞋱𞋲𞋳𞋴𞋵𞋶𞋷𞋸𞋹𞓰𞓱𞓲𞓳𞓴𞓵𞓶𞓷𞓸𞓹𞗱𞗲𞗳𞗴𞗵𞗶𞗷𞗸𞗹𞗺𞥐𞥑𞥒𞥓𞥔𞥕𞥖𞥗𞥘𞥙🄫🄬🄰🄱🄲🄳🄴🄵🄶🄷🄸🄹🄺🄻🄼🄽🄾🄿🅀🅁🅂🅃🅄🅅🅆🅇🅈🅉🯰🯱🯲🯳🯴🯵🯶🯷🯸🯹";
+const FOLD_TO = "a23.1oaaaaaaceeeeiiiinooooouuuuyaaaaaaceeeeiiiinooooouuuuyyaaaaaaccccccccddeeeeeeeeeegggggggghhiiiiiiiiiijjkkllllllnnnnnnoooooorrrrrrssssssssttttuuuuuuuuuuuuwwyyyzzzzzzsoouuaaiioouuuuuuuuuuaaaaggkkoooojggnnaaaaaaeeeeiiiioooorrrruuuusstthhaaeeooooooooyyaggiinrybhlhjrwylsxabezhikmnoptyxabeikvoptuxwsija6be3kmhopctyxba6be3kmhopctyxbesiijqwuo0123456789.012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789acdejkmoptuvwzabdeghijklmnoprtuwabdegkmoptuviruvcfzaabbbbbbccddddddddddeeeeeeeeeeffgghhhhhhhhhhiiiikkkkkkllllllllmmmmmmnnnnnnnnoooooooopppprrrrrrrrssssssssssttttttttuuuuuuuuuuvvvvwwwwwwwwwwxxxxyyzzzzzzhtwysaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeiiiioooooooooooooooooooooooouuuuuuuuuuuuuuyyyyyyyy------..0i456789+n0123456789+aeoxhklmnpstcghhhhiillnpqrrrzzkabceefmoiddeijivxlcdmivxlcdm-123456789abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz01234567890123456789123456789123456789jv.0123456789sscfq012345678901234567890123456789012345678901234567890123456789+:_____.:#+-@#+-./0123456789:@abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz.0123456789q012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefgijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzacdgjknopqstuvwxyzabcdfhijklmnpqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabdefgjklmnopqstuvwxyabcdefghijklmnopqrstuvwxyzabdefgijklmostuvwxyabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789crabcdefghijklmnopqrstuvwxyz0123456789";
 
 let fold: Map<string, string> | undefined;
 function foldMap(): Map<string, string> {
@@ -142,13 +161,32 @@ function tmap0(): Map<string, string> {
   return tm0;
 }
 
-const DICT0: Record<string, string> = {"zero":"0","shunya":"0","shoonya":"0","sunya":"0","shunyo":"0","shunno":"0","sunna":"0","sonne":"0","sifar":"0","poojyam":"0","pujyam":"0","शून्य":"0","सुन्य":"0","जीरो":"0","ज़ीरो":"0","শূন্য":"0","one":"1","ek":"1","ekk":"1","ikk":"1","okati":"1","ondu":"1","onnu":"1","ondru":"1","एक":"1","वन":"1","এক":"1","two":"2","do":"2","doo":"2","don":"2","dui":"2","rendu":"2","irandu":"2","eradu":"2","दो":"2","टू":"2","দুই":"2","three":"3","teen":"3","tin":"3","tinn":"3","theen":"3","tran":"3","moodu":"3","mooru":"3","moonu":"3","moondru":"3","तीन":"3","थ्री":"3","তিন":"3","four":"4","char":"4","chaar":"4","naalugu":"4","naalku":"4","naangu":"4","naalu":"4","चार":"4","फोर":"4","চার":"4","five":"5","paanch":"5","panch":"5","paach":"5","panj":"5","aidu":"5","ainthu":"5","anju":"5","पांच":"5","पाँच":"5","फाइव":"5","পাঁচ":"5","six":"6","chhe":"6","chhah":"6","chah":"6","chheh":"6","cheh":"6","chhai":"6","chhoy":"6","chha":"6","saha":"6","aaru":"6","छह":"6","छः":"6","छे":"6","सिक्स":"6","ছয়":"6","seven":"7","saat":"7","satt":"7","edu":"7","ezhu":"7","elu":"7","सात":"7","सेवन":"7","সাত":"7","eight":"8","aath":"8","aat":"8","atth":"8","enimidi":"8","ettu":"8","entu":"8","आठ":"8","एट":"8","আট":"8","nine":"9","nau":"9","nav":"9","noy":"9","tommidi":"9","onbathu":"9","ombattu":"9","नौ":"9","नाइन":"9","নয়":"9","ten":"10","eleven":"11","twelve":"12","thirteen":"13","fourteen":"14","fifteen":"15","sixteen":"16","seventeen":"17","eighteen":"18","nineteen":"19","twenty":"2~","thirty":"3~","forty":"4~","fourty":"4~","fifty":"5~","sixty":"6~","seventy":"7~","eighty":"8~","ninety":"9~","das":"10","gyarah":"11","gyara":"11","barah":"12","bara":"12","terah":"13","tera":"13","chaudah":"14","chauda":"14","pandrah":"15","pandra":"15","solah":"16","sola":"16","satrah":"17","satra":"17","atharah":"18","athara":"18","unnis":"19","unees":"19","bees":"20","ikkis":"21","ikkees":"21","bais":"22","baees":"22","teis":"23","tees":"30","chaubis":"24","chobis":"24","pachchis":"25","pachis":"25","chhabbis":"26","chabbis":"26","sattais":"27","sataees":"27","atthais":"28","athais":"28","untis":"29","iktis":"31","battis":"32","taintis":"33","tetis":"33","chauntis":"34","chautis":"34","paintis":"35","chhattis":"36","chattis":"36","saintis":"37","adtis":"38","artis":"38","untalis":"39","chalis":"40","chaalis":"40","iktalis":"41","bayalis":"42","byalis":"42","taintalis":"43","tetalis":"43","chauvalis":"44","chawalis":"44","paintalis":"45","chhiyalis":"46","saintalis":"47","adtalis":"48","artalis":"48","unchas":"49","pachas":"50","pachaas":"50","ikyavan":"51","ikyawan":"51","bavan":"52","baawan":"52","tirpan":"53","trepan":"53","chauvan":"54","chauwan":"54","pachpan":"55","chhappan":"56","chappan":"56","sattavan":"57","sattawan":"57","atthavan":"58","athawan":"58","unsath":"59","iksath":"61","basath":"62","tirsath":"63","chausath":"64","painsath":"65","chhiyasath":"66","sadsath":"67","adsath":"68","arsath":"68","unhattar":"69","sattar":"70","ikhattar":"71","bahattar":"72","tihattar":"73","chauhattar":"74","pachhattar":"75","chhihattar":"76","sathattar":"77","athattar":"78","unasi":"79","assi":"80","ikyasi":"81","bayasi":"82","tirasi":"83","chaurasi":"84","pachasi":"85","chhiyasi":"86","sattasi":"87","athasi":"88","nawasi":"89","navasi":"89","nabbe":"90","nabbey":"90","ikyanve":"91","banve":"92","baanve":"92","tiranve":"93","chauranve":"94","pachanve":"95","chhiyanve":"96","sattanve":"97","athanve":"98","ninyanve":"99"};
+let tm1: Map<string, string> | undefined;
+function tmap1(): Map<string, string> {
+  if (tm1 === undefined) {
+    const from = Array.from("oil");
+    const to = Array.from("011");
+    tm1 = new Map(from.map((ch, i2) => [ch, to[i2] ?? ch]));
+  }
+  return tm1;
+}
+
+const DICT0: Record<string, string> = {"zero":"0","shunya":"0","shoonya":"0","sunya":"0","shunyo":"0","shunno":"0","sunna":"0","sonne":"0","sifar":"0","poojyam":"0","pujyam":"0","शून्य":"0","सुन्य":"0","जीरो":"0","ज़ीरो":"0","शुन्य":"0","শূন্য":"0","one":"1","ek":"1","ekk":"1","ikk":"1","okati":"1","ondu":"1","onnu":"1","ondru":"1","एक":"1","वन":"1","এক":"1","two":"2","do":"2","doo":"2","don":"2","dui":"2","rendu":"2","irandu":"2","eradu":"2","दो":"2","दोन":"2","टू":"2","দুই":"2","three":"3","teen":"3","tin":"3","tinn":"3","theen":"3","tran":"3","moodu":"3","mooru":"3","moonu":"3","moondru":"3","तीन":"3","थ्री":"3","তিন":"3","four":"4","char":"4","chaar":"4","naalugu":"4","naalku":"4","naangu":"4","naalu":"4","चार":"4","फोर":"4","চার":"4","five":"5","paanch":"5","panch":"5","paach":"5","panj":"5","aidu":"5","ainthu":"5","anju":"5","पांच":"5","पाँच":"5","पाच":"5","फाइव":"5","পাঁচ":"5","six":"6","chhe":"6","chhah":"6","chah":"6","chheh":"6","cheh":"6","chhai":"6","chhoy":"6","chha":"6","saha":"6","aaru":"6","छह":"6","छः":"6","छे":"6","सहा":"6","सिक्स":"6","ছয়":"6","seven":"7","saat":"7","satt":"7","edu":"7","ezhu":"7","elu":"7","सात":"7","सेवन":"7","সাত":"7","eight":"8","aath":"8","aat":"8","atth":"8","enimidi":"8","ettu":"8","entu":"8","आठ":"8","एट":"8","আট":"8","nine":"9","nau":"9","nav":"9","noy":"9","tommidi":"9","onbathu":"9","onbadhu":"9","ombattu":"9","नौ":"9","नऊ":"9","नाइन":"9","নয়":"9","ten":"10","eleven":"11","twelve":"12","thirteen":"13","fourteen":"14","fifteen":"15","sixteen":"16","seventeen":"17","eighteen":"18","nineteen":"19","twenty":"2~","thirty":"3~","forty":"4~","fourty":"4~","fifty":"5~","sixty":"6~","seventy":"7~","eighty":"8~","ninety":"9~","das":"10","gyarah":"11","gyara":"11","barah":"12","bara":"12","terah":"13","tera":"13","chaudah":"14","chauda":"14","pandrah":"15","pandra":"15","solah":"16","sola":"16","satrah":"17","satra":"17","atharah":"18","athara":"18","unnis":"19","unees":"19","bees":"20","ikkis":"21","ikkees":"21","bais":"22","baees":"22","teis":"23","tees":"30","chaubis":"24","chobis":"24","pachchis":"25","pachis":"25","chhabbis":"26","chabbis":"26","sattais":"27","sataees":"27","atthais":"28","athais":"28","untis":"29","iktis":"31","battis":"32","taintis":"33","tetis":"33","chauntis":"34","chautis":"34","paintis":"35","chhattis":"36","chattis":"36","saintis":"37","adtis":"38","artis":"38","untalis":"39","chalis":"40","chaalis":"40","iktalis":"41","bayalis":"42","byalis":"42","taintalis":"43","tetalis":"43","chauvalis":"44","chawalis":"44","paintalis":"45","chhiyalis":"46","saintalis":"47","adtalis":"48","artalis":"48","unchas":"49","pachas":"50","pachaas":"50","ikyavan":"51","ikyawan":"51","bavan":"52","baawan":"52","tirpan":"53","trepan":"53","chauvan":"54","chauwan":"54","pachpan":"55","chhappan":"56","chappan":"56","sattavan":"57","sattawan":"57","atthavan":"58","athawan":"58","unsath":"59","iksath":"61","basath":"62","tirsath":"63","chausath":"64","painsath":"65","chhiyasath":"66","sadsath":"67","adsath":"68","arsath":"68","unhattar":"69","sattar":"70","ikhattar":"71","bahattar":"72","tihattar":"73","chauhattar":"74","pachhattar":"75","chhihattar":"76","sathattar":"77","satattar":"77","sattattar":"77","athattar":"78","unasi":"79","assi":"80","ikyasi":"81","bayasi":"82","tirasi":"83","chaurasi":"84","pachasi":"85","chhiyasi":"86","sattasi":"87","athasi":"88","nawasi":"89","navasi":"89","nabbe":"90","nabbey":"90","ikyanve":"91","banve":"92","baanve":"92","tiranve":"93","chauranve":"94","pachanve":"95","chhiyanve":"96","sattanve":"97","athanve":"98","ninyanve":"99"};
 let d0: Map<string, string> | undefined;
 function dict0(): Map<string, string> {
   if (d0 === undefined) {
     d0 = new Map(Object.entries(DICT0));
   }
   return d0;
+}
+
+const DICT1: Record<string, string> = {"zero":"0§","shunya":"0§","shoonya":"0§","sunya":"0§","shunyo":"0§","shunno":"0§","sunna":"0§","sonne":"0§","sifar":"0§","poojyam":"0§","pujyam":"0§","शून्य":"0§","सुन्य":"0§","जीरो":"0§","ज़ीरो":"0§","शुन्य":"0§","শূন্য":"0§","one":"1§","ek":"1§","ekk":"1§","ikk":"1§","okati":"1§","ondu":"1§","onnu":"1§","ondru":"1§","एक":"1§","वन":"1§","এক":"1§","two":"2§","do":"2§","doo":"2§","don":"2§","dui":"2§","rendu":"2§","irandu":"2§","eradu":"2§","दो":"2§","दोन":"2§","टू":"2§","দুই":"2§","three":"3§","teen":"3§","tin":"3§","tinn":"3§","theen":"3§","tran":"3§","moodu":"3§","mooru":"3§","moonu":"3§","moondru":"3§","तीन":"3§","थ्री":"3§","তিন":"3§","four":"4§","char":"4§","chaar":"4§","naalugu":"4§","naalku":"4§","naangu":"4§","naalu":"4§","चार":"4§","फोर":"4§","চার":"4§","five":"5§","paanch":"5§","panch":"5§","paach":"5§","panj":"5§","aidu":"5§","ainthu":"5§","anju":"5§","पांच":"5§","पाँच":"5§","पाच":"5§","फाइव":"5§","পাঁচ":"5§","six":"6§","chhe":"6§","chhah":"6§","chah":"6§","chheh":"6§","cheh":"6§","chhai":"6§","chhoy":"6§","chha":"6§","saha":"6§","aaru":"6§","छह":"6§","छः":"6§","छे":"6§","सहा":"6§","सिक्स":"6§","ছয়":"6§","seven":"7§","saat":"7§","satt":"7§","edu":"7§","ezhu":"7§","elu":"7§","सात":"7§","सेवन":"7§","সাত":"7§","eight":"8§","aath":"8§","aat":"8§","atth":"8§","enimidi":"8§","ettu":"8§","entu":"8§","आठ":"8§","एट":"8§","আট":"8§","nine":"9§","nau":"9§","nav":"9§","noy":"9§","tommidi":"9§","onbathu":"9§","onbadhu":"9§","ombattu":"9§","नौ":"9§","नऊ":"9§","नाइन":"9§","নয়":"9§","ten":"10§","eleven":"11§","twelve":"12§","thirteen":"13§","fourteen":"14§","fifteen":"15§","sixteen":"16§","seventeen":"17§","eighteen":"18§","nineteen":"19§","twenty":"2~§","thirty":"3~§","forty":"4~§","fourty":"4~§","fifty":"5~§","sixty":"6~§","seventy":"7~§","eighty":"8~§","ninety":"9~§","das":"10§","gyarah":"11§","gyara":"11§","barah":"12§","bara":"12§","terah":"13§","tera":"13§","chaudah":"14§","chauda":"14§","pandrah":"15§","pandra":"15§","solah":"16§","sola":"16§","satrah":"17§","satra":"17§","atharah":"18§","athara":"18§","unnis":"19§","unees":"19§","bees":"20§","ikkis":"21§","ikkees":"21§","bais":"22§","baees":"22§","teis":"23§","tees":"30§","chaubis":"24§","chobis":"24§","pachchis":"25§","pachis":"25§","chhabbis":"26§","chabbis":"26§","sattais":"27§","sataees":"27§","atthais":"28§","athais":"28§","untis":"29§","iktis":"31§","battis":"32§","taintis":"33§","tetis":"33§","chauntis":"34§","chautis":"34§","paintis":"35§","chhattis":"36§","chattis":"36§","saintis":"37§","adtis":"38§","artis":"38§","untalis":"39§","chalis":"40§","chaalis":"40§","iktalis":"41§","bayalis":"42§","byalis":"42§","taintalis":"43§","tetalis":"43§","chauvalis":"44§","chawalis":"44§","paintalis":"45§","chhiyalis":"46§","saintalis":"47§","adtalis":"48§","artalis":"48§","unchas":"49§","pachas":"50§","pachaas":"50§","ikyavan":"51§","ikyawan":"51§","bavan":"52§","baawan":"52§","tirpan":"53§","trepan":"53§","chauvan":"54§","chauwan":"54§","pachpan":"55§","chhappan":"56§","chappan":"56§","sattavan":"57§","sattawan":"57§","atthavan":"58§","athawan":"58§","unsath":"59§","iksath":"61§","basath":"62§","tirsath":"63§","chausath":"64§","painsath":"65§","chhiyasath":"66§","sadsath":"67§","adsath":"68§","arsath":"68§","unhattar":"69§","sattar":"70§","ikhattar":"71§","bahattar":"72§","tihattar":"73§","chauhattar":"74§","pachhattar":"75§","chhihattar":"76§","sathattar":"77§","satattar":"77§","sattattar":"77§","athattar":"78§","unasi":"79§","assi":"80§","ikyasi":"81§","bayasi":"82§","tirasi":"83§","chaurasi":"84§","pachasi":"85§","chhiyasi":"86§","sattasi":"87§","athasi":"88§","nawasi":"89§","navasi":"89§","nabbe":"90§","nabbey":"90§","ikyanve":"91§","banve":"92§","baanve":"92§","tiranve":"93§","chauranve":"94§","pachanve":"95§","chhiyanve":"96§","sattanve":"97§","athanve":"98§","ninyanve":"99§"};
+let d1: Map<string, string> | undefined;
+function dict1(): Map<string, string> {
+  if (d1 === undefined) {
+    d1 = new Map(Object.entries(DICT1));
+  }
+  return d1;
 }
 
 /** Postgres translate(): each character of `map`'s keys becomes its value. */
@@ -177,17 +215,19 @@ function copy_t(p: string): string {
 function copy_d(p: string): string {
   let v = p;
   v = re(9).test(v) ? v.replace(re(10), tok => (re(8).test(tok) ? translate(tok, tmap0()) : tok)) : v;
+  v = re(9).test(v) ? v.replace(re(10), tok => (re(11).test(tok) ? translate(tok, tmap1()) : tok)) : v;
   return v;
 }
 
 function copy_p(p: string): string {
   let v = p;
-  v = v.replace(re(11), tok => (dict0().get(tok) ?? tok));
-  v = v.replace(re(12), "$1");
-  v = v.replace(re(13), "0");
-  v = v.replace(re(14), "$1$1");
-  v = v.replace(re(15), "$1$1$1");
-  v = v.replace(re(16), "+");
+  v = v.replace(re(12), tok => (dict0().get(tok) ?? tok));
+  v = v.replace(re(13), "$1");
+  v = v.replace(re(14), "0");
+  v = v.replace(re(15), "$1$1");
+  v = v.replace(re(16), "$1$1$1");
+  v = v.replace(re(17), "+");
+  v = v.replace(re(18), "#");
   return v;
 }
 
@@ -199,44 +239,65 @@ function copy_rp(p: string): string {
 
 function copy_pd(p: string): string {
   let v = p;
-  v = v.replace(re(17), "#");
   v = v.replace(re(18), "#");
   v = v.replace(re(19), "#");
   v = v.replace(re(20), "#");
-  v = v.replace(re(21), "");
+  v = v.replace(re(21), "#");
+  v = v.replace(re(22), "#");
+  v = v.replace(re(12), "w");
+  v = v.replace(re(23), ",");
+  v = v.replace(re(24), " ");
+  v = v.replace(re(25), "#");
+  v = v.replace(re(26), "");
+  return v;
+}
+
+function copy_pw(p: string): string {
+  let v = p;
+  v = v.replace(re(12), tok => (dict1().get(tok) ?? tok));
+  v = v.replace(re(27), "$1§");
+  v = v.replace(re(28), "0§");
+  v = v.replace(re(29), "$1$1§");
+  v = v.replace(re(30), "$1$1$1§");
+  v = v.replace(re(31), "");
+  v = v.replace(re(32), "");
   return v;
 }
 
 function copy_e(p: string): string {
   let v = p;
-  v = v.replace(re(22), "@");
-  v = v.replace(re(23), ".");
-  v = v.replace(re(24), "@");
-  v = v.replace(re(25), "@");
-  v = v.replace(re(26), "@");
-  v = v.replace(re(27), "@");
-  v = v.replace(re(28), ".");
-  v = v.replace(re(29), ".");
-  v = v.replace(re(30), "/");
+  v = v.replace(re(33), "@");
+  v = v.replace(re(34), ".");
+  v = v.replace(re(35), "@");
+  v = v.replace(re(36), "@");
+  v = v.replace(re(37), "@");
+  v = v.replace(re(38), "@");
+  v = v.replace(re(39), "_");
+  v = v.replace(re(40), ".");
+  v = v.replace(re(41), ".");
+  v = v.replace(re(42), ".");
+  v = v.replace(re(43), "/");
   return v;
 }
 
 function copy_ec(p: string): string {
   let v = p;
-  v = v.replace(re(31), "");
-  v = v.replace(re(22), "@");
-  v = v.replace(re(23), ".");
-  v = v.replace(re(24), "@");
-  v = v.replace(re(25), "@");
-  v = v.replace(re(26), "@");
-  v = v.replace(re(27), "@");
-  v = v.replace(re(28), ".");
-  v = v.replace(re(29), ".");
-  v = v.replace(re(30), "/");
+  v = v.replace(re(44), "");
+  v = v.replace(re(33), "@");
+  v = v.replace(re(34), ".");
+  v = v.replace(re(35), "@");
+  v = v.replace(re(36), "@");
+  v = v.replace(re(37), "@");
+  v = v.replace(re(38), "@");
+  v = v.replace(re(39), "_");
+  v = v.replace(re(40), ".");
+  v = v.replace(re(41), ".");
+  v = v.replace(re(42), ".");
+  v = v.replace(re(43), "/");
   return v;
 }
 
-type Copies = { t: string; d: string; p: string; rp: string; pd: string; e: string; ec: string };
+type Copies = { t: string; d: string; p: string; rp: string; pd: string; pw: string; e: string; ec: string };
 
 function ready(): boolean {
   const all = regexes();
@@ -257,9 +318,10 @@ export function contactGuardCopies(text: string): Copies | null {
   const p = copy_p(d);
   const rp = copy_rp(p);
   const pd = copy_pd(d);
+  const pw = copy_pw(d);
   const e = copy_e(t);
   const ec = copy_ec(t);
-  return { t, d, p, rp, pd, e, ec };
+  return { t, d, p, rp, pd, pw, e, ec };
 }
 
 /** True when any hard rule fires: the server would refuse this in enforce mode. */
@@ -268,7 +330,7 @@ export function isContactBlocked(text: string): boolean {
     return false;
   }
   const t = copy_t(text);
-  if (!re(40).test(t)) {
+  if (!re(55).test(t)) {
     return false;
   }
   const c: Partial<Copies> = { t };
@@ -276,24 +338,28 @@ export function isContactBlocked(text: string): boolean {
   c.p = copy_p(c.d as string);
   c.rp = copy_rp(c.p as string);
   c.pd = copy_pd(c.d as string);
+  c.pw = copy_pw(c.d as string);
   c.e = copy_e(c.t as string);
   c.ec = copy_ec(c.t as string);
-  if (re(35).test(c.t as string)) {
+  if (re(49).test(c.t as string)) {
     return true;
   }
-  if (re(36).test(c.p as string)) {
+  if (re(50).test(c.p as string)) {
     return true;
   }
-  if (re(37).test(c.pd as string)) {
+  if (re(51).test(c.pd as string)) {
     return true;
   }
-  if (re(38).test(c.e as string)) {
+  if (re(52).test(c.pw as string)) {
     return true;
   }
-  if (re(39).test(c.ec as string)) {
+  if (re(53).test(c.e as string)) {
     return true;
   }
-  if (re(46).test(c.rp as string) && re(47).test(c.t as string)) {
+  if (re(54).test(c.ec as string)) {
+    return true;
+  }
+  if (re(64).test(c.rp as string) && re(65).test(c.t as string)) {
     return true;
   }
   return false;
@@ -301,98 +367,120 @@ export function isContactBlocked(text: string): boolean {
 
 /** The hard rule ids that fire, in spec order. */
 export function contactGuardRules(text: string): string[] {
+  if (!ready() || !re(55).test(copy_t(text))) {
+    return [];
+  }
+  return contactGuardRulesUnfiltered(text);
+}
+
+/** Whether the fast path's prefilter lets the text through to the rules. */
+export function contactGuardPrefilter(text: string): boolean {
+  return ready() && re(55).test(copy_t(text));
+}
+
+/**
+ * Every hard rule, without the prefilter. Tests use it to prove the
+ * prefilter never hides a hit; nothing else should.
+ */
+export function contactGuardRulesUnfiltered(text: string): string[] {
   const ids: string[] = [];
   if (!ready()) {
     return ids;
   }
-  if (!re(40).test(copy_t(text))) {
-    return ids;
-  }
   const c = contactGuardCopies(text) as Copies;
-  if (!ids.includes("phone_mobile") && re(41).test(c.p)) {
+  if (!ids.includes("phone_mobile") && re(56).test(c.p)) {
     ids.push("phone_mobile");
   }
-  if (!ids.includes("phone_run10") && re(42).test(c.p)) {
+  if (!ids.includes("phone_run10") && re(57).test(c.p)) {
     ids.push("phone_run10");
   }
-  if (!ids.includes("phone_intl") && re(43).test(c.p)) {
+  if (!ids.includes("phone_intl") && re(58).test(c.p)) {
     ids.push("phone_intl");
   }
-  if (!ids.includes("phone_landline") && re(44).test(c.p)) {
+  if (!ids.includes("phone_landline") && re(59).test(c.p)) {
     ids.push("phone_landline");
   }
-  if (!ids.includes("phone_digits") && re(45).test(c.pd)) {
+  if (!ids.includes("phone_digits") && re(60).test(c.pd)) {
     ids.push("phone_digits");
   }
-  if (!ids.includes("phone_reversed") && re(46).test(c.rp) && re(47).test(c.t)) {
+  if (!ids.includes("phone_spread") && re(61).test(c.pd)) {
+    ids.push("phone_spread");
+  }
+  if (!ids.includes("phone_symbols") && re(62).test(c.pd)) {
+    ids.push("phone_symbols");
+  }
+  if (!ids.includes("phone_words") && re(63).test(c.pw)) {
+    ids.push("phone_words");
+  }
+  if (!ids.includes("phone_reversed") && re(64).test(c.rp) && re(65).test(c.t)) {
     ids.push("phone_reversed");
   }
-  if (!ids.includes("vpa") && re(48).test(c.e)) {
+  if (!ids.includes("vpa") && re(66).test(c.e)) {
     ids.push("vpa");
   }
-  if (!ids.includes("vpa") && re(48).test(c.ec)) {
+  if (!ids.includes("vpa") && re(66).test(c.ec)) {
     ids.push("vpa");
   }
-  if (!ids.includes("ifsc") && re(49).test(c.t)) {
+  if (!ids.includes("ifsc") && re(67).test(c.t)) {
     ids.push("ifsc");
   }
-  if (!ids.includes("bank_account") && re(50).test(c.p)) {
+  if (!ids.includes("bank_account") && re(68).test(c.p)) {
     ids.push("bank_account");
   }
-  if (!ids.includes("at_id") && re(51).test(c.e)) {
+  if (!ids.includes("at_id") && re(69).test(c.e)) {
     ids.push("at_id");
   }
-  if (!ids.includes("email") && re(52).test(c.e)) {
+  if (!ids.includes("email") && re(70).test(c.e)) {
     ids.push("email");
   }
-  if (!ids.includes("email") && re(52).test(c.ec)) {
+  if (!ids.includes("email") && re(70).test(c.ec)) {
     ids.push("email");
   }
-  if (!ids.includes("email_no_tld") && re(53).test(c.e)) {
+  if (!ids.includes("email_no_tld") && re(71).test(c.e)) {
     ids.push("email_no_tld");
   }
-  if (!ids.includes("mail_local_near") && re(54).test(c.e)) {
+  if (!ids.includes("mail_local_near") && re(72).test(c.e)) {
     ids.push("mail_local_near");
   }
-  if (!ids.includes("mail_local_near") && re(55).test(c.e)) {
+  if (!ids.includes("mail_local_near") && re(73).test(c.e)) {
     ids.push("mail_local_near");
   }
-  if (!ids.includes("url_scheme") && re(56).test(c.e)) {
+  if (!ids.includes("url_scheme") && re(74).test(c.e)) {
     ids.push("url_scheme");
   }
-  if (!ids.includes("url_known") && re(57).test(c.e)) {
+  if (!ids.includes("url_known") && re(75).test(c.e)) {
     ids.push("url_known");
   }
-  if (!ids.includes("url_known") && re(57).test(c.ec)) {
+  if (!ids.includes("url_known") && re(75).test(c.ec)) {
     ids.push("url_known");
   }
-  if (!ids.includes("url_tld") && re(58).test(c.e)) {
+  if (!ids.includes("url_tld") && re(76).test(c.e)) {
     ids.push("url_tld");
   }
-  if (!ids.includes("handle") && re(59).test(c.e)) {
+  if (!ids.includes("handle") && re(77).test(c.e)) {
     ids.push("handle");
   }
-  if (!ids.includes("app_handle") && re(60).test(c.e)) {
+  if (!ids.includes("app_handle") && re(78).test(c.e)) {
     ids.push("app_handle");
   }
-  if (!ids.includes("id_colon_handle") && re(61).test(c.e)) {
+  if (!ids.includes("id_colon_handle") && re(79).test(c.e)) {
     ids.push("id_colon_handle");
   }
-  if (!ids.includes("handle_on_app") && re(62).test(c.e)) {
+  if (!ids.includes("handle_on_app") && re(80).test(c.e)) {
     ids.push("handle_on_app");
   }
-  if (!ids.includes("discord_tag") && re(63).test(c.e)) {
+  if (!ids.includes("discord_tag") && re(81).test(c.e)) {
     ids.push("discord_tag");
   }
-  if (!ids.includes("skype_live") && re(64).test(c.e)) {
+  if (!ids.includes("skype_live") && re(82).test(c.e)) {
     ids.push("skype_live");
   }
   return ids;
 }
 
-const CATEGORY_OF: Record<string, ContactCategory> = {"phone_mobile":"phone","phone_run10":"phone","phone_intl":"phone","phone_landline":"phone","phone_digits":"phone","phone_reversed":"phone","vpa":"payment","ifsc":"payment","bank_account":"payment","at_id":"payment","email":"email","email_no_tld":"email","mail_local_near":"email","url_scheme":"link","url_known":"link","url_tld":"link","handle":"handle","app_handle":"handle","id_colon_handle":"handle","handle_on_app":"handle","discord_tag":"handle","skype_live":"handle"};
+const CATEGORY_OF: Record<string, ContactCategory> = {"phone_mobile":"phone","phone_run10":"phone","phone_intl":"phone","phone_landline":"phone","phone_digits":"phone","phone_spread":"phone","phone_symbols":"phone","phone_words":"phone","phone_reversed":"phone","vpa":"payment","ifsc":"payment","bank_account":"payment","at_id":"payment","email":"email","email_no_tld":"email","mail_local_near":"email","url_scheme":"link","url_known":"link","url_tld":"link","handle":"handle","app_handle":"handle","id_colon_handle":"handle","handle_on_app":"handle","discord_tag":"handle","skype_live":"handle"};
 const CATEGORY_ORDER: ContactCategory[] = ["phone","payment","email","link","handle"];
-const PHONE_IDS = ["phone_mobile","phone_run10","phone_intl","phone_landline","phone_digits","phone_reversed"];
+const PHONE_IDS = ["phone_mobile","phone_run10","phone_intl","phone_landline","phone_digits","phone_spread","phone_symbols","phone_words","phone_reversed"];
 
 /** The category the UI names, by priority; null when nothing fired. */
 export function contactCategory(rules: readonly string[]): ContactCategory | null {
@@ -428,14 +516,27 @@ export function contactFragment(text: string): string {
   v = copy_t(text);
   v = copy_d(v);
   v = copy_p(v);
-  v = v.replace(re(32), " ");
-  v = v.replace(re(33), "");
-  v = v.replace(re(34), " ");
-  if (!re(65).test(v)) {
+  v = v.replace(re(45), " ");
+  v = v.replace(re(46), " ");
+  v = v.replace(re(47), "");
+  v = v.replace(re(48), " ");
+  if (!re(83).test(v)) {
     return '';
   }
-  v = v.replace(re(67), '');
+  v = v.replace(re(86), '');
   return v.length < 2 ? '' : v;
+}
+
+/** A message with no run of two or more digits: the window steps over it. */
+export function contactChatter(text: string): boolean {
+  if (!ready()) {
+    return false;
+  }
+  let v = text;
+  v = copy_t(text);
+  v = copy_d(v);
+  v = copy_p(v);
+  return re(85).test(v);
 }
 
 /**
@@ -448,25 +549,28 @@ export function contactWindow(texts: readonly string[]): string | null {
   if (n < 2) {
     return null;
   }
-  let fwd = contactFragment(texts[n - 1] ?? "");
+  let fwd = contactFragment(texts[n - 1] ?? '');
   if (fwd === '') {
     return null;
   }
   let rev = fwd;
   for (let i = n - 2; i >= 0; i -= 1) {
-    const pay = contactFragment(texts[i] ?? "");
+    const pay = contactFragment(texts[i] ?? '');
     if (pay === '') {
-      break;
+      if (!contactChatter(texts[i] ?? '')) {
+        break;
+      }
+      continue;
     }
     fwd = pay + fwd;
     rev = rev + pay;
     if (fwd.length > 13) {
       break;
     }
-    if (re(66).test(fwd)) {
+    if (re(84).test(fwd)) {
       return fwd;
     }
-    if (re(66).test(rev)) {
+    if (re(84).test(rev)) {
       return rev;
     }
   }

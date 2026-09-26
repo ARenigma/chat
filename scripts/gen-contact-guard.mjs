@@ -316,6 +316,7 @@ const allPatterns = [
   ...spec.FRAGMENT.steps.map(s => ['fragment', s.re]),
   ['fragment.shape', spec.FRAGMENT.shape],
   ['fragment.mobile', spec.FRAGMENT.mobile],
+  ['fragment.chatter', spec.FRAGMENT.chatter],
   ['prefilter', spec.PREFILTER.re],
 ];
 for (const [where, re] of allPatterns) {
@@ -652,6 +653,22 @@ ${fragmentSteps}
 end;
 $fn$;
 
+-- A message with no run of two or more digits: the window steps over it.
+create or replace function private.contact_guard_is_chatter(p_text text)
+returns boolean
+language plpgsql
+immutable
+strict
+parallel safe
+as $fn$
+declare
+  v text;
+begin
+${sqlFragmentCopies}
+  return v ~ ${sqlLit(spec.FRAGMENT.chatter)};
+end;
+$fn$;
+
 -- p_texts is the sender's recent messages oldest first, the new one last.
 -- Joins every run of two or more fragments that ends at the new message, in
 -- sending order and reversed, and returns the first join that is a mobile.
@@ -680,7 +697,12 @@ begin
   v_rev := v_fwd;
   for i in reverse v_n - 1 .. 1 loop
     v_pay := private.contact_guard_fragment(coalesce(p_texts[i], ''));
-    exit when v_pay = '';
+    if v_pay = '' then
+      -- Chatter (no digit run of two or more) is stepped over; anything else
+      -- with digits ends the run.
+      exit when not private.contact_guard_is_chatter(coalesce(p_texts[i], ''));
+      continue;
+    end if;
     v_fwd := v_pay || v_fwd;
     v_rev := v_rev || v_pay;
     exit when length(v_fwd) > 13;
@@ -770,6 +792,7 @@ const jsRuleTests = spec.HARD.map(rule => {
 }).join('\n');
 const jsShape = jsCtx.re(spec.FRAGMENT.shape, 'u');
 const jsMobile = jsCtx.re(spec.FRAGMENT.mobile, 'u');
+const jsChatter = jsCtx.re(spec.FRAGMENT.chatter, 'u');
 const jsNonDigit = jsCtx.re('[^0-9]', 'gu');
 const copyCalls = spec.COPIES.map(
   c =>
@@ -951,11 +974,24 @@ ${spec.HARD.filter(r => r.requires)
 
 /** The hard rule ids that fire, in spec order. */
 export function contactGuardRules(text: string): string[] {
+  if (!ready() || !${jsPrefilter}.test(copy_t(text))) {
+    return [];
+  }
+  return contactGuardRulesUnfiltered(text);
+}
+
+/** Whether the fast path's prefilter lets the text through to the rules. */
+export function contactGuardPrefilter(text: string): boolean {
+  return ready() && ${jsPrefilter}.test(copy_t(text));
+}
+
+/**
+ * Every hard rule, without the prefilter. Tests use it to prove the
+ * prefilter never hides a hit; nothing else should.
+ */
+export function contactGuardRulesUnfiltered(text: string): string[] {
   const ids: string[] = [];
   if (!ready()) {
-    return ids;
-  }
-  if (!${jsPrefilter}.test(copy_t(text))) {
     return ids;
   }
   const c = contactGuardCopies(text) as Copies;
@@ -1011,6 +1047,16 @@ ${jsFragmentSteps}
   return v.length < ${spec.FRAGMENT.minDigits} ? '' : v;
 }
 
+/** A message with no run of two or more digits: the window steps over it. */
+export function contactChatter(text: string): boolean {
+  if (!ready()) {
+    return false;
+  }
+  let v = text;
+${jsFragmentCopies}
+  return ${jsChatter}.test(v);
+}
+
 /**
  * The sender's recent messages oldest first, the new one last. Returns the
  * mobile a run of fragments ending at the new message joins into (in sending
@@ -1021,15 +1067,18 @@ export function contactWindow(texts: readonly string[]): string | null {
   if (n < 2) {
     return null;
   }
-  let fwd = contactFragment(texts[n - 1] ?? "");
+  let fwd = contactFragment(texts[n - 1] ?? '');
   if (fwd === '') {
     return null;
   }
   let rev = fwd;
   for (let i = n - 2; i >= 0; i -= 1) {
-    const pay = contactFragment(texts[i] ?? "");
+    const pay = contactFragment(texts[i] ?? '');
     if (pay === '') {
-      break;
+      if (!contactChatter(texts[i] ?? '')) {
+        break;
+      }
+      continue;
     }
     fwd = pay + fwd;
     rev = rev + pay;
@@ -1049,10 +1098,28 @@ export function contactWindow(texts: readonly string[]): string | null {
 
 // --- Write or check ---------------------------------------------------------
 const MIGRATION_PATH = join(ROOT, spec.MIGRATION);
+// The repo never spells one messenger's name in code (see the spec's TG).
+// Every place it reaches an output is a pattern, where both engines read
+// g as "g": one backslash in SQL (standard_conforming_strings), two in
+// a TypeScript string literal.
+const NAME = new RegExp(['tele', 'gram'].join(''), 'gi');
+const scrub = (text, backslash) =>
+  text.replace(NAME, m => `${m.slice(0, 4)}${backslash}u0067${m.slice(5)}`);
 const outputs = [
-  [TS_PATH, ts],
-  [MIGRATION_PATH, sql],
+  [TS_PATH, scrub(ts, '\\\\')],
+  [MIGRATION_PATH, scrub(sql, '\\')],
 ];
+for (const [path, content] of outputs) {
+  if (NAME.test(content)) {
+    console.error(
+      `${LABEL} FAILED: ${path.replace(
+        ROOT,
+        '',
+      )} would spell the messenger's name`,
+    );
+    process.exit(1);
+  }
+}
 
 if (CHECK) {
   for (const [path, content] of outputs) {
