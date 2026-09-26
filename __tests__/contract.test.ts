@@ -6945,9 +6945,10 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
     expect(row).toContain('const categoryInk: Record<ProviderCategory, TextStyle>');
     expect(row).toContain('name={categoryKey}');
     expect(row).toContain('testID="provider-category"');
-    // In the price line's slot, not the pill row's.
-    const priceLine = row.slice(row.indexOf('<View style={styles.priceLine}>'));
-    expect(priceLine.slice(0, priceLine.indexOf('</View>'))).toContain('{category}');
+    // A line of its own under Exp (2026-09-27), not the pill row's slot.
+    const tailLines = row.slice(row.indexOf('<View style={styles.tailLines}>'));
+    expect(row.indexOf('<View style={styles.tailLines}>')).toBeGreaterThan(-1);
+    expect(tailLines.slice(0, tailLines.indexOf('</View>'))).toContain('{category}');
   });
 
   it('asks the provider once, at onboarding', () => {

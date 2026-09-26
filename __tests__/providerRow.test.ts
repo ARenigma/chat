@@ -131,27 +131,29 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     expect(style('leftColumn')).toContain('height: PROVIDER_ROW_LEFT_COLUMN');
   });
 
-  it('lands the stars on the price line, the way the reference does', () => {
+  it('lands the stars on the last text line, the way the reference does', () => {
     /*
      * Astrotalk's `average_ratingbar` sits at y384.4 and its `price` at y386.5
-     * — two points apart, so the rating and the rate read as one line across
-     * the card. Amit, on the device: "strats should align with rate.. pls see
-     * how astrotalsk proved space and alignment".
+     * — two points apart, so the rating and the line beside it read as one
+     * line across the card. Amit, on the device: "strats should align with
+     * rate.. pls see how astrotalsk proved space and alignment".
      *
      * Achieved structurally rather than by a tuned offset: the left column
      * pushes exactly two children apart, so the ring pins to the top and the
-     * rating block to the bottom, and its HEIGHT is derived from the CTA's
-     * centre. A hardcoded `marginTop` would have produced the same pixels today
-     * and drifted the first time a line was added to the other side.
+     * rating block to the bottom, and its HEIGHT is derived. A hardcoded
+     * `marginTop` would have produced the same pixels today and drifted the
+     * first time a line was added to the other side.
      *
-     * Until 2026-09-27 the column took the right column's height (136) and the
-     * centres landed a point apart (111 and 112). With the uniform 4dp line gap
-     * and the CTA row laid out at its drawn 33, the right column is 121, which
-     * is shorter than the left column's contents, so the left column is now
-     * sized FROM the alignment and the two centres are equal:
-     *   CTA centre   = (24+4+16+4+16+4+16+4) + 33/2      = 104.5
-     *   left column  = 104.5 + 14/2 + 4 + 16             = 131.5
-     *   stars centre = 131.5 − (14 + 4 + 16) + 14/2      = 104.5
+     * Since 2026-09-27 the line beside the stars is the category (the CTA moved
+     * up beside Exp and the category), and the height is the larger of two
+     * terms: exact alignment, or Amit's 8dp under the ring. Exact alignment
+     * would leave the ring 6.5 clear, so the floor wins and the stars sit 1.5
+     * under the category line's centre, inside the 2dp this card has always
+     * allowed (it was 111 against 112 at the 136dp column):
+     *   category centre = (24+4+16+4+16+4+16+4) + 19/2 = 97.5
+     *   aligned column  = 97.5 + 14/2 + 4 + 16          = 124.5  (ring gap 6.5)
+     *   floor column    = 84 + 8 + 14 + 4 + 16          = 126    (in force)
+     *   stars centre    = 126 − (14 + 4 + 16) + 14/2    = 99
      */
     const left = style('leftColumn');
     expect(left).toContain("justifyContent: 'space-between'");
@@ -166,30 +168,33 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
 
     const gap = TOKENS.space['2xs'];
     const line = TOKENS.typography.bodySmall.lineHeight;
-    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+    const categoryLine = Math.round(TOKENS.icon.sm * 1.2);
     const starsHeight = Math.round(TOKENS.icon.xs * 1.2);
+    const ring = 76 + 2 * (2 + 2);
     const ratingBlock = starsHeight + gap + line;
     const right =
-      TOKENS.typography.textXlSemiBold.lineHeight + (gap + line) * 3 + gap + drawn;
-    const ctaCentre = right - drawn / 2;
-    const leftHeight = ctaCentre + starsHeight / 2 + gap + line;
+      TOKENS.typography.textXlSemiBold.lineHeight + (gap + line) * 3 + gap + categoryLine;
+    const lastLineCentre = right - categoryLine / 2;
+    const aligned = lastLineCentre + starsHeight / 2 + gap + line;
+    const floor = ring + TOKENS.space.xs + starsHeight + gap + line;
+    const leftHeight = Math.max(aligned, floor);
     const starsCentre = leftHeight - ratingBlock + starsHeight / 2;
-    expect(ctaCentre).toBe(104.5);
-    expect(starsCentre).toBe(ctaCentre);
-    // And the ring still clears the stars by at least Amit's 8.
-    const ringToStars = leftHeight - ratingBlock - (76 + 2 * (2 + 2));
-    expect(ringToStars).toBe(13.5);
-    expect(ringToStars).toBeGreaterThanOrEqual(TOKENS.space.xs);
+    expect(lastLineCentre).toBe(97.5);
+    expect(aligned).toBe(124.5);
+    expect(floor).toBe(126);
+    expect(starsCentre).toBe(99);
+    expect(Math.abs(starsCentre - lastLineCentre)).toBeLessThanOrEqual(2);
+    // And the ring clears the stars by at least Amit's 8.
+    expect(leftHeight - ratingBlock - ring).toBeGreaterThanOrEqual(TOKENS.space.xs);
 
-    // The component's own formula, as text: centre-derived, with the floor.
+    // The component's own formula, as text: last-line-derived, with the floor.
     const src = read(ROW);
     expect(src).toContain(
-      'const ROW_CTA_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CTA_VISUAL_HEIGHT / 2',
+      'const ROW_LAST_LINE_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CATEGORY_LINE / 2',
     );
+    expect(src).toContain('const ROW_CATEGORY_LINE = Math.round(TOKENS.icon.sm * ICON_SCALE)');
     const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
-    expect(leftFormula).toContain(
-      'ROW_CTA_CENTRE + STARS_HEIGHT / 2 + ROW_LINE_GAP + TOKENS.typography.bodySmall.lineHeight',
-    );
+    expect(leftFormula).toContain('ROW_LAST_LINE_CENTRE');
     expect(leftFormula).toContain('RING_TO_STARS');
     // The count sits one line gap under the stars, the same gap as the text
     // column's.
@@ -508,7 +513,10 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(outline).toContain("position: 'absolute'");
     expect(outline).toContain('borderWidth: CTA_STROKE');
     expect(outline).toContain('borderRadius: TOKENS.radius.xs');
-    expect(outline).toContain('borderColor: t.color.text.accent');
+    // The outline carries no colour of its own: the state gives it one.
+    expect(outline).not.toContain('borderColor');
+    expect(style('ctaOutlineFree')).toContain('borderColor: t.color.text.available');
+    expect(style('ctaOutlineBusy')).toContain('borderColor: t.color.state.danger');
     expect(style('ctaOutlineAway')).toContain('borderColor: t.color.text.secondary');
     expect(style('ctaAway')).not.toContain('borderColor');
     expect(src).not.toContain('ROW_CTA_WIDTH');
@@ -524,13 +532,13 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
      */
     const body = code(ROW);
     const cta = between(body, 'testID={`provider-cta-${provider.id}`}', '</Pressable>');
-    const pressable = between(body, 'onPress={() =>\n                  away', 'style={[styles.cta');
+    const pressable = between(body, 'onPress={() =>\n                    away', 'style={[styles.cta');
     expect(pressable).toContain('press="none"');
     expect(pressable).toContain('highlight="none"');
     expect(pressable).toContain('onPressIn={() => fill.set(withTiming(1, CTA_FILL_IN))}');
     expect(pressable).toContain('onPressOut={() => fill.set(withTiming(0, CTA_FILL_OUT))}');
     expect(cta).toContain('<Animated.View');
-    expect(cta).toContain('style={[styles.ctaFill, away && styles.ctaFillAway, fillStyle]}');
+    expect(cta).toContain('style={[styles.ctaFill, ctaTone.fill, fillStyle]}');
     // One property, and the free one.
     expect(body).toContain('const fillStyle = useAnimatedStyle(() => ({ opacity: fill.get() }))');
     expect(body).not.toMatch(/interpolateColor|withSpring/);
@@ -550,7 +558,7 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     // The pressed face is out of flow and out of the accessibility tree.
     const fill = style('ctaFill');
     expect(fill).toContain("position: 'absolute'");
-    expect(fill).toContain('backgroundColor: t.color.bg.accent');
+    expect(fill).not.toContain('backgroundColor');
     const outline = style('ctaOutline');
 
     /*
@@ -559,7 +567,7 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
      * that stayed drawn, which in dark was a peach step-300 rim round the solid
      * coral. Now the fill runs edge to edge on the button's own radius and the
      * outline fades out on the same shared value, so fully pressed there is
-     * one bg/accent shape and nothing lighter round it.
+     * one solid shape and nothing lighter round it, in every state's colour.
      */
     for (const edge of ['top: 0', 'right: 0', 'bottom: 0', 'left: 0']) {
       expect(fill).toContain(edge);
@@ -573,15 +581,24 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     );
     // The outline layer paints FIRST (under the glyph and word), the fill last.
     const layers = between(body, 'style={[styles.cta, away && styles.ctaAway]}>', '</Pressable>');
-    const outlineAt = layers.indexOf('styles.ctaOutline, away && styles.ctaOutlineAway, outlineStyle');
+    const outlineAt = layers.indexOf('styles.ctaOutline, ctaTone.outline, outlineStyle');
     expect(outlineAt).toBeGreaterThan(-1);
     expect(outlineAt).toBeLessThan(layers.indexOf('<Icon'));
     expect(layers.indexOf('styles.ctaFill')).toBeGreaterThan(layers.indexOf('<Icon'));
-    // And the cost of it, 2.91:1 in dark, is a named exemption, not a silence.
-    expect(read('scripts/check-contrast.mjs')).toMatch(
-      /fg: 'bg\/accent',\s+bg: 'bg\/raised',\s+target: 2\.8,[\s\S]{0,200}exempt:/,
-    );
-    expect(style('ctaFillLabel')).toContain('color: t.color.text.onAccent');
+    /*
+     * The coral press cost 2.91:1 against the dark card and carried a named
+     * exemption. The state colours need none: each fill is its own edge past
+     * 3:1 and each label on it past 4.5:1, in both modes, registered as plain
+     * pairs. The exemption is gone with the coral.
+     */
+    const contrast = read('scripts/check-contrast.mjs');
+    expect(contrast).not.toMatch(/fg: 'bg\/accent',\s+bg: 'bg\/raised'/);
+    expect(contrast).toMatch(/fg: 'bg\/available',\s+bg: 'bg\/raised',\s+target: 3,/);
+    expect(contrast).toMatch(/fg: 'text\/onState',\s+bg: 'bg\/available',\s+target: 4\.5,/);
+    expect(contrast).toMatch(/fg: 'text\/onState',\s+bg: 'state\/danger',\s+target: 4\.5,/);
+    expect(style('ctaFillFree')).toContain('backgroundColor: t.color.bg.available');
+    expect(style('ctaFillBusy')).toContain('backgroundColor: t.color.state.danger');
+    expect(style('ctaFillLabel')).toContain('color: t.color.text.onState');
     expect(cta).toContain('pointerEvents="none"');
     expect(cta).toContain('importantForAccessibility="no-hide-descendants"');
     // The away variant fills in its own neutral, never the coral.
@@ -633,10 +650,10 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(body).toContain('<RupeeAmount value={rate} />');
     expect(body).toContain('formatRupees(ratePerMin)'); // the spoken label
     expect(body.match(/formatRupees\(/g)?.length).toBe(1);
-    // And it is gone from the button and from the price line.
-    const priceLine = between(body, '<View style={styles.priceLine}>', '</Pressable>');
-    expect(priceLine).not.toContain('RupeeAmount');
-    expect(priceLine).not.toContain('ratePerMin');
+    // And it is gone from the button and from the tail beside it.
+    const tail = between(body, '<View style={styles.tail}>', '</Pressable>');
+    expect(tail).not.toContain('RupeeAmount');
+    expect(tail).not.toContain('ratePerMin');
     expect(body).not.toContain('ctaRate');
   });
 
@@ -694,8 +711,8 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(body).toContain(
       "const ctaIcon: IconName = notified ? 'check' : CTA_VERB_ICON[ctaLabel]",
     );
-    const priceLine = between(body, '<View style={styles.priceLine}>', '</Pressable>');
-    const icons = priceLine.match(/<Icon\s+name=(?:"\w+"|\{[^}]+\})/g) ?? [];
+    const tail = between(body, '<View style={styles.tail}>', '</Pressable>');
+    const icons = tail.match(/<Icon\s+name=(?:"\w+"|\{[^}]+\})/g) ?? [];
     expect(icons.map(i => i.replace(/\s+/g, ' '))).toEqual([
       '<Icon name={categoryKey}', // the category mark
       '<Icon name={ctaIcon}', // the resting face
@@ -715,7 +732,7 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(body).not.toContain('<MetaChip');
     expect(read('design/icons.json')).toContain('"listener": "flower-lotus-fill"');
     expect(read('design/icons.json')).toContain('"astrologer": "moon-stars-fill"');
-    const category = between(body, 'testID="provider-category"', '<View style={styles.priceSpacer} />');
+    const category = between(body, 'testID="provider-category"', '<View style={styles.ctaSlot}>');
     expect(category).toContain('name={categoryKey}');
     expect(category).toContain('size={TOKENS.icon.sm}');
     expect(category).toContain('{category}');
@@ -745,7 +762,7 @@ describe('every row is still the same height', () => {
     /*
      * The cap now lives entirely in `rowExpertise`, where the row used to
      * re-apply it after prepending the category badge. The badge moved to its
-     * own slot on the price line, so there is nothing to prepend and nothing to
+     * own line under Exp, so there is nothing to prepend and nothing to
      * re-slice — and the topics got back the slot the badge was taking in
      * search.
      */
@@ -770,52 +787,146 @@ describe('every row is still the same height', () => {
      * uneven, and the one after the specialities looked biggest. Measured line
      * box to line box (includeFontPadding is false throughout), they were
      * 6 · 6 · 2 · 9.5 down the right column and 8 · 2 down the left. They are
-     * now all ROW_LINE_GAP, `space['2xs']` (4), except the ring-to-stars gap,
-     * which the star/CTA alignment sets (13.5, asserted above).
+     * now all ROW_LINE_GAP, `space['2xs']` (4), and the ring-to-stars gap is
+     * Amit's 8 (asserted above). The lead measured Astrotalk's card on the S22
+     * the same way: 17.1dp detail lines on a 21dp pitch, a uniform ~4.
      */
     const src = read(ROW);
     expect(src).toContain("const ROW_LINE_GAP = TOKENS.space['2xs']");
     expect(TOKENS.space['2xs']).toBe(4);
     expect(style('label')).toContain('gap: ROW_LINE_GAP');
     expect(style('label')).not.toContain('hair');
-    // The 48dp CTA row lays out at its drawn 33: its box bleeds 7.5dp past the
-    // drawing each side, on the plain wrapper View and not on the Pressable
-    // (which would keep its root at 48; see HomeScreen's seeAllBleed).
-    expect(src).toContain(
-      'const ROW_CTA_BLEED = (ROW_CTA_HEIGHT - ROW_CTA_VISUAL_HEIGHT) / 2',
-    );
-    const price = style('priceLine');
-    expect(price).toContain('height: ROW_CTA_HEIGHT');
-    expect(price).toContain('marginVertical: -ROW_CTA_BLEED');
-    expect(price).toContain("alignItems: 'center'");
-    expect(style('cta')).not.toMatch(/margin/);
-    expect(code(ROW)).toMatch(/<View style=\{styles\.priceLine\}>/);
-    // So "Exp" to the button's drawn edge is the same 4 as every other gap.
-    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
-    const bleed = (TOKENS.interaction.minTarget - drawn) / 2;
-    expect(bleed).toBe(7.5);
-    // Laid out: gap 4, then the row box starting 7.5 higher, then the drawing
-    // centred 7.5 inside it.
-    expect(TOKENS.space['2xs'] + -bleed + (TOKENS.interaction.minTarget - drawn) / 2).toBe(4);
+    // Exp and the category are two lines of the same column rhythm.
+    expect(style('tailLines')).toContain('gap: ROW_LINE_GAP');
+    expect(code(ROW)).not.toContain('styles.priceLine');
+    expect(code(ROW)).not.toContain('priceSpacer');
   });
 
-  it('computes to a 155.5dp card and a 167.5dp pitch, from the tokens', () => {
+  it('centres the CTA across the last two lines without growing the column', () => {
+    /*
+     * Amit, 2026-09-27, Astrotalk's placement: the CTA sits at the right,
+     * centred across "Exp" and the category line, instead of owning a 48dp row
+     * under them. Its slot is a real 48dp box (so hitSlop lands inside a
+     * parent) that lays out at the button's drawn 33 via a negative margin on
+     * the plain wrapper View, never on the Pressable (see HomeScreen's
+     * seeAllBleed), and 33 is less than the two lines' 39, so the button never
+     * sets the tail's height.
+     */
+    const src = read(ROW);
+    const body = code(ROW);
+    expect(src).toContain('const ROW_CTA_BLEED = (ROW_CTA_HEIGHT - ROW_CTA_VISUAL_HEIGHT) / 2');
+    expect(src).toContain(
+      'const ROW_TAIL =\n  TOKENS.typography.bodySmall.lineHeight + ROW_LINE_GAP + ROW_CATEGORY_LINE',
+    );
+    const slot = style('ctaSlot');
+    expect(slot).toContain('height: ROW_CTA_HEIGHT');
+    expect(slot).toContain('marginVertical: -ROW_CTA_BLEED');
+    expect(slot).toContain("justifyContent: 'center'");
+    expect(style('tail')).toContain("flexDirection: 'row'");
+    expect(style('tail')).toContain("alignItems: 'center'");
+    expect(style('cta')).not.toMatch(/margin/);
+    // Structure: the tail holds the two lines, then the slot with the CTA.
+    const tail = between(body, '<View style={styles.tail}>', '<View style={styles.ctaSlot}>');
+    expect(tail).toContain('<View style={styles.tailLines}>');
+    expect(tail).toContain('Exp · ');
+    expect(tail).toContain('testID="provider-category"');
+    expect(between(body, '<View style={styles.ctaSlot}>', '</Pressable>')).toContain(
+      'testID={`provider-cta-${provider.id}`}',
+    );
+
+    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+    const bleed = (TOKENS.interaction.minTarget - drawn) / 2;
+    const tailHeight =
+      TOKENS.typography.bodySmall.lineHeight + TOKENS.space['2xs'] + Math.round(TOKENS.icon.sm * 1.2);
+    expect(bleed).toBe(7.5);
+    expect(tailHeight).toBe(39);
+    // What the slot costs the row, and that it is less than the lines.
+    expect(TOKENS.interaction.minTarget - 2 * bleed).toBe(drawn);
+    expect(drawn).toBeLessThan(tailHeight);
+  });
+
+  it('colours the CTA by state: green free, garnet busy, neutral away, never coral', () => {
+    /*
+     * Amit, 2026-09-27. One lookup (`ctaTone`) feeds the outline, the resting
+     * ink and both pressed layers, so they cannot disagree about the state.
+     * Away outranks busy: a provider who is not here cannot be waited out.
+     */
+    const body = code(ROW);
+    expect(body).toContain('const busy = away ? null : readBusy(provider)');
+    const tone = between(body, 'const ctaTone = away', ';\n');
+    expect(tone.indexOf('styles.ctaOutlineAway')).toBeLessThan(tone.indexOf('busy !== null'));
+    expect(tone).toContain('outline: styles.ctaOutlineBusy');
+    expect(tone).toContain('label: styles.ctaBusyLabel');
+    expect(tone).toContain('fill: styles.ctaFillBusy');
+    expect(tone).toContain('outline: styles.ctaOutlineFree');
+    expect(tone).toContain('label: styles.ctaFreeLabel');
+    expect(tone).toContain('fill: styles.ctaFillFree');
+    expect(style('ctaFreeLabel')).toContain('color: t.color.text.available');
+    expect(style('ctaBusyLabel')).toContain('color: t.color.state.danger');
+    expect(style('ctaAwayLabel')).toContain('color: t.color.text.primary');
+    // The label's base style carries the type only; the state carries the ink.
+    expect(style('ctaLabel')).not.toContain('color');
+    // No coral anywhere on the CTA.
+    const ctaStyles = between(rowStyles(), '  cta: {', '  ctaAway: {');
+    expect(ctaStyles).not.toMatch(/accent/);
+    const contrast = read('scripts/check-contrast.mjs');
+    expect(contrast).toMatch(/fg: 'text\/available',\s+bg: 'bg\/raised',\s+target: 4\.5,/);
+    expect(contrast).toMatch(/fg: 'text\/available',\s+bg: 'bg\/raised',\s+target: 3,/);
+    expect(contrast).toMatch(/fg: 'state\/danger',\s+bg: 'bg\/raised',\s+target: 4\.5,/);
+  });
+
+  it('hangs the busy wait line under the button, inside the card', () => {
+    /*
+     * "wait ~12m" (or "Busy") in the button's garnet at textXs, directly under
+     * the button, out of flow so it never grows the column. The line's bottom
+     * is derived, and it has to land inside the card's content height, which
+     * the left column's review count already makes the card give.
+     */
+    const body = code(ROW);
+    const src = read(ROW);
+    const slot = between(body, '<View style={styles.ctaSlot}>', '</View>\n          </View>');
+    expect(slot).toContain('{busy !== null ? (');
+    expect(slot).toContain('{busyLine(busy)}');
+    expect(slot).toContain('testID={`provider-busy-${provider.id}`}');
+    expect(slot).toContain('importantForAccessibility="no"');
+    const line = style('busyLine');
+    expect(line).toContain('...TOKENS.typography.textXs');
+    expect(line).toContain('color: t.color.state.danger');
+    expect(line).toContain("position: 'absolute'");
+    expect(line).toContain('top: ROW_CTA_HEIGHT - ROW_CTA_BLEED + BUSY_LINE_GAP');
+    expect(src).toContain('const BUSY_LINE_GAP = TOKENS.space.hair');
+    // Spoken on the CTA and in the card's summary, since the drawn line is
+    // hidden from TalkBack.
+    expect(body).toContain('`${ctaSpoken}, ${busyForSpeech(busy)}`');
+    expect(body).toContain('busy !== null ? busyForSpeech(busy) : null');
+
+    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+    const right = 107;
+    const tail = 39;
+    const bottom = right - tail / 2 + drawn / 2 + TOKENS.space.hair + TOKENS.typography.textXs.lineHeight;
+    expect(TOKENS.typography.textXs.lineHeight).toBe(15);
+    expect(bottom).toBe(121);
+    expect(bottom).toBeLessThanOrEqual(126); // the left column, the card's content
+    expect(src).toContain('export const ROW_BUSY_LINE_BOTTOM =');
+  });
+
+  it('computes to a 150dp card and a 162dp pitch, from the tokens', () => {
     /*
      * The card is TWO columns of different heights — the shape the reference
      * uses and the reason the avatar grew. Every term is a token, so a change
      * to the type scale fails here rather than silently mis-hinting the list.
      *
-     *   right  name 24 · 4 · specialities 16 · 4 · langs 16 · 4 · exp 16 · 4 · CTA 33 = 121
-     *   left   ring 84 · 13.5 · stars 14 · 4 · count 16                             = 131.5
+     *   right  name 24 · 4 · specialities 16 · 4 · langs 16 · 4 · exp 16 · 4 · category 19 = 107
+     *   left   ring 84 · 8 · stars 14 · 4 · count 16                                     = 126
      *
-     * The last line is a ROW — category left, CTA right — and since 2026-09-27
-     * it costs the CTA's DRAWN 33, with its 48dp target bleeding 7.5dp past
-     * that each side. Astrotalk's `call_rl` straddles its lines the same way.
+     * The CTA is not a line: since 2026-09-27 it sits at the right of Exp and
+     * the category, centred across them, the way Astrotalk's `call_rl`
+     * straddles its lines.
      *
      * Was 160 of card (right column 136: 24 · 2 · 24 · 2 · 16 · 2 · 16 · 2 · 48)
-     * and 172 of pitch. Now 155.5 and 167.5: the 4.5dp saved is the dead space
-     * of the old chip slot and the 48's invisible top, against the reference's
-     * 146.2dp `row_content_holder` and 180.4 pitch.
+     * and 172 of pitch, then 155.5 / 167.5 with uniform gaps and the CTA row at
+     * its drawn 33. Now 150 and 162, against the reference's 146.2dp
+     * `row_content_holder` and 180.4 pitch.
      *
      * THIS TEST USED TO PASS WHILE DESCRIBING THE WRONG ROW. It recomputed the
      * old four-line stack from tokens and asserted 142, and the arithmetic
@@ -845,7 +956,7 @@ describe('every row is still the same height', () => {
     const ringSize = 76 + 2 * (2 + 2);
 
     const gap = TOKENS.space['2xs'];
-    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+    const categoryLine = Math.round(TOKENS.icon.sm * 1.2);
     const right =
       TOKENS.typography.textXlSemiBold.lineHeight +
       gap +
@@ -855,27 +966,25 @@ describe('every row is still the same height', () => {
       gap +
       TOKENS.typography.bodySmall.lineHeight +
       gap +
-      drawn;
+      categoryLine;
     const leftFloor =
       ringSize + TOKENS.space.xs + starsHeight + gap + TOKENS.typography.bodySmall.lineHeight;
     const left = Math.max(
-      right - drawn / 2 + starsHeight / 2 + gap + TOKENS.typography.bodySmall.lineHeight,
+      right - categoryLine / 2 + starsHeight / 2 + gap + TOKENS.typography.bodySmall.lineHeight,
       leftFloor,
     );
     /*
-     * The LEFT column sizes the card now. Its height comes from the star/CTA
-     * alignment (131.5), which is above both the right column (121) and the
-     * left column's own contents at the minimum ring gap (126): the contents
-     * fit, and the alignment term is the one in force.
+     * The LEFT column sizes the card, at its floor (the ring's 8dp): exact
+     * alignment with the category line would want 124.5 and crowd the ring.
      */
-    expect(right).toBe(121);
+    expect(categoryLine).toBe(19);
+    expect(right).toBe(107);
     expect(leftFloor).toBe(126);
-    expect(left).toBe(131.5);
-    expect(left).toBeGreaterThan(leftFloor);
+    expect(left).toBe(126);
     expect(left).toBeGreaterThan(right);
     const card = 2 * TOKENS.space.sm + Math.max(left, right);
-    expect(card).toBe(155.5);
-    expect(card + TOKENS.space.sm).toBe(167.5);
+    expect(card).toBe(150);
+    expect(card + TOKENS.space.sm).toBe(162);
 
     /*
      * ...and the COMPONENT'S OWN FORMULA, term for term, which is the half the
@@ -885,7 +994,7 @@ describe('every row is still the same height', () => {
      */
     const src = read(ROW);
     const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
-    expect(leftFormula).toContain('ROW_CTA_CENTRE');
+    expect(leftFormula).toContain('ROW_LAST_LINE_CENTRE');
     expect(leftFormula).toContain('ROW_AVATAR_RING');
     expect(leftFormula.match(/STARS_HEIGHT/g)?.length).toBe(2);
     expect(leftFormula).toContain('RING_TO_STARS');
@@ -893,14 +1002,21 @@ describe('every row is still the same height', () => {
 
     const rightFormula = between(src, 'export const PROVIDER_ROW_RIGHT_COLUMN =', ';');
     expect(rightFormula).toContain('textXlSemiBold.lineHeight');
-    expect(rightFormula).toContain('ROW_CTA_VISUAL_HEIGHT');
-    expect(rightFormula).not.toContain('ROW_CTA_HEIGHT');
+    // The CTA is in none of it: the tail is Exp and the category.
+    expect(rightFormula).toContain('ROW_TAIL');
+    expect(rightFormula).not.toContain('ROW_CTA');
     expect(rightFormula).not.toContain('ROW_TAG_LINE');
-    // Three bodySmall lines — specialities, languages AND experience. Two
-    // would mean a line got dropped while the total still looked plausible.
-    expect(rightFormula.match(/bodySmall\.lineHeight/g)?.length).toBe(3);
-    // Four gaps, one between each pair of the five line items, all the same.
-    expect(rightFormula.match(/ROW_LINE_GAP/g)?.length).toBe(4);
+    // Two bodySmall lines here (specialities, languages) and the third, Exp,
+    // inside ROW_TAIL. Fewer would mean a line got dropped while the total
+    // still looked plausible.
+    expect(rightFormula.match(/bodySmall\.lineHeight/g)?.length).toBe(2);
+    const tailFormula = between(src, 'const ROW_TAIL =', ';');
+    expect(tailFormula).toContain('bodySmall.lineHeight');
+    expect(tailFormula).toContain('ROW_CATEGORY_LINE');
+    // Four gaps between the five lines, all the same: three here, one in the
+    // tail.
+    expect(rightFormula.match(/ROW_LINE_GAP/g)?.length).toBe(3);
+    expect(tailFormula.match(/ROW_LINE_GAP/g)?.length).toBe(1);
     expect(rightFormula).not.toContain('space.hair');
 
     expect(src).toContain(
@@ -946,8 +1062,8 @@ describe('every row is still the same height', () => {
   });
 
   it('leaves the card top-aligned, since the columns differ', () => {
-    // `center` would float the 121dp text column down from the top of the
-    // 131.5dp avatar column. Astrotalk top-aligns for the same reason.
+    // `center` would float the 107dp text column down from the top of the
+    // 126dp avatar column. Astrotalk top-aligns for the same reason.
     expect(style('card')).toContain("alignItems: 'flex-start'");
     expect(rowStyles()).not.toContain('rowTwoLine');
   });

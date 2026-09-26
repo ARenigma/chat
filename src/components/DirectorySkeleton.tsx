@@ -70,7 +70,9 @@ export function DirectorySkeleton({ rows = 5 }: { rows?: number }) {
             <Skeleton width={STARS_WIDTH} height={12} radius={TOKENS.radius.xs} />
             <Skeleton width={52} height={11} radius={TOKENS.radius.xs} />
           </View>
-          {/* Right column: name, expertise, languages, experience, price row. */}
+          {/* Right column: name, expertise, languages, then the tail: experience
+              and the category on the left, the CTA centred across them on the
+              right, which is where the real card puts it since 2026-09-27. */}
           <View style={styles.lines}>
             {/* The name, and the rate at the far end of the same line. */}
             <View style={styles.nameLine}>
@@ -83,10 +85,11 @@ export function DirectorySkeleton({ rows = 5 }: { rows?: number }) {
                 the 24dp chip slot this bar was 20dp tall to fill. */}
             <Skeleton width="76%" height={12} radius={TOKENS.radius.xs} />
             <Skeleton width="46%" height={12} radius={TOKENS.radius.xs} />
-            <Skeleton width="34%" height={12} radius={TOKENS.radius.xs} />
-            <View style={styles.priceLine}>
-              <Skeleton width={62} height={16} radius={TOKENS.radius.xs} />
-              <View style={styles.spacer} />
+            <View style={styles.tail}>
+              <View style={styles.tailLines}>
+                <Skeleton width="44%" height={12} radius={TOKENS.radius.xs} />
+                <Skeleton width={62} height={16} radius={TOKENS.radius.xs} />
+              </View>
               <Skeleton
                 width={CTA_PLACEHOLDER_WIDTH}
                 height={ROW_CTA_VISUAL_HEIGHT}
@@ -144,9 +147,14 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
     },
-    priceLine: {
+    tail: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: TOKENS.space.xs,
+    },
+    tailLines: {
+      flex: 1,
+      gap: TOKENS.space['2xs'],
     },
     spacer: {
       flex: 1,

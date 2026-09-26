@@ -19,6 +19,7 @@ import { Pressable } from './Pressable';
 import { CATEGORY_BADGE, categoryOf, type ProviderCategory } from '../lib/providerFilters';
 import { rowExpertise } from '../lib/expertise';
 import { formatRupees } from '../lib/rates';
+import { busyForSpeech, busyLine, readBusy } from '../lib/busy';
 import { RupeeAmount } from './RupeeAmount';
 import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { RatingStars, STARS_HEIGHT } from './RatingStars';
@@ -150,10 +151,11 @@ export const ROW_AVATAR_RING = ROW_AVATAR + 2 * (RING_STROKE + RING_INSET);
  * a hard edge and the stars have their own optical padding inside the glyph
  * box, so the measured gap and the perceived gap are not the same number.
  *
- * Since 2026-09-27 the drawn gap is whatever lands the stars on the CTA's
- * centre (see PROVIDER_ROW_LEFT_COLUMN), 13.5dp today, and this is the number
- * the test holds it above, so a later change cannot pull the stars back into
- * the ring to keep that alignment.
+ * A FLOOR since 2026-09-27: the left column is sized to put the stars on the
+ * last text line's centre OR this far under the ring, whichever is lower (see
+ * PROVIDER_ROW_LEFT_COLUMN). With the CTA beside the last two lines the floor
+ * is the term in force, so the gap is exactly this 8 and the stars sit 1.5dp
+ * under the category line's centre rather than 6.5 under the ring.
  */
 const RING_TO_STARS = TOKENS.space.xs;
 
@@ -195,15 +197,16 @@ export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
  * than written down. Was 36, Astrotalk's `call_rl`.
  *
  * The 48dp TARGET is unchanged, and still met two ways so the smaller drawing is
- * not an a11y regression: the price row it is centred in stays `ROW_CTA_HEIGHT`
- * (48) tall, and the Pressable's `size` turns the difference into `hitSlop`,
+ * not an a11y regression: the slot it is centred in (`ctaSlot`) stays
+ * `ROW_CTA_HEIGHT` (48) tall, and the Pressable's `size` turns the difference
+ * into `hitSlop`,
  * max(8, ceil((48 - 33) / 2)) = 8 on every side, a 49dp target — "we recommend
  * that each interactive UI element have a focusable area, or touch target size,
  * of at least 48dp x 48dp"
  * (https://developer.android.com/guide/topics/ui/accessibility/apps).
- * Since 2026-09-27 the column reserves THIS, the drawing, and the 48dp row box
+ * Since 2026-09-27 the slot lays out at THIS, the drawing, and its 48dp box
  * bleeds past it (ROW_CTA_BLEED), so the target is still a real 48dp box while
- * the gap above the button is the same as every other gap on the card.
+ * the button takes no more of the card than it draws.
  *
  * NO WIDTH CONSTANT ANY MORE. It was a fixed 136 because the button carried the
  * rate as well as the verb ("move rate into cta after call text", 2026-09-08).
@@ -215,19 +218,41 @@ export const ROW_CTA_VISUAL_HEIGHT =
   TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
 
 /**
- * How far the price row's 48dp TARGET box bleeds past its 33dp DRAWING, top
+ * How far the CTA slot's 48dp TARGET box bleeds past its 33dp DRAWING, top
  * and bottom: (48 - 33) / 2 = 7.5.
  *
- * The row keeps its 48 so the CTA's hitSlop has a real box to land in (hitSlop
- * cannot reach past a parent on Android). What changes is what the row COSTS
- * the column: a negative margin of this much each side lays it out at 33, so
- * the uniform ROW_LINE_GAP runs from "Exp" to the button's drawn edge rather
- * than to an invisible target 7.5dp above it. The margin sits on the plain
- * `priceLine` View, not on the Pressable, for the reason HomeScreen's
- * `seeAllBleed` records: Pressable moves minHeight to its root and leaves
- * margins on its inner view, so a margin there shrinks only the inside.
+ * The slot keeps its 48 so the CTA's hitSlop has a real box to land in (hitSlop
+ * cannot reach past a parent on Android). What changes is what the slot COSTS
+ * the tail row: a negative margin of this much each side lays it out at 33,
+ * less than the two text lines beside it, so the button never sets the row's
+ * height. The margin sits on the plain `ctaSlot` View, not on the Pressable,
+ * for the reason HomeScreen's `seeAllBleed` records: Pressable moves minHeight
+ * to its root and leaves margins on its inner view, so a margin there shrinks
+ * only the inside.
  */
 const ROW_CTA_BLEED = (ROW_CTA_HEIGHT - ROW_CTA_VISUAL_HEIGHT) / 2;
+
+/**
+ * The category line's box: its glyph's, `icon.sm` (16) at ICON_SCALE, which
+ * `Icon` rounds to 19 and which is taller than the 17dp word beside it, so it
+ * is the line's height. The uniform gap above it is measured to this box.
+ */
+const ROW_CATEGORY_LINE = Math.round(TOKENS.icon.sm * ICON_SCALE);
+
+/**
+ * The tail: "Exp" and the category line, the two lines the CTA is centred
+ * across. 16 + 4 + 19 = 39, and the CTA slot's laid-out 33 fits inside it,
+ * which is what keeps the button from growing the text column.
+ */
+const ROW_TAIL =
+  TOKENS.typography.bodySmall.lineHeight + ROW_LINE_GAP + ROW_CATEGORY_LINE;
+
+/**
+ * The wait line's distance under the busy button's drawn edge: `hair` (2), not
+ * the 4 between text lines, because it belongs to the button rather than to
+ * the column. It reads as the button's caption.
+ */
+const BUSY_LINE_GAP = TOKENS.space.hair;
 
 /**
  * The outline, drawn INSIDE the 33 rather than around it, and drawn by its own
@@ -366,21 +391,18 @@ export const ROW_CARD_GAP = TOKENS.space.sm;
  * and scroll-to-index accuracy, not correctness, which is exactly why nobody
  * noticed for as long as nobody did.
  *
- * TWO COLUMNS, and since 2026-09-27 every gap between text lines is the one
- * ROW_LINE_GAP (4):
+ * TWO COLUMNS, every gap between text lines the one ROW_LINE_GAP (4), and since
+ * 2026-09-27 (Amit, Astrotalk's placement) the CTA is no longer a line at all:
+ * it sits at the right of the last two lines, centred across them, in a slot
+ * that lays out shorter than they are.
  *
- *   right  name 24 · 4 · specialities 16 · 4 · langs 16 · 4 · exp 16 · 4 · CTA 33 = 121
- *   left   ring 84 · 13.5 · stars 14 · 4 · count 16                             = 131.5
+ *   right  name 24 · 4 · specialities 16 · 4 · langs 16 · 4 · exp 16 · 4 · category 19 = 107
+ *   left   ring 84 · 8 · stars 14 · 4 · count 16                                     = 126
  *
- * The CTA row costs its DRAWN 33, not its 48dp target: the target bleeds 7.5dp
- * past the drawing each side (ROW_CTA_BLEED), into the gap above and the
- * card's padding below. The row is still a ROW, category left and CTA right,
- * which is where Astrotalk puts its button too: `call_rl` spans y361.5–397.5,
- * straddling the experience and price lines rather than sitting under them.
- *
- * Was  right  name 24 · 2 · tags 24 · 2 · langs 16 · 2 · exp 16 · 2 · CTA 48 = 136,
- * a 160dp card. Now 155.5, and the saving is exactly the dead space the chip
- * slot and the 48 used to hold, not anything a member could see.
+ * History, so the next change can see the trend:
+ *   09-26  name 24 · 2 · tags 24 · 2 · langs 16 · 2 · exp 16 · 2 · CTA row 48 = 136  card 160
+ *   09-27  uniform 4dp gaps, CTA row at its drawn 33                        = 121  card 155.5
+ *   09-27  CTA beside exp + category, category its own line                 = 107  card 150
  *
  * `__tests__/providerRow.test.ts` pins the arithmetic from the tokens, so a
  * change to the type scale fails there rather than silently mis-hinting the
@@ -393,51 +415,65 @@ export const PROVIDER_ROW_RIGHT_COLUMN =
   ROW_LINE_GAP +
   TOKENS.typography.bodySmall.lineHeight +
   ROW_LINE_GAP +
-  TOKENS.typography.bodySmall.lineHeight +
-  ROW_LINE_GAP +
-  ROW_CTA_VISUAL_HEIGHT;
+  ROW_TAIL;
 
 /**
- * The CTA's centre, from the top of the right column: 121 - 33 / 2 = 104.5.
- * The one horizon the two columns share.
+ * The last text line's centre (the category line), from the top of the right
+ * column: 107 - 19 / 2 = 97.5. The horizon the star row is aligned to.
  */
-const ROW_CTA_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CTA_VISUAL_HEIGHT / 2;
+const ROW_LAST_LINE_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CATEGORY_LINE / 2;
 
 /**
- * The left column's height: whatever puts the star row's centre ON the CTA's,
- * with the review count one ROW_LINE_GAP under the stars.
+ * The left column's height: the stars-and-count block at the bottom, with the
+ * star row on the last text line's centre, unless that would crowd the ring.
  *
  * Amit, on the device: "strats should align with rate.. pls see how astrotalsk
  * proved space and alignment" — and the reference does align them: its
  * `average_ratingbar` sits at y384.4 and its `price` at y386.5, so the rating
- * and the row beside it read as one line across the card.
+ * and the line beside it read as one line across the card. The line beside
+ * them is the category now (the lowest text line, 2026-09-27), not the CTA.
  *
- * The mechanism is the old one, turned round. The column still pushes exactly
- * two children apart (`justifyContent: 'space-between'`): the ring to the top,
- * the stars-and-count block to the bottom. It used to take the RIGHT column's
- * height, which landed the stars within a point of the 48dp row's centre. With
- * that row now laid out at its drawn 33, the right column (121) is shorter than
- * the left column's contents (84 + 8 + 14 + 4 + 16 = 126), so the left column
- * is sized from the alignment instead: the CTA centre (104.5), half the star
- * row (7), the gap (4) and the count (16) = 131.5. The ring-to-stars gap is
- * what is left, 13.5; the second term below is the floor that keeps it at or
- * above RING_TO_STARS, and the test asserts the first term is the one in force.
+ * The column pushes exactly two children apart (`justifyContent:
+ * 'space-between'`): the ring to the top, the stars-and-count block to the
+ * bottom. Exact alignment would want the column 97.5 + 7 + 4 + 16 = 124.5
+ * tall, which leaves the ring only 6.5 clear of the stars, under Amit's 8
+ * (RING_TO_STARS). The FLOOR wins, 84 + 8 + 14 + 4 + 16 = 126, and the star
+ * row's centre lands at 99, 1.5dp under the category line's: inside the 2dp
+ * this card has always allowed the two (it was 111 against 112 at 136), and
+ * the price of keeping the ring's breathing room.
  *
- * So the card is now sized by the LEFT column, and the review count is its
- * lowest line, hanging under the CTA row the way Astrotalk's "orders" line
- * hangs under its price.
+ * So the LEFT column sizes the card, and the review count is its lowest line,
+ * hanging under the last text line the way Astrotalk's "orders" line hangs
+ * under its price. The busy wait line hangs into the same space on the right
+ * (see ROW_BUSY_LINE_BOTTOM).
  */
 export const PROVIDER_ROW_LEFT_COLUMN = Math.max(
-  // Aligned: the star row's centre on the CTA's. This is the term that wins.
-  ROW_CTA_CENTRE + STARS_HEIGHT / 2 + ROW_LINE_GAP + TOKENS.typography.bodySmall.lineHeight,
-  // The floor: never closer to the ring than Amit's 8, even if a shorter right
-  // column one day puts the CTA's centre higher than that allows.
+  // Aligned: the star row's centre on the last text line's.
+  ROW_LAST_LINE_CENTRE +
+    STARS_HEIGHT / 2 +
+    ROW_LINE_GAP +
+    TOKENS.typography.bodySmall.lineHeight,
+  // The floor: never closer to the ring than Amit's 8. The term in force today.
   ROW_AVATAR_RING +
     RING_TO_STARS +
     STARS_HEIGHT +
     ROW_LINE_GAP +
     TOKENS.typography.bodySmall.lineHeight,
 );
+
+/**
+ * Where the busy wait line ends, from the top of the right column: the tail's
+ * centre plus half the button, the gap and the textXs line,
+ * (107 - 39 / 2) + 33 / 2 + 2 + 15 = 121. The test holds it inside the card's
+ * content height, so the line can hang out of the text column without ever
+ * hanging out of the card.
+ */
+export const ROW_BUSY_LINE_BOTTOM =
+  PROVIDER_ROW_RIGHT_COLUMN -
+  ROW_TAIL / 2 +
+  ROW_CTA_VISUAL_HEIGHT / 2 +
+  BUSY_LINE_GAP +
+  TOKENS.typography.textXs.lineHeight;
 
 /**
  * The card itself, without the gap under it: the taller column plus padding.
@@ -633,6 +669,15 @@ function ProviderRowView({
   const away = !presence.here;
   const canCall = provider.audio_enabled && onCall !== undefined && !away;
   /*
+   * BUSY: here, but in a session with someone else (Amit, 2026-09-27). Away
+   * outranks it, because a provider who is not here is not "busy" in any sense
+   * a member can wait out; the Notify route is the honest one then. The verb
+   * and the action do not change, only the ink and the wait line: the tap
+   * still does what the label says, and the member decides whether ~12m is
+   * worth it.
+   */
+  const busy = away ? null : readBusy(provider);
+  /*
    * WHICH CHANNEL THE ONE BUTTON NAMES, when it cannot dial.
    *
    * The row has a single CTA and the provider may offer any of seven channel
@@ -727,6 +772,35 @@ function ProviderRowView({
   const outlineStyle = useAnimatedStyle(() => ({ opacity: 1 - fill.get() }));
 
   /*
+   * THE CTA'S COLOUR IS ITS STATE (Amit, 2026-09-27): green while free, garnet
+   * while busy, the neutral while away. Coral stopped being the directory CTA
+   * colour: a list of coral buttons put the brand on every row, where the
+   * state is what a member is scanning for. One lookup, so the resting ink,
+   * the outline and both pressed layers cannot disagree about which state
+   * they are drawing.
+   */
+  const ctaTone = away
+    ? {
+        outline: styles.ctaOutlineAway,
+        label: styles.ctaAwayLabel,
+        fill: styles.ctaFillAway,
+        fillLabel: styles.ctaFillAwayLabel,
+      }
+    : busy !== null
+      ? {
+          outline: styles.ctaOutlineBusy,
+          label: styles.ctaBusyLabel,
+          fill: styles.ctaFillBusy,
+          fillLabel: styles.ctaFillLabel,
+        }
+      : {
+          outline: styles.ctaOutlineFree,
+          label: styles.ctaFreeLabel,
+          fill: styles.ctaFillFree,
+          fillLabel: styles.ctaFillLabel,
+        };
+
+  /*
    * The category's ink, keyed by the category so a third one added to
    * migration 065 fails to compile here rather than rendering uncoloured.
    */
@@ -738,6 +812,7 @@ function ProviderRowView({
   const accessibility = [
     `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
     presenceForSpeech(presence),
+    busy !== null ? busyForSpeech(busy) : null,
     channelLine,
     category,
     tags.length > 0 ? tags.join(', ') : headline,
@@ -878,7 +953,7 @@ function ProviderRowView({
               `numberOfLines={1}` is what keeps it one line now, where the
               slot's fixed height and clip used to. `rowExpertise` still caps
               and dedupes the tag set (ROW_EXPERTISE_LIMIT); only the rendering
-              changed from chips to a comma join. The category on the price line
+              changed from chips to a comma join. The category line under Exp
               stopped being a chip too (2026-09-26): coloured text behind a
               filled glyph. */}
           <Text
@@ -893,152 +968,174 @@ function ProviderRowView({
             {languages === '' ? ' ' : languages}
           </Text>
 
-          <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
-            {`Exp · ${years} ${years === 1 ? 'year' : 'years'}`}
-          </Text>
-
-          <View style={styles.priceLine}>
-            {/* Listener / Astrologer, on EVERY card — the tab above Explore
-                already says which you are looking at, but search spans both and
-                a member should not have to remember which list they are in to
-                know what they are buying.
-
-                NOT A CHIP since 2026-09-26 (Amit): coloured text behind a
-                filled glyph, the "trophy + Wellness Guide" idiom, so the line
-                carries the type without a box competing with the CTA beside it.
-                Hue still tells the two apart down a scrolling column, and the
-                glyph now says it a second way (lotus, moon-stars) for anyone
-                who does not separate the hues. The ink is `text/onListener` /
-                `text/onAstrologer`, the text-safe member of each category pair
-                on the card: 8.79 / 8.98:1 light, 11.65 / 10.93:1 dark, both
-                registered in scripts/check-contrast.mjs. The bg/ tones are fills
-                and fail as text there (1.24:1 to 1.81:1). */}
-            <View accessible={false} testID="provider-category" style={styles.category}>
-              <Icon
-                name={categoryKey}
-                size={TOKENS.icon.sm}
-                color={categoryInk[categoryKey].color as string}
-              />
-              <Text
-                allowFontScaling
-                numberOfLines={1}
-                style={[styles.categoryLabel, categoryInk[categoryKey]]}>
-                {category}
+          {/* THE TAIL: the last two text lines on the left, the CTA on the
+              right, centred across both (Amit, 2026-09-27, Astrotalk's
+              placement: its `call_rl` straddles the experience and price
+              lines at the card's right edge). The CTA used to own a 48dp row
+              of its own under these lines; now the lines run on in the one
+              4dp rhythm and the button sits beside them without adding a
+              line. See `ctaSlot` for how it avoids inflating the column. */}
+          <View style={styles.tail}>
+            <View style={styles.tailLines}>
+              <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
+                {`Exp · ${years} ${years === 1 ? 'year' : 'years'}`}
               </Text>
-            </View>
-            <View style={styles.priceSpacer} />
-            {/* The state swap, keyed so it runs once per transition and never on
-                a re-render or on a recycled cell that lands on the same state.
-                `fadeSwapOutFast` is the existing builder for a button label that
-                just narrated itself (motion.ts): DURATION.fast, EASE_OUT,
-                opacity only, `reduceMotion(ReduceMotion.System)`. The whole
-                control fades through rather than its pieces separately,
-                because it is one object changing its mind.
+              {/* Listener / Astrologer, on EVERY card — the tab above Explore
+                  already says which you are looking at, but search spans both
+                  and a member should not have to remember which list they are
+                  in to know what they are buying.
 
-                A live region, because a focused control whose label changes does
-                not announce on its own, and Android 16 deprecates
-                announceForAccessibility in favour of exactly this.
-                https://developer.android.com/about/versions/16/behavior-changes-all
-
-                OFF WHILE IDLE, and on a list that is the difference between a
-                useful announcement and an unusable one: a live region speaks
-                when its content ARRIVES as well as when it changes, and in a
-                recycled list rows arrive continuously under the finger. Polite
-                only once this control has something to report. */}
-            <Animated.View
-              key={notify.state.kind}
-              exiting={fadeSwapOutFast}
-              accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
-              <Pressable
-                onPress={() =>
-                  away
-                    ? notify.notify()
-                    : canCall && onCall !== undefined ? onCall(provider.id) : onPress(provider.id)
-                }
-                /* Feedback on press-in, commit on press-out (animate-expo §7):
-                   the fill starts the moment the finger lands, and the action
-                   still only fires on a completed tap. Press-out drains it on
-                   every release, including a cancelled one. */
-                onPressIn={() => fill.set(withTiming(1, CTA_FILL_IN))}
-                onPressOut={() => fill.set(withTiming(0, CTA_FILL_OUT))}
-                busy={notify.state.kind === 'pending'}
-                testID={`provider-cta-${provider.id}`}
-                /* The cooldown is SPOKEN here and DRAWN on the profile, which is
-                   the one asymmetry in this pair of surfaces and is deliberate:
-                   this control is a small button on a row whose every dimension
-                   is a promise to FlashList, and "Notified  again in 12m" does
-                   not belong in it at any type size. The profile's Notify
-                   button is full width and shows the same fact in words. */
-                accessibilityLabel={
-                  notified
-                    ? `${provider.display_name} has been notified${
-                        notifyAgainIn === null ? '' : `, again in ${notifyAgainIn}m`
-                      }`
-                    : away
-                      ? `Notify ${provider.display_name} that you want to chat`
-                      : ctaSpoken
-                }
-                /* No scale and no state layer (`highlight="none"`): the fill IS
-                   the press feedback, and a 3% squeeze or a grey dim on top of
-                   it would be two answers to one touch. */
-                press="none"
-                highlight="none"
-                // `size` is how this Pressable meets the 48dp target — it turns
-                // the 33dp drawn button into a 49dp focusable area via hitSlop,
-                // without inflating the visual (Pressable.tsx, `slop`).
-                size={ROW_CTA_VISUAL_HEIGHT}
-                style={[styles.cta, away && styles.ctaAway]}>
-                {/* The resting outline, as a layer so the press can fade it
-                    out. First, so it paints under the glyph and the word. */}
-                <Animated.View
-                  pointerEvents="none"
-                  importantForAccessibility="no-hide-descendants"
-                  style={[styles.ctaOutline, away && styles.ctaOutlineAway, outlineStyle]}
-                />
-                {/* Glyph + verb, and the glyph is BACK. REVERSED 2026-09-26,
-                    citing Amit's approved mockup: every state leads with its
-                    glyph (phone for Call, camera for Video, bubble for Chat,
-                    bell for Notify, check once notified). The old rule, from
-                    "remove call icon before 22/min", was about a phone in front
-                    of a PRICE, where it only restated "this rate buys a call";
-                    the price has left the button, and a glyph in front of a
-                    one-word verb is the small-button idiom the mockup draws.
-                    Resting face: outlined, coral ink. */}
+                  A PLAIN TEXT LINE under Exp since 2026-09-27, the same 4dp
+                  under it as every other line; it shared the CTA's row before.
+                  Not a chip since 2026-09-26 (Amit): coloured text behind a
+                  filled glyph, the "trophy + Wellness Guide" idiom. Hue tells
+                  the two apart down a scrolling column, and the glyph says it a
+                  second way (lotus, moon-stars) for anyone who does not
+                  separate the hues. The ink is `text/listener` /
+                  `text/astrologer`, the text-safe member of each category pair
+                  on the card, registered in scripts/check-contrast.mjs. */}
+              <View accessible={false} testID="provider-category" style={styles.category}>
                 <Icon
-                  name={ctaIcon}
-                  size={CTA_ICON_SIZE}
-                  color={(away ? styles.ctaAwayLabel.color : styles.ctaLabel.color) as string}
+                  name={categoryKey}
+                  size={TOKENS.icon.sm}
+                  color={categoryInk[categoryKey].color as string}
                 />
                 <Text
                   allowFontScaling
                   numberOfLines={1}
-                  style={[styles.ctaLabel, away && styles.ctaAwayLabel]}>
-                  {ctaText}
+                  style={[styles.categoryLabel, categoryInk[categoryKey]]}>
+                  {category}
                 </Text>
-                {/* Pressed face: the same glyph and word on the solid fill,
-                    faded in over the resting face by `fill`. Hidden from
-                    TalkBack and from touch, because it is a second drawing of
-                    the one control, not a second control. */}
-                <Animated.View
-                  pointerEvents="none"
-                  importantForAccessibility="no-hide-descendants"
-                  style={[styles.ctaFill, away && styles.ctaFillAway, fillStyle]}>
+              </View>
+            </View>
+            <View style={styles.ctaSlot}>
+              {/* The state swap, keyed so it runs once per transition and never
+                  on a re-render or on a recycled cell that lands on the same
+                  state. `fadeSwapOutFast` is the existing builder for a button
+                  label that just narrated itself (motion.ts): DURATION.fast,
+                  EASE_OUT, opacity only, `reduceMotion(ReduceMotion.System)`.
+                  The whole control fades through rather than its pieces
+                  separately, because it is one object changing its mind.
+
+                  A live region, because a focused control whose label changes
+                  does not announce on its own, and Android 16 deprecates
+                  announceForAccessibility in favour of exactly this.
+                  https://developer.android.com/about/versions/16/behavior-changes-all
+
+                  OFF WHILE IDLE, and on a list that is the difference between a
+                  useful announcement and an unusable one: a live region speaks
+                  when its content ARRIVES as well as when it changes, and in a
+                  recycled list rows arrive continuously under the finger.
+                  Polite only once this control has something to report. */}
+              <Animated.View
+                key={notify.state.kind}
+                exiting={fadeSwapOutFast}
+                accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
+                <Pressable
+                  onPress={() =>
+                    away
+                      ? notify.notify()
+                      : canCall && onCall !== undefined ? onCall(provider.id) : onPress(provider.id)
+                  }
+                  /* Feedback on press-in, commit on press-out (animate-expo
+                     §7): the fill starts the moment the finger lands, and the
+                     action still only fires on a completed tap. Press-out
+                     drains it on every release, including a cancelled one. */
+                  onPressIn={() => fill.set(withTiming(1, CTA_FILL_IN))}
+                  onPressOut={() => fill.set(withTiming(0, CTA_FILL_OUT))}
+                  busy={notify.state.kind === 'pending'}
+                  testID={`provider-cta-${provider.id}`}
+                  /* The cooldown is SPOKEN here and DRAWN on the profile, which
+                     is the one asymmetry in this pair of surfaces and is
+                     deliberate: this control is a small button on a row whose
+                     every dimension is a promise to FlashList, and "Notified
+                     again in 12m" does not belong in it at any type size. The
+                     profile's Notify button is full width and shows the same
+                     fact in words. The busy wait is drawn AND spoken, because
+                     it has a line of its own under the button. */
+                  accessibilityLabel={
+                    notified
+                      ? `${provider.display_name} has been notified${
+                          notifyAgainIn === null ? '' : `, again in ${notifyAgainIn}m`
+                        }`
+                      : away
+                        ? `Notify ${provider.display_name} that you want to chat`
+                        : busy !== null
+                          ? `${ctaSpoken}, ${busyForSpeech(busy)}`
+                          : ctaSpoken
+                  }
+                  /* No scale and no state layer (`highlight="none"`): the fill
+                     IS the press feedback, and a 3% squeeze or a grey dim on
+                     top of it would be two answers to one touch. */
+                  press="none"
+                  highlight="none"
+                  // `size` is how this Pressable meets the 48dp target — it
+                  // turns the 33dp drawn button into a 49dp focusable area via
+                  // hitSlop, without inflating the visual (Pressable.tsx,
+                  // `slop`).
+                  size={ROW_CTA_VISUAL_HEIGHT}
+                  style={[styles.cta, away && styles.ctaAway]}>
+                  {/* The resting outline, as a layer so the press can fade it
+                      out. First, so it paints under the glyph and the word. */}
+                  <Animated.View
+                    pointerEvents="none"
+                    importantForAccessibility="no-hide-descendants"
+                    style={[styles.ctaOutline, ctaTone.outline, outlineStyle]}
+                  />
+                  {/* Glyph + verb. Every state leads with its glyph (phone for
+                      Call, camera for Video, bubble for Chat, bell for Notify,
+                      check once notified), the small-button idiom of Amit's
+                      approved mockup (2026-09-26). Resting face: outlined, in
+                      the state's ink (green free, garnet busy, neutral away). */}
                   <Icon
                     name={ctaIcon}
                     size={CTA_ICON_SIZE}
-                    color={
-                      (away ? styles.ctaFillAwayLabel.color : styles.ctaFillLabel.color) as string
-                    }
+                    color={ctaTone.label.color as string}
                   />
                   <Text
                     allowFontScaling
                     numberOfLines={1}
-                    style={[styles.ctaLabel, away ? styles.ctaFillAwayLabel : styles.ctaFillLabel]}>
+                    style={[styles.ctaLabel, ctaTone.label]}>
                     {ctaText}
                   </Text>
-                </Animated.View>
-              </Pressable>
-            </Animated.View>
+                  {/* Pressed face: the same glyph and word on the solid fill,
+                      faded in over the resting face by `fill`. Hidden from
+                      TalkBack and from touch, because it is a second drawing of
+                      the one control, not a second control. */}
+                  <Animated.View
+                    pointerEvents="none"
+                    importantForAccessibility="no-hide-descendants"
+                    style={[styles.ctaFill, ctaTone.fill, fillStyle]}>
+                    <Icon
+                      name={ctaIcon}
+                      size={CTA_ICON_SIZE}
+                      color={ctaTone.fillLabel.color as string}
+                    />
+                    <Text
+                      allowFontScaling
+                      numberOfLines={1}
+                      style={[styles.ctaLabel, ctaTone.fillLabel]}>
+                      {ctaText}
+                    </Text>
+                  </Animated.View>
+                </Pressable>
+              </Animated.View>
+              {/* "wait ~12m" (or "Busy" with no estimate), directly under the
+                  button in the button's garnet. Out of flow, so it hangs into
+                  the space under the category line instead of growing the
+                  column; hidden from TalkBack because the CTA's label already
+                  says it. */}
+              {busy !== null ? (
+                <Text
+                  allowFontScaling
+                  numberOfLines={1}
+                  importantForAccessibility="no"
+                  testID={`provider-busy-${provider.id}`}
+                  style={styles.busyLine}>
+                  {busyLine(busy)}
+                </Text>
+              ) : null}
+            </View>
           </View>
         </View>
       </Pressable>
@@ -1061,7 +1158,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   card: {
     flexDirection: 'row',
     // `flex-start`, not `center`: the two columns are different heights by
-    // design (131.5 and 121), and centring would float the text column down
+    // design (126 and 107), and centring would float the text column down
     // from the top of the avatar it sits beside. Astrotalk top-aligns them too.
     alignItems: 'flex-start',
     gap: TOKENS.space.sm,
@@ -1099,8 +1196,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    */
   leftColumn: {
     width: ROW_AVATAR_RING,
-    // Sized so the space-between below lands the star row's centre on the
-    // CTA's. See PROVIDER_ROW_LEFT_COLUMN.
+    // Sized so the space-between below lands the star row on the last text
+    // line, or 8 under the ring if that is lower. See PROVIDER_ROW_LEFT_COLUMN.
     height: PROVIDER_ROW_LEFT_COLUMN,
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1210,30 +1307,67 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.primary,
   },
   /*
-   * A 48dp box (the CTA's target) that lays out as 33 (its drawing): the
-   * negative margin is ROW_CTA_BLEED each side, so the gap above reads from
-   * "Exp" to the button's edge. `center` keeps the button and the category line
-   * on the box's middle, which is the middle of the drawing too.
+   * The last two text lines and the CTA beside them. `center` puts the button's
+   * middle on the middle of the two lines, which is Astrotalk's placement. The
+   * 8dp gap is the least the category word keeps from the button before it
+   * ellipsizes.
    */
-  priceLine: {
+  tail: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: ROW_CTA_HEIGHT,
-    marginVertical: -ROW_CTA_BLEED,
+    gap: TOKENS.space.xs,
+  },
+  // Exp and the category, in the column's one rhythm. `flex: 1` so they take
+  // what the button leaves and give way first.
+  tailLines: {
+    flex: 1,
+    gap: ROW_LINE_GAP,
   },
   /*
-   * The category mark and word. `flexShrink: 1` so at a large font scale the
-   * word gives way before the CTA is pushed off the card, and the 4dp gap is the
-   * mark-to-word distance of a label, not the 8dp of a control.
+   * THE CTA'S OWN COLUMN, and why it does not grow the text column. It is a
+   * real 48dp box (ROW_CTA_HEIGHT), so the Pressable's hitSlop lands inside a
+   * parent (it cannot reach past one on Android), and a negative margin of
+   * ROW_CTA_BLEED each side lays it out at the button's drawn 33, which is
+   * shorter than the two lines it sits beside (ROW_TAIL, 39). So the row is
+   * exactly the lines' height, whatever the button's target. The margin is on
+   * this plain View, not on the Pressable, for the reason HomeScreen's
+   * `seeAllBleed` records: Pressable moves minHeight to its root and leaves
+   * margins on its inner view.
+   */
+  ctaSlot: {
+    height: ROW_CTA_HEIGHT,
+    marginVertical: -ROW_CTA_BLEED,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  /*
+   * "wait ~12m" under the busy button: textXs (alf text_xs 11.3 on 15) in the
+   * button's own garnet, state/danger, which is 9.10:1 light / 6.74:1 dark on
+   * the card, past 4.5 for text this small. Absolute, so it is not in the row's
+   * layout at all: it hangs BUSY_LINE_GAP under the button's drawn bottom edge,
+   * into the space the left column's review count already makes the card give
+   * (ROW_BUSY_LINE_BOTTOM, 121, inside the 126 of content), and `alignItems:
+   * 'center'` on the slot centres it under the button.
+   */
+  busyLine: {
+    ...TOKENS.typography.textXs,
+    color: t.color.state.danger,
+    position: 'absolute',
+    top: ROW_CTA_HEIGHT - ROW_CTA_BLEED + BUSY_LINE_GAP,
+  },
+  /*
+   * The category mark and word. Its box is the glyph's (ROW_CATEGORY_LINE, 19),
+   * the taller of the two, which is what the card's arithmetic counts. The 4dp
+   * gap is the mark-to-word distance of a label, not the 8dp of a control.
    */
   category: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: TOKENS.space['2xs'],
-    flexShrink: 1,
   },
-  // textSmSemiBold, the CTA label's role: the category and the verb are the
-  // two words on this line and read at the same size.
+  // textSmSemiBold, the CTA label's role: the category and the verb sit side by
+  // side across the tail and read at the same size.
   categoryLabel: {
     ...TOKENS.typography.textSmSemiBold,
     flexShrink: 1,
@@ -1244,16 +1378,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   categoryAstrologer: {
     color: t.color.text.astrologer,
   },
-  // A spacer rather than `justifyContent: 'space-between'`, because the category
-  // must stay left while the CTA goes to the far edge, and the row may later
-  // gain a third child.
-  priceSpacer: {
-    flex: 1,
-  },
   /*
    * The CTA. Outlined AT REST, which is the reference and also the right call
-   * here: every card has one, and a list of filled accent buttons is a screen
-   * with no primary action at all. Astrotalk's is outlined for the same reason.
+   * here: every card has one, and a list of filled buttons is a screen with no
+   * primary action at all. Astrotalk's is outlined for the same reason.
    * It goes solid only UNDER THE FINGER (`ctaFill`), which is feedback, not a
    * resting emphasis.
    *
@@ -1262,7 +1390,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * than by a border here (see CTA_STROKE).
    * `minHeight`, not `height`: at a large font scale the label grows, and a
    * fixed height would clip it rather than let the button grow inside its 48dp
-   * row. No width at all: it hugs its content.
+   * slot. No width at all: it hugs its content.
    */
   cta: {
     minHeight: ROW_CTA_VISUAL_HEIGHT,
@@ -1289,20 +1417,20 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     backgroundColor: t.color.bg.raised,
   },
   /*
-   * THE RESTING OUTLINE. Unchanged at rest: 1dp of `text/accent` on the
-   * button's own radius. The accent INK, not the fill, because at rest this
-   * outline is the control's only boundary and it sits on the card: bg/accent
-   * (step 500) there is 2.91:1 in dark, under the 3:1 non-text floor;
-   * text/accent (step 300) is 6.25:1.
+   * THE RESTING OUTLINE: 1dp on the button's own radius, in the state's ink
+   * (`ctaOutlineFree` / `ctaOutlineBusy` / `ctaOutlineAway`). At rest this is
+   * the control's only boundary on the card, so each takes a colour that
+   * clears the 3:1 non-text floor there: text/available 4.62:1 light / 8.13:1
+   * dark, state/danger 9.10 / 6.74, text/secondary 7.41 / 5.00.
    *
    * It FADES OUT as the fill fades in (`outlineStyle`, 1 - fill), and that is
    * the fix for the rim. Amit, on the S22 (2026-09-27): while pressed the
-   * button must read as one solid coral shape. With the outline as the
-   * button's own border it stayed painted round the fill, a lighter step-300
-   * edge in dark. Letting the fill cover the border instead (inset -1) was the
-   * other option and the weaker one: the Pressable's inner view clips to its
-   * box, and even unclipped, two anti-aliased edges laid on each other leave a
-   * fringe of the lower colour on the partly covered pixels.
+   * button must read as one solid shape. With the outline as the button's own
+   * border it stayed painted round the fill, a lighter edge in dark. Letting
+   * the fill cover the border instead (inset -1) was the other option and the
+   * weaker one: the Pressable's inner view clips to its box, and even
+   * unclipped, two anti-aliased edges laid on each other leave a fringe of the
+   * lower colour on the partly covered pixels.
    */
   ctaOutline: {
     position: 'absolute',
@@ -1313,26 +1441,41 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderWidth: CTA_STROKE,
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
-    borderColor: t.color.text.accent,
   },
   /*
-   * `text/accent`, NOT `bg/accent`. `bg/accent` is a FILL colour, what a button
-   * is painted, with `text/onAccent` on top; `text/accent` is the ink for coral
-   * text on a surface. In light both are ramp step 500 (5.19:1 on the card); in
-   * dark the ink is step 300, 6.25:1 on this card, where step 500 as text would
-   * be 2.91:1. Registered on bg/raised in scripts/check-contrast.mjs, as the
-   * label and as the outline above.
-   *
-   * textSmSemiBold, Bluesky's small-button label (13.1 on 17); was labelLarge.
+   * FREE: green (Amit, 2026-09-27: the CTA is green when the provider is free,
+   * and coral is no longer the directory CTA colour). `text/available`, not
+   * `state/available`: the presence dot's green is 3.84:1 on the light card,
+   * a glyph colour that cannot carry a 13.1sp label; the ink is the same hue
+   * at 90%, 4.62:1, and the dot's own #3FD69B in dark, 8.13:1. Registered in
+   * scripts/check-contrast.mjs as the label and as the outline.
    */
+  ctaOutlineFree: {
+    borderColor: t.color.text.available,
+  },
+  ctaFreeLabel: {
+    color: t.color.text.available,
+  },
+  /*
+   * BUSY: the garnet, `state/danger`, which is already text-safe on the card in
+   * both modes (9.10:1 light, 6.74:1 dark), so it takes the label, the outline
+   * and the wait line under the button without a new token.
+   */
+  ctaOutlineBusy: {
+    borderColor: t.color.state.danger,
+  },
+  ctaBusyLabel: {
+    color: t.color.state.danger,
+  },
+  // textSmSemiBold, Bluesky's small-button label (13.1 on 17); was labelLarge.
+  // The colour comes from the state (ctaFreeLabel and its siblings).
   ctaLabel: {
     ...TOKENS.typography.textSmSemiBold,
-    color: t.color.text.accent,
   },
   /*
-   * THE PRESSED FACE: the same glyph and word, solid `bg/accent` under
-   * `text/onAccent` (5.19:1, registered), laid over the resting face and faded
-   * in by the `fill` shared value.
+   * THE PRESSED FACE: the same glyph and word on a solid fill in the state's
+   * colour (`ctaFillFree` / `ctaFillBusy` / `ctaFillAway`), laid over the
+   * resting face and faded in by the `fill` shared value.
    *
    * WHY AN OPACITY CROSSFADE and not `backgroundColor` + `color` tweened on the
    * button, its glyph and its label. Compositing a layer at opacity p over
@@ -1347,19 +1490,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    *
    * EDGE TO EDGE, NO RIM (Amit, on the S22, 2026-09-27). The fill covers the
    * whole button on the button's own outer radius, and the outline fades out
-   * under it (`ctaOutline`), so fully pressed it is one solid `bg/accent`
-   * shape. It used to sit inside a stroke that stayed drawn, and in dark that
-   * stroke was a step-300 rim round the step-500 fill.
+   * under it (`ctaOutline`), so fully pressed it is one solid shape. It used to
+   * sit inside a stroke that stayed drawn, a lighter rim round the fill in dark.
    *
-   * THE CONTRAST THAT COSTS, stated rather than hidden: in dark the solid fill
-   * is 2.91:1 against the card, under the 3:1 non-text floor the rim used to
-   * meet at 6.25:1 (light is 5.19:1). Amit accepts it, and the reason holds: the
-   * pressed state is transient feedback under the finger, for the 100-150ms of
-   * a press, not the boundary a member has to find the control by. That
-   * boundary is the RESTING outline, which is unchanged and still 6.25:1. The
-   * word on the fill is text/onAccent at 5.19:1, so what the button says stays
-   * fully legible throughout. Registered as a named exemption in
-   * scripts/check-contrast.mjs.
+   * No contrast is spent on it any more. The coral press was 2.91:1 against the
+   * dark card, accepted as transient feedback; the green and the garnet fills
+   * are their own edge at 4.62 / 8.13 and 9.10 / 6.74, past the 3:1 floor in
+   * both modes, and the word on them is text/onState at 4.62 / 9.27 (green) and
+   * 9.10 / 7.69 (garnet), all registered in scripts/check-contrast.mjs.
    */
   ctaFill: {
     position: 'absolute',
@@ -1373,10 +1511,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     justifyContent: 'center',
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
-    backgroundColor: t.color.bg.accent,
   },
+  ctaFillFree: {
+    backgroundColor: t.color.bg.available,
+  },
+  ctaFillBusy: {
+    backgroundColor: t.color.state.danger,
+  },
+  // text/onState: the ink this palette already puts on its state fills (white
+  // light, #0A1F14 dark), for both the green and the garnet.
   ctaFillLabel: {
-    color: t.color.text.onAccent,
+    color: t.color.text.onState,
   },
   /*
    * Away variant. GREY, and deliberately a DARK one (Amit, 2026-09-17).
@@ -1387,7 +1532,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * 4.5:1 floor for 14sp, which is exactly why the report read "Notify icon
    * looks disabled". Then a filled-tonal `bg/accentTint`, which fixed the
    * contrast and broke the hierarchy: Notify is the SECONDARY action on this
-   * row and must not compete with Call for the accent.
+   * row and must not compete with Call for a colour.
    *
    * `bg/pressed` is the most solid neutral in the scale, and with
    * `text/primary` on it the label measures 10.25:1 dark and 11.18:1 light.
@@ -1398,7 +1543,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * is 1.47:1 against this card in dark. `text/secondary` as the stroke measures
    * 5.00:1 dark and 7.41:1 light against the card, past the 3:1 non-text floor.
    * It is the `ctaOutline` layer's colour (`ctaOutlineAway`), so it fades out
-   * under the pressed face the same way the coral one does.
+   * under the pressed face the same way the green and garnet ones do.
    *
    * The fill does NOT change between idle, pending and notified. Only the glyph
    * and the word do. A control that recolours itself on every state change draws
@@ -1415,10 +1560,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.color.text.primary,
   },
   /*
-   * The away button's pressed face, in ITS tone rather than the coral: the
+   * The away button's pressed face, in ITS tone rather than a state colour: the
    * neutral at full strength, `bg/inverse` under `text/onInverse` (the primary
    * button's pair, 17.01:1 light / 14.44:1 dark). Solid-while-pressed is the
-   * same gesture on both variants; the hue is not, because a coral flash on
+   * same gesture on every variant; the hue is not, because a green flash on
    * the secondary action is the hierarchy break the 2026-09-17 note forbids.
    * No rim here either: `bg/inverse` is 17.01:1 light / 12.95:1 dark on the
    * card, so the fill is its own edge once the grey outline fades.

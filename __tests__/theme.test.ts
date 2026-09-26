@@ -2455,7 +2455,8 @@ describe('accent budget is enforced in code, not just documented', () => {
       'nameAge',
       'channelLine',
       'secondary',
-      'priceLine',
+      'tail',
+      'tailLines',
     ];
     for (const key of PERSON_STYLES) {
       const rule = styleBlock.match(new RegExp(`\\b${key}: \\{[^}]*\\}`));
@@ -2496,18 +2497,16 @@ describe('accent budget is enforced in code, not just documented', () => {
       '    borderColor: t.color.bg.accent,', // ring, on every avatar
       // The rate LEFT the CTA on 2026-09-26 for the name line, in the F-29
       // subscript's grey, so its accent line is gone.
-      // The CTA outline takes the accent INK since 2026-09-26: it is the
-      // control's only boundary on the card, and step 500 there is 2.91:1 in
-      // dark against the 3:1 non-text floor (step 300 is 6.22:1).
-      '    borderColor: t.color.text.accent,', // the CTA outline
-      '    color: t.color.text.accent,', // the CTA label
       /*
-       * The CTA's PRESSED face (2026-09-26, "fills up on click"). Still no
-       * fifth person-describing accent: it is on every row's button alike,
-       * visible only under the finger, and the away variant's pressed face is
-       * the neutral `bg/inverse`, so nothing about a stranger selects it.
+       * And the CTA LEFT the coral on 2026-09-27 (Amit): its outline, label
+       * and pressed fill are coloured by the provider's state now, green free
+       * and garnet busy (text/available, bg/available, state/danger), so the
+       * ring is the only accent left in the directory row. That is a state
+       * colour selected by a fact about the person, which is the thing this
+       * rule watches: it is allowed because the state is the one fact a member
+       * is scanning for and is never a ranking, and it is asserted in
+       * providerRow.test.ts rather than counted here.
        */
-      '    backgroundColor: t.color.bg.accent,', // the CTA fill while pressed
     ]);
 
     /*
