@@ -9085,3 +9085,70 @@ describe('navigation step 6: the application says what back does in each phase',
     expect(apply).toContain('}, [phase, onEditDetails, onGuard]);');
   });
 });
+
+/**
+ * Navigation step 6, the chat (nav-migration §5, ruling 9). Under the navigator
+ * a covered chat stays mounted, so each mount-scoped hook takes the gate that
+ * says what unmounting used to mean for it. Both gates default to true, and
+ * the old tree passes neither.
+ */
+describe('navigation step 6: the chat gates what a covered chat must not do', () => {
+  const controller = withoutComments(read('src/chat-v2/useChatV2Controller.ts'));
+  const screen = withoutComments(read('src/chat-v2/ChatScreenV2.tsx'));
+
+  it('takes live and focused, defaulting to the old tree', () => {
+    expect(controller).toContain('{ live = true, focused = true }: ChatV2Gates = {},');
+    expect(screen).toContain('live = true,');
+    expect(screen).toContain('focused = true,');
+    expect(screen).toContain('useChatV2Controller(providerId, benchmarkReadOnly, { live, focused })');
+  });
+
+  it('gates the lease, the announce, the openers, the clock, outgoing typing and the review on live', () => {
+    expect(controller).toContain('useSessionLease(benchmarkReadOnly || !live ? null : activeSession);');
+    expect(controller).toContain('mutationInputs.announceEnabled && live,');
+    expect(controller).toMatch(/enabled:\s*live &&\s*chatV2OwnsOpeners\(/);
+    expect(controller).toMatch(/if \(sessionStartedAt === null \|\| !live\) \{/);
+    expect(controller).toContain('const notifyTyping = live ? live$.notifyTyping : NOOP;');
+    expect(controller).toMatch(/if \(!live\) \{\s*liveSessionRef\.current = null;\s*return;\s*\}/);
+    expect(controller).toContain('}, [activeSession, askReview, displayName, isMemberSide, live]);');
+    // Incoming data stays mount-scoped, so the transcript is fresh on return.
+    expect(controller).toContain('useSessionRealtime(conversationId);');
+    expect(controller).toContain('useLiveMessageEdits(conversationId, selfId);');
+  });
+
+  it('flushes read receipts only while focused, and again on focus', () => {
+    expect(controller).toMatch(/useMarkRead\(\s*mutationInputs\.markReadConversationId,\s*mutationInputs\.markReadSelfId,\s*focused,\s*\)/);
+    const realtime = withoutComments(read('src/api/realtime.ts'));
+    expect(realtime).toMatch(/const flush = \(\): void => \{\s*if \(!focusedRef\.current\) \{\s*return;\s*\}/);
+    expect(realtime).toMatch(/useEffect\(\(\) => \{\s*if \(focused\) \{\s*flushRef\.current\(\);\s*\}\s*\}, \[focused\]\);/);
+  });
+
+  it('claims the viewing signal on focus', () => {
+    expect(controller).toContain('useViewingConversation(conversationId, focused);');
+    const viewing = withoutComments(read('src/lib/viewingConversation.ts'));
+    expect(viewing).toContain('}, [conversationId, focused]);');
+  });
+
+  it('publishes the guard and cleans up on blur', () => {
+    expect(screen).toContain('export interface ChatV2Guard');
+    expect(screen).toMatch(/onGuard\?\.\(\{\s*sessionActive,\s*replyActive: replyTo !== null,\s*leaveVisible,\s*clearReply,\s*openLeave,\s*purgeDraft,\s*\}\)/);
+    const blur = screen.slice(screen.indexOf('if (wasFocused.current && !focused)'));
+    for (const close of [
+      'setActionRequest(null)',
+      'setEditing(null)',
+      'setDeleting(null)',
+      'setSafety({ open: false, messageId: null })',
+      'setRenaming(false)',
+      'setViewerImage(null)',
+      'setMemberProfileVisible(false)',
+      'setLeaveVisible(false)',
+      'KeyboardController.dismiss()',
+      'stopVoice()',
+    ]) {
+      expect(blur.slice(0, 600)).toContain(close);
+    }
+    const composer = withoutComments(read('src/chat-v2/ChatComposerV2.tsx'));
+    expect(composer).toMatch(/if \(focused\) \{\s*return;\s*\}[\s\S]{0,200}writeDraftText\(id, textRef\.current\);[\s\S]{0,120}void discard\(\);/);
+    expect(withoutComments(read('src/chat-v2/ChatHeaderV2.tsx'))).toMatch(/if \(!focused\) \{\s*setMenuVisible\(false\);/);
+  });
+});

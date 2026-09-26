@@ -456,6 +456,11 @@ export function useVoicePlayer(): VoicePlayer {
     [setPlaying],
   );
 
+  const stop = useCallback(() => {
+    void stopPlayback();
+    setPlaying(null);
+  }, [setPlaying]);
+
   const toggle = useCallback(
     (messageId: string, path: string, durationMs: number) => {
       const current = useStore.getState().playing;
@@ -529,5 +534,5 @@ export function useVoicePlayer(): VoicePlayer {
   // Memoised because every bubble takes this object as a prop and every bubble is
   // memoised: a fresh object per render would re-render the whole transcript on
   // each playhead tick, which is the opposite of the point.
-  return useMemo(() => ({ toggle, cycleSpeed, speed }), [toggle, cycleSpeed, speed]);
+  return useMemo(() => ({ toggle, cycleSpeed, speed, stop }), [toggle, cycleSpeed, speed, stop]);
 }

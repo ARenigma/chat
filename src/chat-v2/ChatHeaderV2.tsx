@@ -90,6 +90,12 @@ interface Props {
   onStartCall?: (channel: 'audio' | 'video') => void;
   onEndSession: () => void;
   onOpenEarnings: () => void;
+  /**
+   * False once the chat is covered (navigation step 6). The overflow menu is a
+   * Modal, and a Modal left open over a covered chat sits above the next
+   * screen. Defaults to true; the old tree unmounts instead.
+   */
+  focused?: boolean;
 }
 
 export function ChatHeaderV2({
@@ -111,6 +117,7 @@ export function ChatHeaderV2({
   onStartCall,
   onEndSession,
   onOpenEarnings,
+  focused = true,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -135,6 +142,11 @@ export function ChatHeaderV2({
   const [menuVisible, setMenuVisible] = React.useState(false);
   const [menuAnchor, setMenuAnchor] = React.useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const menuButtonRef = React.useRef<View>(null);
+  React.useEffect(() => {
+    if (!focused) {
+      setMenuVisible(false);
+    }
+  }, [focused]);
   const menuHasItems =
     onRename !== undefined || onOpenSafety !== undefined;
 

@@ -126,6 +126,9 @@ import {
   type ChatV2Row,
 } from './rows';
 
+/** The outgoing-activity stand-in while the chat is not live. */
+const NOOP = (): void => undefined;
+
 /** Stable empty tally map, so a thread with no reactions never re-renders. */
 const NO_TALLIES: ReadonlyMap<string, ReactionTally[]> = new Map();
 
@@ -273,9 +276,35 @@ export interface ChatV2MessageTarget {
   preview: string;
 }
 
+/**
+ * What the screen around the controller knows and the controller cannot
+ * (navigation step 6, nav-migration §5 "chat hook classification").
+ *
+ * Under react-navigation a chat stays MOUNTED while covered, where the old
+ * tree unmounted it, so every mount-scoped hook here was sorted by what
+ * unmounting used to mean for it:
+ *
+ *   live     the chat is in use: its tab is focused and only overlays that
+ *            used to sit over a mounted chat (the wallet, a chat request) are
+ *            above it. Gates what cost money or spoke for the person: the
+ *            session lease, outgoing typing and recording, the openers, the
+ *            session clock, the open announcement (re-fired on false → true,
+ *            as a remount did) and the review-on-end watcher.
+ *   focused  the chat is the screen on top. Gates what depends on the person
+ *            SEEING it: the viewing signal and the read-receipt write.
+ *
+ * Realtime, message edits and incoming typing stay mount-scoped, so the
+ * transcript is fresh on return. Both default to true, which is the old tree.
+ */
+export interface ChatV2Gates {
+  live?: boolean;
+  focused?: boolean;
+}
+
 export function useChatV2Controller(
   providerId: string,
   benchmarkReadOnly = false,
+  { live = true, focused = true }: ChatV2Gates = {},
 ): ChatV2Controller {
   // Mirrors the authoritative balance into the store, which is what both send
   // paths gate on before they spend anything.
@@ -364,20 +393,27 @@ export function useChatV2Controller(
   // This thread is on screen: a foreground push for it is already drawn by
   // Realtime, so `onForegroundPush` posts nothing for it (push.ts), and any
   // notification it already has is taken out of the shade.
-  useViewingConversation(conversationId);
-  useSessionLease(benchmarkReadOnly ? null : activeSession);
+  useViewingConversation(conversationId, focused);
+  // Not live is what unmounting was for the lease: heartbeats stop and the
+  // server's grace window runs (parity: the chat under a call or a profile).
+  useSessionLease(benchmarkReadOnly || !live ? null : activeSession);
 
-  const { notifyTyping, notifyRecording, notifyRecordingEnded } =
-    useLiveConversation(
-      mutationInputs.liveConversationId,
-      mutationInputs.liveSelfId,
-    );
+  const live$ = useLiveConversation(
+    mutationInputs.liveConversationId,
+    mutationInputs.liveSelfId,
+  );
+  // Outgoing activity only while live: a chat nobody is using does not type.
+  // Incoming activity stays on the mount-scoped channel above.
+  const notifyTyping = live ? live$.notifyTyping : NOOP;
+  const notifyRecording = live ? live$.notifyRecording : NOOP;
+  const notifyRecordingEnded = live ? live$.notifyRecordingEnded : NOOP;
   // An edit or a delete made on the OTHER device. `useLiveConversation` reads
   // only `read_at` off the UPDATE it receives; this is the rest of that event.
   useLiveMessageEdits(conversationId, selfId);
   const markVisible = useMarkRead(
     mutationInputs.markReadConversationId,
     mutationInputs.markReadSelfId,
+    focused,
   );
 
   const send = useSendMessage(
@@ -520,9 +556,11 @@ export function useChatV2Controller(
   const peerActivity = useStore(selectPeerActivityIn(conversationId));
 
   /* ---- the ping confirmation ------------------------------------------- */
+  // `&& live`: the announce is a per-visit event, and a return to a chat that
+  // was covered by a call or a profile is a visit, as the remount made it.
   const openAlert = useAnnounceChatOpen(
     mutationInputs.announceConversationId,
-    mutationInputs.announceEnabled,
+    mutationInputs.announceEnabled && live,
   );
   /*
    * A one-time confirmation that an away peer was actually pinged. Stamped
@@ -560,12 +598,14 @@ export function useChatV2Controller(
   useChatV2Openers({
     providerId,
     conversationId,
-    enabled: chatV2OwnsOpeners({
-      isMemberSide,
-      benchmarkReadOnly,
-      messagesLoaded: messages !== undefined,
-      hasLiveMessage: chatV2HasLiveMessage(messages),
-    }),
+    enabled:
+      live &&
+      chatV2OwnsOpeners({
+        isMemberSide,
+        benchmarkReadOnly,
+        messagesLoaded: messages !== undefined,
+        hasLiveMessage: chatV2HasLiveMessage(messages),
+      }),
   });
 
   /* ---- rows ------------------------------------------------------------- */
@@ -922,13 +962,13 @@ export function useChatV2Controller(
    */
   const tickMs = clockTickMs(sessionRemaining);
   useEffect(() => {
-    if (sessionStartedAt === null) {
+    if (sessionStartedAt === null || !live) {
       return;
     }
     setSessionNow(Date.now());
     const timer = setInterval(() => setSessionNow(Date.now()), tickMs);
     return () => clearInterval(timer);
-  }, [sessionStartedAt, tickMs]);
+  }, [sessionStartedAt, tickMs, live]);
   const sessionElapsedClock =
     sessionStartedAt === null
       ? null
@@ -985,18 +1025,28 @@ export function useChatV2Controller(
    */
   const liveSessionRef = useRef<string | null>(null);
   useEffect(() => {
-    const live =
+    /*
+     * Not live: forget the session, as the unmount under a call or a profile
+     * did (A5). A session that ends while the chat is covered, or because a
+     * call connected, never asks over the call, and the return does not ask
+     * about an end it did not watch.
+     */
+    if (!live) {
+      liveSessionRef.current = null;
+      return;
+    }
+    const liveId =
       activeSession != null && activeSession.ended_at === null
         ? activeSession.id
         : null;
     const previous = liveSessionRef.current;
-    if (live !== null) {
-      liveSessionRef.current = live;
+    if (liveId !== null) {
+      liveSessionRef.current = liveId;
       return;
     }
     const ended = chatV2ReviewOnEnd({
       previousLiveId: previous,
-      liveId: live,
+      liveId,
       isMemberSide,
       peerName: displayName,
     });
@@ -1006,7 +1056,7 @@ export function useChatV2Controller(
     if (ended !== null) {
       askReview(ended);
     }
-  }, [activeSession, askReview, displayName, isMemberSide]);
+  }, [activeSession, askReview, displayName, isMemberSide, live]);
 
   /* ---- the draft -------------------------------------------------------- */
   const purgeDraft = useCallback(() => {

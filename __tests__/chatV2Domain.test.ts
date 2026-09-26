@@ -727,8 +727,9 @@ describe('the V2 shell renders real rows', () => {
   const list = read('src/chat-v2/ChatListV2.tsx');
 
   it('drives the screen from the controller', () => {
+    // Plus the step-6 gates (nav-migration §5), which default to true.
     expect(screen).toContain(
-      'useChatV2Controller(providerId, benchmarkReadOnly)',
+      'useChatV2Controller(providerId, benchmarkReadOnly, { live, focused })',
     );
     expect(screen).toContain('rows={chat.rows}');
     expect(screen).toContain('onSend={onSend}');

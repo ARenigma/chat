@@ -180,6 +180,12 @@ export interface VoicePlayer {
   toggle: (messageId: string, path: string, durationMs: number) => void;
   cycleSpeed: () => void;
   speed: PlaybackSpeed;
+  /**
+   * Stop whatever note is playing. For a chat that loses focus while staying
+   * mounted (navigation step 6): the unmount stop no longer runs, and audio
+   * must not keep playing over the next screen.
+   */
+  stop: () => void;
 }
 
 /** What the recorder produced, once it is known to be sendable. */

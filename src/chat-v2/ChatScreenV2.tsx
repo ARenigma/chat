@@ -14,6 +14,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import {
+  KeyboardController,
   KeyboardGestureArea,
   KeyboardStickyView,
 } from 'react-native-keyboard-controller';
@@ -88,6 +89,36 @@ interface Props {
    * only; the member wallet falls back to the store's own wallet sheet.
    */
   onOpenEarnings?: () => void;
+  /**
+   * The chat is in use (navigation step 6; see `ChatV2Gates` in the
+   * controller). Defaults to true: the old tree unmounts a covered chat.
+   */
+  live?: boolean;
+  /**
+   * The chat is the screen on top. Its true → false edge is the blur cleanup
+   * below. Defaults to true.
+   */
+  focused?: boolean;
+  /**
+   * What the route adapter needs for `usePreventRemove` (nav-migration §4,
+   * 3a), published whenever it changes. The old tree passes nothing and keeps
+   * `useBackGuard`.
+   */
+  onGuard?: (guard: ChatV2Guard) => void;
+}
+
+/** The chat's removal guard, as its route adapter reads it. */
+export interface ChatV2Guard {
+  /** A paid session is live: leaving asks first. */
+  sessionActive: boolean;
+  /** A reply strip is open: hardware back clears it before anything else. */
+  replyActive: boolean;
+  leaveVisible: boolean;
+  clearReply: () => void;
+  /** The same dialog the header arrow and back open. */
+  openLeave: (intent: ChatV2LeaveIntent) => void;
+  /** An intentional exit drops the draft (see `leaveChat`). */
+  purgeDraft: () => void;
 }
 
 /** A dock height to lay out against before the first measurement lands. */
@@ -116,11 +147,14 @@ export function ChatScreenV2({
   onStartCall,
   onOpenProfile,
   onOpenEarnings,
+  live = true,
+  focused = true,
+  onGuard,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const { bottom } = useSafeAreaInsets();
-  const chat = useChatV2Controller(providerId, benchmarkReadOnly);
+  const chat = useChatV2Controller(providerId, benchmarkReadOnly, { live, focused });
   const mutationOnStartCall = benchmarkReadOnly ? undefined : onStartCall;
   const { rows, sendText, sendVoice } = chat;
   const openRefill = useStore(s => s.openRefill);
@@ -509,6 +543,49 @@ export function ChatScreenV2({
     sessionActive;
   useBackGuard(guarded ? backGuard : null);
 
+  /* ---- the route's guard, and what a blur leaves behind ----------------- */
+  const clearReply = useCallback(() => setReplyTo(null), []);
+  useEffect(() => {
+    onGuard?.({
+      sessionActive,
+      replyActive: replyTo !== null,
+      leaveVisible,
+      clearReply,
+      openLeave,
+      purgeDraft,
+    });
+  }, [onGuard, sessionActive, replyTo, leaveVisible, clearReply, openLeave, purgeDraft]);
+
+  /*
+   * On blur, a covered chat leaves nothing above or under the next screen
+   * (nav-migration §5, A4). Every Modal this screen owns is closed, because a
+   * Modal is its own window and would sit over whatever was pushed; the IME
+   * goes, because a keyboard raised for a covered field is typing into
+   * nothing (https://developer.android.com/develop/ui/views/touch-and-input/keyboard-input/visibility);
+   * and voice playback stops, because the unmount that used to stop it no
+   * longer runs. The composer discards a recording and saves the draft on the
+   * same edge, and the header closes its menu. The consent dialog is not
+   * closed: it is the server's pending request, and it is still pending on
+   * return. Never runs in the old tree, where `focused` stays true.
+   */
+  const stopVoice = chat.voicePlayer.stop;
+  const wasFocused = useRef(focused);
+  useEffect(() => {
+    if (wasFocused.current && !focused) {
+      setActionRequest(null);
+      setEditing(null);
+      setDeleting(null);
+      setSafety({ open: false, messageId: null });
+      setRenaming(false);
+      setViewerImage(null);
+      setMemberProfileVisible(false);
+      setLeaveVisible(false);
+      void KeyboardController.dismiss();
+      stopVoice();
+    }
+    wasFocused.current = focused;
+  }, [focused, stopVoice]);
+
   /* ---- where the transcript sits ---------------------------------------- */
   /*
    * Read in the arrival effect below, which must not re-run when the member
@@ -604,6 +681,7 @@ export function ChatScreenV2({
   return (
     <SafeAreaView testID="chat-v2-screen" edges={['top']} style={styles.root}>
       <ChatHeaderV2
+        focused={focused}
         displayName={chat.displayName}
         peerInitial={chat.peerInitial}
         peerAvatarUrl={chat.peerAvatarUrl}
@@ -853,6 +931,7 @@ export function ChatScreenV2({
               onTyping={chat.notifyTyping}
               onRecording={chat.notifyRecording}
               onRecordingEnded={chat.notifyRecordingEnded}
+              focused={focused}
             />
           </View>
         </KeyboardStickyView>

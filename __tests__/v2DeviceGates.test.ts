@@ -160,18 +160,18 @@ describe('V2 device gates', () => {
     expect(app).toContain('benchmarkReadOnly: benchmarkReadOnlyLaunch');
     expect(app).toContain('benchmarkReadOnly={route.benchmarkReadOnly}');
     expect(screen).toContain(
-      'useChatV2Controller(providerId, benchmarkReadOnly)',
+      'useChatV2Controller(providerId, benchmarkReadOnly, { live, focused })',
     );
     expect(screen).toContain('benchmarkReadOnly ? undefined : onStartCall');
     expect(controller).toContain('chatV2MutationInputs({');
     expect(controller).toMatch(
-      /useMarkRead\(\s*mutationInputs\.markReadConversationId,\s*mutationInputs\.markReadSelfId,\s*\)/,
+      /useMarkRead\(\s*mutationInputs\.markReadConversationId,\s*mutationInputs\.markReadSelfId,\s*focused,\s*\)/,
     );
     expect(controller).toContain(
       'useOutboxReplay(mutationInputs.outboxConversationId, send)',
     );
     expect(controller).toContain(
-      'useAnnounceChatOpen(\n    mutationInputs.announceConversationId,\n    mutationInputs.announceEnabled,',
+      'useAnnounceChatOpen(\n    mutationInputs.announceConversationId,\n    mutationInputs.announceEnabled && live,',
     );
     expect(screen).toContain('readOnly={benchmarkReadOnly}');
     expect(list).toContain('mutationsDisabled={readOnly}');

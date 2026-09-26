@@ -1532,8 +1532,8 @@ describe('useViewingConversation', () => {
     const clear = jest.fn(async (_conversationId: string) => undefined);
     (rn.NativeModules as Record<string, unknown>).Conversations = { clear };
     const viewing = require('../src/lib/viewingConversation') as ViewingModule;
-    const screen = (conversationId: string | undefined) => {
-      viewing.useViewingConversation(conversationId);
+    const screen = (conversationId: string | undefined, focused?: boolean) => {
+      viewing.useViewingConversation(conversationId, focused);
       const cleanup = effects[effects.length - 1]?.();
       return () => {
         if (typeof cleanup === 'function') {
@@ -1569,6 +1569,34 @@ describe('useViewingConversation', () => {
     expect(viewing.getViewingConversation()).toBeNull();
     appState('active');
     expect(viewing.getViewingConversation()).toBe(A);
+  });
+
+  /*
+   * Navigation step 6: focus, not mount, claims the signal. A chat covered by
+   * a pushed screen stays mounted under the navigator, and it is not what the
+   * person is reading; the blur is a release exactly as the unmount was.
+   */
+  it('claims nothing and clears nothing for a chat that is mounted but not focused', () => {
+    const { viewing, screen, listeners, clear } = mount();
+    screen(A, false);
+    expect(viewing.getViewingConversation()).toBeNull();
+    expect(listeners.size).toBe(0);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it('lets go on blur and takes the signal and the shade clear back on focus', () => {
+    const { viewing, screen, clear } = mount();
+    const blur = screen(A, true);
+    expect(clear.mock.calls).toEqual([[A]]);
+    blur();
+    expect(viewing.getViewingConversation()).toBeNull();
+    // The chat pushed over it claims; the covered one's blur did not erase it.
+    const other = screen(B, true);
+    expect(viewing.getViewingConversation()).toBe(B);
+    other();
+    screen(A, true);
+    expect(viewing.getViewingConversation()).toBe(A);
+    expect(clear.mock.calls).toEqual([[A], [B], [A]]);
   });
 
   it('claims nothing before the thread resolves', () => {
@@ -2330,7 +2358,11 @@ describe('push.ts wiring', () => {
 describe('who sets the signal, and who starts push', () => {
   it('sets it from the V2 chat controller, which both trees mount', () => {
     const controller = withoutComments(read('src/chat-v2/useChatV2Controller.ts'));
-    expect(controller).toContain('useViewingConversation(conversationId);');
+    // With the chat's focus since navigation step 6: focus, not mount, claims.
+    expect(controller).toContain('useViewingConversation(conversationId, focused);');
+    expect(withoutComments(read('src/lib/viewingConversation.ts'))).toMatch(
+      /if \(conversationId === undefined \|\| !focused\) \{\s*return;\s*\}/,
+    );
     const lib = withoutComments(read('src/lib/viewingConversation.ts'));
     expect(lib).toContain("AppState.addEventListener('change', sync)");
     expect(lib).toMatch(/return \(\) => \{\s*subscription\.remove\(\);\s*uncoverListeners\.delete\(clearIfSeen\);\s*release\(\);/);

@@ -159,6 +159,12 @@ describe('V1 is gone and there is no fallback seam', () => {
     // Four mounts total: the member and provider `chat` routes, and the two
     // dev-only `chatV2` benchmark routes that keep the read-only harness.
     expect(source.match(/<ChatScreenV2\b/g) ?? []).toHaveLength(4);
+    // None passes the step-6 gates: the old tree unmounts a covered chat, so
+    // `live` and `focused` keep their `true` defaults until the Chat route
+    // adapter (step 7) is the one mounting it.
+    for (const m of source.matchAll(/<ChatScreenV2\b[\s\S]*?\/>/g)) {
+      expect(m[0]).not.toMatch(/\b(live|focused|onGuard)=/);
+    }
   });
 });
 
