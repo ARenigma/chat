@@ -249,8 +249,9 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     // the seal has no unselected state.
     expect(read('design/icons.json')).toContain('"badgeCheck": "seal-check-fill"');
     expect(read('src/theme/icons.generated.ts')).toContain('badgeCheck:');
-    // Bluesky's verified blue, not the coral: the seal is not the call to act.
-    expect(code(ROW)).toContain('color={theme.color.mark.verified}');
+    // The CTA's green since 2026-09-27 (Amit: "change seal icon fill to same
+    // cta green"), not Bluesky's blue and not the coral.
+    expect(code(ROW)).toContain('color={theme.color.text.available}');
     // Out of the accessibility tree: the card's label would otherwise gain a
     // stop that says nothing a member can act on.
     expect(code(ROW)).toMatch(/testID="provider-verified"[\s\S]{0,120}badgeCheck/);
@@ -459,11 +460,12 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
      */
     const src = read(ROW);
     expect(src).toContain('export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
-    expect(src).toContain(
-      'export const ROW_CTA_VISUAL_HEIGHT =\n  TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight',
-    );
-    const visual = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
-    expect(visual).toBe(33);
+    // A fixed 108 × 36 since 2026-09-27: hugging its content with only a
+    // minHeight, the button stretched to its 48dp slot and DREW 74 × 48 on
+    // the S22. 36 is its old height and Astrotalk's (35.6).
+    expect(src).toContain('export const ROW_CTA_VISUAL_HEIGHT = 36;');
+    expect(src).toContain('export const ROW_CTA_WIDTH = 108;');
+    const visual = 36;
     expect(code(ROW)).toContain('size={ROW_CTA_VISUAL_HEIGHT}');
     expect(TOKENS.interaction.minTarget).toBe(48);
     // Pressable's own slop formula, for the size the row passes: 8 each side.
@@ -483,7 +485,9 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(src).toContain('const CTA_STROKE = 1;');
     expect(src).toContain('const CTA_PAD_Y = TOKENS.space.xs;');
     expect(src).toContain('const CTA_PAD_X = TOKENS.space.sm;');
-    expect(TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight).toBe(visual);
+    // The padded content (8 + 17 + 8 = 33) fits inside the fixed 36 drawing,
+    // which centres it; the height is the button's own, not the content's.
+    expect(TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight).toBeLessThanOrEqual(visual);
 
     /*
      * The glyph's box is the label's line box, so it cannot be the tallest thing
@@ -498,11 +502,12 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(Math.round(TOKENS.icon.sm * 1.2)).toBeGreaterThan(lh);
 
     const cta = style('cta');
-    // `minHeight`, so a large font scale grows the button instead of clipping
-    // its label; and NO width: it hugs its glyph and verb.
-    expect(cta).toContain('minHeight: ROW_CTA_VISUAL_HEIGHT');
-    expect(cta).not.toMatch(/\bheight:/);
-    expect(cta).not.toMatch(/\bwidth:/);
+    // A DEFINITE 108 × 36 (2026-09-27): with only a minHeight the button was
+    // stretched by its 48dp slot and drew 74 × 48 on the S22. One shape for
+    // Call, Notify and Notified, like Astrotalk's call_rl.
+    expect(cta).toContain('height: ROW_CTA_VISUAL_HEIGHT,');
+    expect(cta).toContain('width: ROW_CTA_WIDTH,');
+    expect(cta).not.toMatch(/minHeight/);
     expect(cta).toContain('paddingHorizontal: CTA_PAD_X');
     expect(cta).toContain('paddingVertical: CTA_PAD_Y');
     // The outline is a layer, so nothing on the button itself draws an edge

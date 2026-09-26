@@ -2524,7 +2524,7 @@ describe('accent budget is enforced in code, not just documented', () => {
     // EMPTY since 2026-09-26: the seal is Bluesky's verified blue
     // (`mark/verified`), not the coral, so the JSX carries no accent at all.
     expect(jsxAccent).toEqual([]);
-    expect(body).toContain('color={theme.color.mark.verified}');
+    expect(body).toContain('color={theme.color.text.available}');
 
     // The avatar is never warm — the original rule's sharpest edge, and the one
     // thing the ring must not become: a FILL behind one stranger's mark.

@@ -208,14 +208,17 @@ export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
  * bleeds past it (ROW_CTA_BLEED), so the target is still a real 48dp box while
  * the button takes no more of the card than it draws.
  *
- * NO WIDTH CONSTANT ANY MORE. It was a fixed 136 because the button carried the
- * rate as well as the verb ("move rate into cta after call text", 2026-09-08).
- * The rate moved to the name line on 2026-09-26, so the button hugs its icon
- * and label, the way Bluesky's small button does: "Call" draws about 75dp wide,
- * "Notified" about 105.
+ * A FIXED SHAPE, 108 × 36 (Amit, S22, 2026-09-27: "cta has become too tall..
+ * aspect ratio of cta should not change.. astrotalk is also not taller").
+ * The hug-content version measured 74 × 48 DRAWN on the device: with only a
+ * minHeight and no size of its own, the button stretched to its 48dp slot, so
+ * the target was painted. 36 is the height this button had before and
+ * Astrotalk's `call_rl` (35.6); 108 fits the widest state ("Notified" with
+ * its check, about 105) so Call, Notify and Notified are one shape. The
+ * target stays 48, invisible, through the slot and hitSlop.
  */
-export const ROW_CTA_VISUAL_HEIGHT =
-  TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+export const ROW_CTA_VISUAL_HEIGHT = 36;
+export const ROW_CTA_WIDTH = 108;
 
 /**
  * How far the CTA slot's 48dp TARGET box bleeds past its 33dp DRAWING, top
@@ -923,7 +926,7 @@ function ProviderRowView({
               <Icon
                 name="badgeCheck"
                 size={VERIFIED_SEAL_SIZE}
-                color={theme.color.mark.verified}
+                color={theme.color.text.available}
               />
             </View>
             {/* The rate, moved out of the CTA onto the name line and pushed to
@@ -1393,7 +1396,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * slot. No width at all: it hugs its content.
    */
   cta: {
-    minHeight: ROW_CTA_VISUAL_HEIGHT,
+    // A definite size, so Pressable's root (which takes box sizing) cannot be
+    // stretched by the 48dp slot around it. See ROW_CTA_WIDTH.
+    height: ROW_CTA_VISUAL_HEIGHT,
+    width: ROW_CTA_WIDTH,
     /*
      * A ROW, so the glyph sits beside the word rather than above it.
      *
