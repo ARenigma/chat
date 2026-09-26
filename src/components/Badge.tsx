@@ -30,9 +30,19 @@ interface Props {
   /** Counts above this render as "{max}+".  Default: 9. */
   max?: number;
   testID?: string;
+  /**
+   * `corner` (default): the top-right overhang every existing anchor uses.
+   * `badgedBox`: Material 3 BadgedBox, for a badge on a 24dp icon. androidx
+   * places a badge with content at x = anchor width - 12dp and y = 14dp - badge
+   * height (Badge.kt `BadgeWithContentHorizontalOffset` /
+   * `BadgeWithContentVerticalOffset`), which on a 24dp icon and a 16dp badge is
+   * the badge's START at the icon's centre and its top 2dp above the icon. The
+   * bottom bar uses it.
+   */
+  placement?: 'corner' | 'badgedBox';
 }
 
-function BadgeView({ count, max = 9, testID }: Props) {
+function BadgeView({ count, max = 9, testID, placement = 'corner' }: Props) {
   const styles = useStyles(makeStyles);
 
   if (count <= 0) {
@@ -42,7 +52,7 @@ function BadgeView({ count, max = 9, testID }: Props) {
   const label = count > max ? `${max}+` : String(count);
 
   return (
-    <View testID={testID} accessibilityLabel={`${count} unread`} style={styles.pill}>
+    <View testID={testID} accessibilityLabel={`${count} unread`} style={[styles.pill, placement === 'badgedBox' ? styles.badgedBox : null]}>
       {/* The pill is a fixed 16dp height with a fixed lineHeight; unbounded font
           scaling clips the count. The geometry is deliberate, so the count does
           not scale with it. (2026-09-09 audit) */}
@@ -92,6 +102,13 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: t.color.bg.accentStrong,
+    },
+    // M3 BadgedBox placement, see `placement`. `right` is cleared so the
+    // corner overhang above does not also pin the far edge.
+    badgedBox: {
+      top: -TOKENS.space.hair,
+      right: undefined,
+      left: '50%',
     },
     label: {
       fontFamily: 'Geist-Bold',
