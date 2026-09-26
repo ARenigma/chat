@@ -53,7 +53,6 @@
     "verify:full": "npm run verify && npm run test:db",
     "tokens": "node scripts/gen-tokens.mjs",
     "tokens:check": "node scripts/gen-tokens.mjs --check",
-    "distribute": "node scripts/distribute.mjs",
     "ship": "npm run android:bundle && npm run verify:manifest && npm run verify:hermes",
     "moderate": "node scripts/moderate.mjs",
     "review": "node scripts/review-console.mjs",
@@ -71,7 +70,6 @@
     "web:check": "node scripts/check-web.mjs",
     "android:internal": "cd android && ./gradlew assembleInternal",
     "version:bump": "node scripts/version-bump.mjs",
-    "ship:testers": "npm run version:bump && npm run android:internal && npm run distribute",
     "icons:font": "node scripts/gen-icons-font.mjs",
     "icons:font:check": "node scripts/gen-icons-font.mjs --check",
     "sentry:maps": "node scripts/sentry-maps.mjs"

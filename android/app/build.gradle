@@ -470,31 +470,6 @@ dependencies {
     implementation("com.google.android.play:app-update:2.1.0")
 
     /**
-     * Firebase App Distribution, which is the *other* update prompt.
-     *
-     * These two do not overlap and both are needed. Play's in-app update only
-     * works for an app installed from Play, so on a tester's sideloaded build it
-     * fails to bind to the service and correctly reports nothing available. App
-     * Distribution is the reverse: it is how a tester on a sideloaded build gets
-     * told a newer one exists, and it is meaningless once the app is on Play.
-     *
-     * The split below is Google's, and it is what makes a single call site safe:
-     *
-     *   -api  in every variant. A no-op stub in builds without the full SDK, so
-     *         `updateIfNewReleaseAvailable()` compiles and does nothing rather
-     *         than needing a variant-specific source set and a stub of our own.
-     *   full  in `internal` only. This is the part that checks for a release,
-     *         shows the dialog, downloads and installs.
-     *
-     * So MainActivity calls it unconditionally and the release APK carries only
-     * the stub. A contract test asserts the full SDK never becomes a plain
-     * `implementation`, because that one-word change is how it would silently
-     * end up in a Play upload.
-     */
-    implementation("com.google.firebase:firebase-appdistribution-api:16.0.0-beta20")
-    internalImplementation("com.google.firebase:firebase-appdistribution:16.0.0-beta20")
-
-    /**
      * Sign in with Google, in an app-owned bottom sheet.
      *
      * Credential Manager is the platform API Google now requires for this; the

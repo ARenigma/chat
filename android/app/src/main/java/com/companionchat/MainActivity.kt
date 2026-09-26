@@ -12,11 +12,10 @@ import androidx.activity.result.contract.ActivityResultContracts.StartActivityFo
 import androidx.core.view.WindowCompat
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
-import com.swmansion.rnscreens.RNScreensFragmentFactory
+import com.swmansion.rnscreens.fragment.restoration.RNScreensFragmentFactory
 import com.facebook.react.bridge.Promise
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
-import com.google.firebase.appdistribution.FirebaseAppDistribution
 import com.truecaller.android.sdk.oAuth.CodeVerifierUtil
 import com.truecaller.android.sdk.oAuth.TcOAuthCallback
 import com.truecaller.android.sdk.oAuth.TcOAuthData
@@ -576,31 +575,9 @@ class MainActivity : ReactActivity() {
     applyCallWindowFlags(safeIntent)
   }
 
-  /**
-   * Offer testers a newer build, if there is one.
-   *
-   * Unconditional on purpose. In `release` this links against
-   * `firebase-appdistribution-api`, whose whole job is to be a no-op, so there is
-   * no build-type check here and no variant-specific source set to keep in step.
-   * In `internal` the real SDK is present and this shows Firebase's own dialog,
-   * downloads the APK and installs it.
-   *
-   * `onResume` rather than `onCreate`, following Google's sample: a tester who
-   * leaves the app open for a day and comes back is exactly the person a new
-   * build is waiting for, and `onCreate` would only catch a cold start.
-   *
-   * Failures are logged and swallowed. The common ones are entirely normal on a
-   * tester's device, not signed in to App Tester yet, no network, or simply no
-   * new release, and none of them is worth a dialog on top of the app.
-   */
   override fun onResume() {
     super.onResume()
     preferHighestRefreshRate()
-    FirebaseAppDistribution.getInstance()
-        .updateIfNewReleaseAvailable()
-        .addOnFailureListener { error ->
-          Log.i("AppDistribution", "no update offered: ${error.message}")
-        }
   }
 
   override fun onDestroy() {

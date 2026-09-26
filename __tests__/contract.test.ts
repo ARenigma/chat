@@ -1921,33 +1921,21 @@ describe('in-app updates are wired end to end', () => {
     expect(shell).toContain('<UpdateBanner />');
   });
 
-  it('keeps the App Distribution SDK out of the Play artefact', () => {
-    // Measured, not assumed: the full SDK pulls in REQUEST_INSTALL_PACKAGES and
-    // WRITE_EXTERNAL_STORAGE. REQUEST_INSTALL_PACKAGES is a restricted
-    // permission needing a Play declaration, and an app about paid conversation
-    // with strangers asking to install packages is a review problem. The
-    // `internal` variant carries it; `release` must not.
-    //
-    // The whole risk is one word: changing `internalImplementation` to
-    // `implementation` would ship it to Play with nothing else looking wrong.
-    const gradle = read('android/app/build.gradle');
-    expect(gradle).toContain(
-      'internalImplementation("com.google.firebase:firebase-appdistribution:',
-    );
-    expect(gradle).not.toMatch(
-      /^\s*implementation\("com\.google\.firebase:firebase-appdistribution:/m,
-    );
-    // The -api artefact IS in every variant, deliberately. It is the no-op that
-    // lets MainActivity call updateIfNewReleaseAvailable() without a
-    // variant-specific source set.
-    expect(gradle).toContain(
-      'implementation("com.google.firebase:firebase-appdistribution-api:',
+  it('carries no Firebase App Distribution SDK in any variant', () => {
+    // Testers moved to Play Console testing tracks (2026-09-26), so the
+    // "Enable testing features" dialog it showed on every resume of the
+    // internal build had nothing left to offer. The full SDK also pulled in
+    // REQUEST_INSTALL_PACKAGES, a restricted permission, so its return would
+    // be a Play review problem, not just a dialog.
+    expect(read('android/app/build.gradle')).not.toMatch(/firebase-appdistribution/);
+    expect(read('android/app/src/main/java/com/companionchat/MainActivity.kt')).not.toMatch(
+      /FirebaseAppDistribution|updateIfNewReleaseAvailable/,
     );
   });
 
   it('derives the internal versionCode so a bump is enough to prompt testers', () => {
-    // App Distribution prompts on versionCode. A fixed one means no tester is
-    // ever offered anything, however many builds get pushed.
+    // Play takes a build only with a higher versionCode than the last. A fixed
+    // one means every later upload is refused.
     const gradle = read('android/app/build.gradle');
     expect(gradle).toContain('parts[0] * 10000 + parts[1] * 100 + parts[2]');
     expect(gradle).toContain('versionName versionNameProperty');
@@ -1995,14 +1983,6 @@ describe('in-app updates are wired end to end', () => {
     expect(pkg.scripts.android).toBe(
       'react-native run-android --active-arch-only',
     );
-  });
-
-  it('sends testers the internal APK, never the release one', () => {
-    // Distributing release would work and testers would never be prompted
-    // again, because that artefact has only the no-op stub.
-    const script = read('scripts/distribute.mjs');
-    expect(script).toContain('apk/internal/app-internal.apk');
-    expect(script).not.toContain('apk/release/app-release.apk');
   });
 
   it('never blocks a release build on an accidental versionCode', () => {

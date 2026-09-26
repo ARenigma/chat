@@ -272,8 +272,7 @@ Runtime config also covers rates, packs, and kill switches via `get_public_confi
 npm run verify             # Full local gate: tokens, icons, contrast, types, lint, jest, bundle
 npm run start              # Metro bundler
 npm run android            # Debug build on connected device/emulator
-npm run android:internal   # Internal (tester) build; includes App Distribution SDK
-npm run ship:testers       # version:bump + assembleInternal + distribute (Firebase App Distribution)
+npm run android:internal   # Internal build (benchmark routes); testers get builds through Play Console tracks
 npm run test:db            # pgTAP DB tests — requires Docker
 ```
 
@@ -282,7 +281,7 @@ npm run test:db            # pgTAP DB tests — requires Docker
 - `origin` → GitHub (`ARenigma/chat` or equivalent)
 - `gitlab` → GitLab (`ARenigma/chat`) — this is where CI runs (ADR-0003)
 
-**CI gates (`.gitlab-ci.yml`)**: static analysis → verify (tsc, lint, tokens, jest) → build (R8 release bundle) → deliver (App Distribution) → release (Play).
+**CI gates (`.gitlab-ci.yml`)**: static analysis → verify (tsc, lint, tokens, jest) → build (R8 release bundle) → release (Play).
 
 **Version bumping**: `npm run version:bump` increments `versionName` in `app.json` and Gradle derives `versionCode` as `major*10000 + minor*100 + patch`. Play rejects a duplicate versionCode — never hardcode it.
 

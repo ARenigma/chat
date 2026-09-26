@@ -508,7 +508,7 @@ describe('startup is profiled, not guessed', () => {
   it('installs the profile on builds Play did not install', () => {
     /*
      * A baked profile is applied automatically only by a Play install. Every
-     * App Distribution sideload and every `adb install` needs
+     * sideload and every `adb install` needs
      * androidx.profileinstaller to write it into ART on first run. Without it
      * the profile exists in the APK and never takes effect where we test.
      */

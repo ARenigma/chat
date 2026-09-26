@@ -544,14 +544,6 @@ function nodeCentre(xml, selector) {
   };
 }
 
-/** Firebase App Distribution re-asks on every fresh install of the internal build. */
-function dismissTesterDialog(serial, xml) {
-  const notNow = nodeCentre(xml, 'text="NOT NOW"');
-  if (!notNow) return false;
-  adb(serial, ['shell', 'input', 'tap', String(notNow.x), String(notNow.y)]);
-  return true;
-}
-
 /** True once the answer has landed, whoever tapped it. */
 async function callAnswered(runId) {
   const { data } = await admin
@@ -568,7 +560,6 @@ async function answerOnCallee(serial, runId) {
     async () => {
       if (await callAnswered(runId)) return 'already-answered';
       const xml = uiHierarchy(serial);
-      if (dismissTesterDialog(serial, xml)) return null;
       const accept = nodeCentre(xml, 'resource-id="call-accept"');
       if (!accept) return null;
       adb(serial, [
