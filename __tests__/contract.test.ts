@@ -2,6 +2,7 @@ import { parseSync, types as t } from '@babel/core';
 import { createHash } from 'crypto';
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync } from 'fs';
+import { sourceFiles } from './helpers/sourceFiles';
 import { join } from 'path';
 import { isUuid, newUuid } from '../src/lib/ids';
 import { normalisePhone } from '../src/lib/phone';
@@ -423,23 +424,21 @@ describe('GST is disclosed where money moves and nowhere else', () => {
     // SettingsSheet earns its place only for the recharge-history row, "Receipts
     // and GST invoices" — the invoice is the document the tax legally lives on.
     const allowed = new Set([
-      'RechargeScreen.tsx',
-      'PaymentSheet.tsx',
-      'SettingsSheet.tsx',
+      'src/screens/RechargeScreen.tsx',
+      'src/screens/PaymentSheet.tsx',
+      'src/screens/SettingsSheet.tsx',
     ]);
-    for (const dir of ['src/screens', 'src/components']) {
-      for (const file of readdirSync(join(ROOT, dir))) {
-        if (!file.endsWith('.tsx') || allowed.has(file)) {
-          continue;
-        }
-        expect({
-          file,
-          mentionsGst:
-            /\bGST\b|gst(Split|IncludedLabel|ExclusiveLabel|ExclusiveParts|PercentLabel|AddedLabel|AddedSpoken|OnTop)/.test(
-              withoutComments(read(`${dir}/${file}`)),
-            ),
-        }).toEqual({ file, mentionsGst: false });
+    for (const file of sourceFiles().filter(f => f.endsWith('.tsx'))) {
+      if (allowed.has(file)) {
+        continue;
       }
+      expect({
+        file,
+        mentionsGst:
+          /\bGST\b|gst(Split|IncludedLabel|ExclusiveLabel|ExclusiveParts|PercentLabel|AddedLabel|AddedSpoken|OnTop)/.test(
+            withoutComments(read(file)),
+          ),
+      }).toEqual({ file, mentionsGst: false });
     }
   });
 });
@@ -946,11 +945,8 @@ describe('pipeline wiring', () => {
   });
 
   it('asserts the test IDs the flows select on still exist in the components', () => {
-    const sources = ['src/components', 'src/screens', 'src/chat-v2'];
-    const haystack = sources
-      .flatMap(dir =>
-        readdirSync(join(ROOT, dir)).map(f => read(`${dir}/${f}`)),
-      )
+    const haystack = sourceFiles()
+      .map(f => read(f))
       .join('\n');
 
     /**
@@ -1104,11 +1100,9 @@ describe('gesture handling reaches every root', () => {
     /use(Tap|Pan|Pinch|Rotation|Fling|LongPress|Native|Manual|Hover)Gesture\(/;
 
   const surfaces = (): { file: string; code: string }[] =>
-    ['src/components', 'src/screens', 'src/chat-v2'].flatMap(dir =>
-      readdirSync(join(ROOT, dir))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => ({ file: f, code: codeOnly(read(`${dir}/${f}`)) })),
-    );
+    sourceFiles()
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: f, code: codeOnly(read(f)) }));
 
   it('wraps the app root', () => {
     expect(read('App.tsx')).toContain('<GestureHandlerRootView');
@@ -1141,11 +1135,11 @@ describe('gesture handling reaches every root', () => {
     // CallScreen.tsx owns the draggable self-view. It lives inside the app's
     // root GestureHandlerRootView and clamps above the call controls.
     expect(users).toEqual([
-      'CallScreen.tsx',
-      'ChatMessageCellV2.tsx',
-      'MediaViewer.tsx',
-      'Sheet.tsx',
-      'SpotlightCard.tsx',
+      'src/chat-v2/ChatMessageCellV2.tsx',
+      'src/components/MediaViewer.tsx',
+      'src/components/Sheet.tsx',
+      'src/components/SpotlightCard.tsx',
+      'src/screens/CallScreen.tsx',
     ]);
   });
 
@@ -1298,9 +1292,9 @@ describe('sign-in copy matches the sign-in that exists', () => {
     const absent = ['phone number', 'facebook', 'apple id'].filter(
       name => !providers.some(p => name.startsWith(p)),
     );
-    const screens = readdirSync(join(ROOT, 'src/screens'))
+    const screens = sourceFiles()
       .filter(f => f.endsWith('.tsx'))
-      .map(f => ({ file: f, body: withoutComments(read(`src/screens/${f}`)) }));
+      .map(f => ({ file: f, body: withoutComments(read(f)) }));
 
     for (const screen of screens) {
       for (const name of absent) {
@@ -4529,15 +4523,12 @@ describe('the website uses clean public URLs', () => {
  * `has no gradients or glow anywhere`, which is left exactly as it was.
  */
 describe('the motion adoption is wired, not just drawn', () => {
-  const screens = readdirSync(join(ROOT, 'src/screens'))
-    .filter(f => f.endsWith('.tsx'))
-    .map(f => ({ file: f, body: withoutComments(read(`src/screens/${f}`)) }));
-  const components = readdirSync(join(ROOT, 'src/components'))
-    .filter(f => f.endsWith('.tsx'))
-    .map(f => ({
-      file: f,
-      body: withoutComments(read(`src/components/${f}`)),
-    }));
+  const screens = sourceFiles()
+    .filter(f => f.startsWith('src/screens/') && f.endsWith('.tsx'))
+    .map(f => ({ file: f, body: withoutComments(read(f)) }));
+  const components = sourceFiles()
+    .filter(f => f.startsWith('src/components/') && f.endsWith('.tsx'))
+    .map(f => ({ file: f, body: withoutComments(read(f)) }));
 
   it('separates busy from disabled in the primitive', () => {
     // The bug this whole rule exists to fix: every call site used to pass
@@ -4737,7 +4728,7 @@ describe('the motion adoption is wired, not just drawn', () => {
     // the provider onboarding is now one continuous verify → profile flow with no
     // second bloom welcome, so the atmospheric field lives only on the member
     // welcome/auth surface.
-    expect(consumers).toEqual(['OnboardingScreen.tsx']);
+    expect(consumers).toEqual(['src/screens/OnboardingScreen.tsx']);
   });
 
   /**
@@ -4801,14 +4792,9 @@ describe('the motion adoption is wired, not just drawn', () => {
    * were, in the same commit.
    */
   it('uses FlashList for every list, never FlatList or SectionList', () => {
-    const listSources = ['src/components', 'src/screens'].flatMap(dir =>
-      readdirSync(join(ROOT, dir))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => ({
-          file: `${dir}/${f}`,
-          body: withoutComments(read(`${dir}/${f}`)),
-        })),
-    );
+    const listSources = sourceFiles()
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: f, body: withoutComments(read(f)) }));
     const offenders = listSources
       .filter(s =>
         /import \{[^}]*\b(FlatList|SectionList)\b[^}]*\} from 'react-native'/.test(
@@ -4848,28 +4834,10 @@ describe('the motion adoption is wired, not just drawn', () => {
      */
     const RAW_PRESSABLE_IMPORT =
       /import \{[^}]*\bPressable\b[^}]*\} from 'react-native'/;
-    const allSources = [
-      ...readdirSync(join(ROOT, 'src/components'))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => ({
-          file: `src/components/${f}`,
-          body: withoutComments(read(`src/components/${f}`)),
-        })),
-      ...readdirSync(join(ROOT, 'src/screens'))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => ({
-          file: `src/screens/${f}`,
-          body: withoutComments(read(`src/screens/${f}`)),
-        })),
-      // The chat slice, which this scan did not reach while V1 owned the
-      // screen — so the app's busiest surface was the one it could not see.
-      ...readdirSync(join(ROOT, 'src/chat-v2'))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => ({
-          file: `src/chat-v2/${f}`,
-          body: withoutComments(read(`src/chat-v2/${f}`)),
-        })),
-    ];
+    // The chat slice is now included via sourceFiles() — see UI_SOURCE_DIRS.
+    const allSources = sourceFiles()
+      .filter(f => f.endsWith('.tsx'))
+      .map(f => ({ file: f, body: withoutComments(read(f)) }));
     const rawUsers = allSources
       .filter(s => RAW_PRESSABLE_IMPORT.test(s.body))
       .map(s => s.file)
@@ -5148,11 +5116,7 @@ describe('a Pressable with siblings in a tall column states its own height', () 
     );
 
   it('no painted Pressable relies on the inner view for its height', () => {
-    const files = ['src/components', 'src/screens'].flatMap(dir =>
-      readdirSync(join(ROOT, dir))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => `${dir}/${f}`),
-    );
+    const files = sourceFiles().filter(f => f.endsWith('.tsx'));
     expect(files.length).toBeGreaterThan(20);
 
     const offenders: string[] = [];

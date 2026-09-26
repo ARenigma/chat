@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { DARK, LIGHT, TOKENS } from '../src/theme/tokens';
 import { SOURCE_METRICS } from '../src/lib/onboarding';
+import { sourceFiles } from './helpers/sourceFiles';
 
 const ROOT = join(__dirname, '..');
 
@@ -472,12 +473,8 @@ describe('typography is bound to real font files', () => {
     // appearing in that explanation was failing the very gate the explanation
     // exists to honour. A gate that cannot tell code from the reasoning about
     // the code has failed three times in this repo already.
-    const sources = UI_SOURCE_DIRS
-      .flatMap(dir =>
-        readdirSync(join(ROOT, dir)).map(f =>
-          stripComments(read(`${dir}/${f}`)),
-        ),
-      )
+    const sources = sourceFiles()
+      .map(f => stripComments(read(f)))
       .concat(stripComments(read('App.tsx')));
     for (const body of sources) {
       expect(body).not.toMatch(/fontWeight/);
@@ -915,14 +912,9 @@ describe('large text roles carry a font-scale cap', () => {
   // roles are uncapped by construction and never match. See ADR-0024.
   const CAPPED_SPREAD =
     /\.\.\.\s*TOKENS\.typography\.(wordmark|display|headline|title)[A-Za-z]*/;
-  const sources = UI_SOURCE_DIRS.flatMap(dir =>
-    readdirSync(join(ROOT, dir))
-      .filter(f => f.endsWith('.tsx'))
-      .map(f => ({
-        file: `${dir}/${f}`,
-        body: stripComments(read(`${dir}/${f}`)),
-      })),
-  );
+  const sources = sourceFiles()
+    .filter(f => f.endsWith('.tsx'))
+    .map(f => ({ file: f, body: stripComments(read(f)) }));
 
   it('wires maxFontSizeMultiplier wherever a capped role is used', () => {
     const offenders = sources
@@ -1264,15 +1256,9 @@ describe('a kind of text reads at one role, screen or sheet', () => {
 describe('spacing lives in tokens', () => {
   const SPACING =
     /\b(padding|margin|gap|rowGap|columnGap)(Top|Bottom|Left|Right|Horizontal|Vertical|Start|End)?\s*:\s*(-?[1-9]\d*)\b/g;
-  const sources = UI_SOURCE_DIRS
-    .flatMap(dir =>
-      readdirSync(join(ROOT, dir))
-        .filter(f => f.endsWith('.tsx'))
-        .map(f => ({
-          file: `${dir}/${f}`,
-          body: stripComments(read(`${dir}/${f}`)),
-        })),
-    )
+  const sources = sourceFiles()
+    .filter(f => f.endsWith('.tsx'))
+    .map(f => ({ file: f, body: stripComments(read(f)) }))
     .concat({ file: 'App.tsx', body: stripComments(read('App.tsx')) });
 
   const ALLOW: Record<string, string[]> = {

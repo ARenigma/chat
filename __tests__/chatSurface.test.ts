@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { TOKENS } from '../src/theme/tokens';
+import { sourceFiles } from './helpers/sourceFiles';
 
 const ROOT = join(__dirname, '..');
 const read = (relative: string): string => readFileSync(join(ROOT, relative), 'utf8');
@@ -141,19 +142,9 @@ const CHAT_MEDIA_FILES = [
  * covered by this gate without anyone remembering to list it.
  */
 function discoveredMediaSurfaces(): readonly string[] {
-  const found: string[] = [];
-  for (const dir of ['src/components', 'src/screens', 'src/chat-v2']) {
-    for (const name of readdirSync(join(ROOT, dir))) {
-      if (!/\.tsx?$/.test(name)) {
-        continue;
-      }
-      const relative = `${dir}/${name}`;
-      if (/useAttachmentUrl|ImageBody\b/.test(read(relative))) {
-        found.push(relative);
-      }
-    }
-  }
-  return found;
+  return sourceFiles()
+    .filter(f => /\.tsx?$/.test(f))
+    .filter(f => /useAttachmentUrl|ImageBody\b/.test(read(f)));
 }
 
 const AUDITED: readonly string[] = Array.from(
