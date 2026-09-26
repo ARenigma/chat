@@ -33,6 +33,34 @@ describe('feel benchmark', () => {
     expect(bench).not.toContain('composer-attach');
   });
 
+  it('measures the native push and pop on the V2 chat header', () => {
+    // Navigation step 8: the chat is a native-stack push, and the production
+    // chat is V2, so the journey drives `chat-v2-title` / `chat-v2-back` and
+    // waits for the native transition to settle on both legs.
+    const push = bench.slice(bench.indexOf('fun chatPushPopFrames()'));
+    const body = push.slice(0, push.indexOf('/** Measures from Home'));
+    expect(body).toContain('requireObject("chat-v2-title")');
+    expect(body).toContain('requireObject("chat-v2-back").click()');
+    expect(body).toContain('waitUntilGone("chat-v2-title")');
+    expect(body).toContain('waitForIdle(TRANSITION_IDLE_MS)');
+    expect(bench).not.toMatch(/"chat-(title|back)"/);
+    const journey = read(
+      'android/baselineprofile/src/main/java/com/companionchat/baselineprofile/CriticalJourneyBenchmark.kt',
+    );
+    expect(journey).toContain('By.res("chat-v2-title")');
+    expect(journey).not.toContain('"chat-title"');
+    expect(journey).toContain('killProcess()');
+  });
+
+  it('reads the IME inset from plain dumpsys window when the insets subcommand is refused', () => {
+    // One UI 8 / Android 16 answers `dumpsys window insets` with "Bad window
+    // command"; the same InsetsSource lines are under plain `dumpsys window`.
+    expect(bench).toContain(
+      'IME_DUMP_COMMANDS = listOf("dumpsys window insets", "dumpsys window")',
+    );
+    expect(bench).toContain('Bad window command');
+  });
+
   it('SKIPS on a slow panel rather than passing on slack', () => {
     // The thresholds are 120Hz thresholds. On a 60Hz panel every frame has
     // 16.7ms instead of 8.3ms, so the same code passes trivially while looking

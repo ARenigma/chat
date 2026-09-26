@@ -71,15 +71,23 @@ class CriticalJourneyBenchmark {
             list.fling(Direction.UP)
         }
 
+    /**
+     * Open a chat from the Home rail: a native-stack push since navigation
+     * step 7 (react-native-screens fragment transition, Home kept mounted
+     * underneath). The measured block ends when the push has settled, not on
+     * the first frame the chat title exists in, so the whole native animation
+     * is in the numbers.
+     */
     @Test
     fun openChatFrames() =
         measure(
             requiredObject = By.res("rail-$providerId"),
         ) { conversation ->
             conversation.click()
-            check(device.wait(Until.hasObject(By.res("chat-title")), 10_000)) {
+            check(device.wait(Until.hasObject(By.res("chat-v2-title")), 10_000)) {
                 "chat did not become usable"
             }
+            device.waitForIdle(1_000)
         }
 
     private fun measure(
@@ -97,6 +105,10 @@ class CriticalJourneyBenchmark {
             iterations = 10,
             startupMode = null,
             setupBlock = {
+                // A cold process each iteration: the previous iteration left the
+                // chat pushed, and a warm resume would start inside it and never
+                // find the rail.
+                killProcess()
                 pressHome()
                 startActivityAndWait()
                 target =

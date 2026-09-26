@@ -207,9 +207,9 @@ class FeelBenchmark {
         }
 
     /**
-     * Home ↔ You. A tab switch is a cross-fade between two mounted layers, so
-     * this measures the fade rather than a mount — which is the point: the tabs
-     * were made permanently mounted precisely to take the mount out of it.
+     * Home ↔ You. The tabs are bottom-tabs screens (`lazy`, native detach) with
+     * no tab animation, so after the first visit this measures re-attaching an
+     * already-mounted tab rather than a mount or a cross-fade.
      */
     @Test
     fun tabSwitchFrames() =
@@ -228,20 +228,29 @@ class FeelBenchmark {
         }
 
     /**
-     * Push into a chat and pop back out, repeatedly. The bottom bar is now kept
-     * mounted across this transition rather than rebuilt, so a regression here
-     * is the first place that would show.
+     * Push into a chat and pop back out, repeatedly.
+     *
+     * Since navigation step 7 this is a react-native-screens native-stack push:
+     * a fragment transition the platform composites, with Home kept mounted
+     * underneath, not the old JS cross-fade of two layers. So the journey waits
+     * for the transition to settle (`waitForIdle`) on both legs rather than for
+     * the first frame the destination exists in: the frames that matter are the
+     * ones the native animation plays. The back arrow is the chat's own
+     * (`chat-v2-back`), the same exit a user taps.
+     *
+     * https://reactnavigation.org/docs/native-stack-navigator
      */
     @Test
     fun chatPushPopFrames() =
         measure { scope ->
             repeat(3) {
                 scope.requireObject("rail-$providerId").click()
-                scope.requireObject("chat-title")
-                scope.requireObject("chat-back").click()
-                scope.waitUntilGone("chat-title")
-                scope.requireDescription("Home")
+                scope.requireObject("chat-v2-title")
+                scope.device.waitForIdle(TRANSITION_IDLE_MS)
+                scope.requireObject("chat-v2-back").click()
+                scope.waitUntilGone("chat-v2-title")
                 scope.requireObject("home-scroll-listener")
+                scope.device.waitForIdle(TRANSITION_IDLE_MS)
             }
         }
 
@@ -399,8 +408,25 @@ class FeelBenchmark {
         )
     }
 
+    /**
+     * The IME's InsetsSource, read from WindowManager's dump.
+     *
+     * `dumpsys window insets` first, then plain `dumpsys window`: on One UI 8 /
+     * Android 16 the `insets` subcommand answers "Bad window command", and the
+     * same `type=ime` InsetsSource lines appear under the plain dump instead.
+     */
     private fun MacrobenchmarkScope.readImeInsets(): ImeInsets {
-        val state = device.executeShellCommand("dumpsys window insets")
+        for (command in IME_DUMP_COMMANDS) {
+            val state = device.executeShellCommand(command)
+            parseImeInsets(state)?.let { return it }
+        }
+        error(
+            "no parseable type=ime source with frame and visibility in " +
+                IME_DUMP_COMMANDS.joinToString(" or "),
+        )
+    }
+
+    private fun parseImeInsets(state: String): ImeInsets? {
         for (type in IME_TYPE.findAll(state)) {
             val block = state.substring(type.range.first, minOf(state.length, type.range.first + 800))
             val frame = IME_FRAME.find(block)?.value
@@ -409,7 +435,7 @@ class FeelBenchmark {
                 return ImeInsets(visible = visible, frame = frame)
             }
         }
-        error("dumpsys window insets has no parseable type=ime source with frame and visibility")
+        return null
     }
 
     private fun MacrobenchmarkScope.waitUntilGone(testId: String) {
@@ -447,6 +473,8 @@ class FeelBenchmark {
         private const val TIMEOUT_MS = 5_000L
         private const val OPEN_MS = 20_000L
         private const val IDLE_MS = 2_000L
+        /** Long enough for a native-stack push or pop to finish animating. */
+        private const val TRANSITION_IDLE_MS = 1_000L
         private const val POLL_MS = 100L
         private const val SWIPE_STEPS = 24
         private const val MAX_ANCHOR_DRIFT_DP = 4
@@ -458,6 +486,7 @@ class FeelBenchmark {
                 "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
                 RegexOption.IGNORE_CASE,
             )
+        private val IME_DUMP_COMMANDS = listOf("dumpsys window insets", "dumpsys window")
         private val IME_TYPE = Regex("(?:mType|type)=ime\\b")
         private val IME_FRAME =
             Regex("(?:mFrame|frame)=\\[-?\\d+,-?\\d+]\\[-?\\d+,-?\\d+]")
