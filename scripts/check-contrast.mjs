@@ -474,6 +474,53 @@ const PAIRS = [
     target: 3,
     what: 'the presence dot on a card',
   },
+  /*
+   * The directory CTA while the provider is FREE (ProviderRow, 2026-09-27):
+   * green outline and label at rest, solid green with text/onState while
+   * pressed. text/available is the text-safe member; state/available (the
+   * dot) is 3.84:1 in light and cannot carry a label.
+   */
+  {
+    fg: 'text/available',
+    bg: 'bg/raised',
+    target: 4.5,
+    what: 'the explore row CTA label and glyph while the provider is free',
+  },
+  {
+    fg: 'text/available',
+    bg: 'bg/raised',
+    target: 3,
+    what: "the explore row CTA's resting outline while free (non-text)",
+  },
+  {
+    fg: 'text/onState',
+    bg: 'bg/available',
+    target: 4.5,
+    what: 'the explore row CTA label on its green fill while pressed',
+  },
+  {
+    fg: 'bg/available',
+    bg: 'bg/raised',
+    target: 3,
+    what: 'the explore row CTA green fill while pressed, its own edge on the card (non-text)',
+  },
+  /*
+   * ...and while the provider is BUSY: state/danger outline, label and the
+   * "wait ~Nm" line under the button (textXs, so the full 4.5), and the same
+   * garnet as the pressed fill under text/onState.
+   */
+  {
+    fg: 'text/onState',
+    bg: 'state/danger',
+    target: 4.5,
+    what: 'the explore row busy CTA label on its fill while pressed',
+  },
+  {
+    fg: 'state/danger',
+    bg: 'bg/raised',
+    target: 3,
+    what: "the explore row busy CTA's outline, and its pressed fill's edge, on the card (non-text)",
+  },
   {
     fg: 'border/hairline',
     bg: 'bg/raised',

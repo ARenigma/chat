@@ -8079,6 +8079,8 @@ describe('the member reads rupees; "token" is a storage word, never a shown one'
    */
   const NOT_PROSE = new Set([
     '../theme/tokens',
+    // src/components/Layout/* sits one directory deeper (step 5).
+    '../../theme/tokens',
     './tokens',
     'token-badge',
     'token-count',

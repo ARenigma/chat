@@ -2618,6 +2618,8 @@ describe('iOS conformance', () => {
     }
     // The Bluesky screen title is capped at 2 (Layout.Header TitleText).
     expect(cap.textLgSemiBoldTight).toBe(2);
+    // The card name keeps the title cap it had as titleMediumEmphasized.
+    expect(cap.textXlSemiBold).toBe(cap.titleMediumEmphasized);
   });
 
   it('carries the Bluesky alf header roles at alf sizes, in the Geist faces', () => {
@@ -2625,7 +2627,7 @@ describe('iOS conformance', () => {
     // and weights. Sizes are @bsky.app/alf `fontSize`; line heights are what alf
     // normalizeTextStyles computes, Math.round(size * leading) with snug 1.3 and
     // tight 1.15. Asserted as arithmetic so a hand-rounded value cannot pass.
-    const ALF = { xs: 11.3, sm: 13.1, md: 15, lg: 16.9, _3xl: 24.3 };
+    const ALF = { xs: 11.3, sm: 13.1, md: 15, lg: 16.9, xl: 18.8, _3xl: 24.3 };
     const SNUG = 1.3;
     const TIGHT = 1.15;
     const t = LIGHT.typography as Record<
@@ -2641,6 +2643,8 @@ describe('iOS conformance', () => {
       ['textMdSemiBold', ALF.md, SNUG, 'Geist-SemiBold'],
       ['textLgSemiBold', ALF.lg, SNUG, 'Geist-SemiBold'],
       ['textLgSemiBoldTight', ALF.lg, TIGHT, 'Geist-SemiBold'],
+      // The directory card name (Amit, 2026-09-27): alf text_xl semibold.
+      ['textXlSemiBold', ALF.xl, SNUG, 'Geist-SemiBold'],
       ['text3xlBold', ALF._3xl, SNUG, 'Geist-Bold'],
       ['text3xlBoldTight', ALF._3xl, TIGHT, 'Geist-Bold'],
     ];

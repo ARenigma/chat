@@ -170,7 +170,7 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     const starsHeight = Math.round(TOKENS.icon.xs * 1.2);
     const ratingBlock = starsHeight + gap + line;
     const right =
-      TOKENS.typography.titleMediumEmphasized.lineHeight + (gap + line) * 3 + gap + drawn;
+      TOKENS.typography.textXlSemiBold.lineHeight + (gap + line) * 3 + gap + drawn;
     const ctaCentre = right - drawn / 2;
     const leftHeight = ctaCentre + starsHeight / 2 + gap + line;
     const starsCentre = leftHeight - ratingBlock + starsHeight / 2;
@@ -266,8 +266,11 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
      * rather than leaving the component's arithmetic describing a glyph that
      * has moved.
      */
-    const geist = readFileSync(join(ROOT, 'assets/fonts/Geist-Bold.ttf'));
-    expect(TOKENS.typography.titleMediumEmphasized.fontFamily).toBe('Geist-Bold');
+    // The name is alf text_xl SemiBold since 2026-09-27 (was Geist-Bold 16).
+    const geist = readFileSync(join(ROOT, 'assets/fonts/Geist-SemiBold.ttf'));
+    expect(TOKENS.typography.textXlSemiBold.fontFamily).toBe('Geist-SemiBold');
+    expect(TOKENS.typography.textXlSemiBold.fontSize).toBe(18.8);
+    expect(style('name')).toContain('...TOKENS.typography.textXlSemiBold');
     const capEm = capHeight(geist) / unitsPerEm(geist);
     expect(capEm).toBeCloseTo(0.71, 5);
 
@@ -287,7 +290,7 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     expect(src).toContain('const SEAL_INK_BOTTOM = 0.052;');
     expect(src).toContain('const SEAL_INK_TOP = 0.948;');
     expect(src).toContain(
-      'GEIST_CAP_HEIGHT * TOKENS.typography.titleMediumEmphasized.fontSize',
+      'const NAME_CAP_HEIGHT = GEIST_CAP_HEIGHT * TOKENS.typography.textXlSemiBold.fontSize',
     );
     expect(src).toContain(
       'export const VERIFIED_SEAL_PX = Math.round(NAME_CAP_HEIGHT / (SEAL_INK_TOP - SEAL_INK_BOTTOM))',
@@ -295,15 +298,15 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     expect(src).toContain('export const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE');
     expect(code(ROW)).toContain('size={VERIFIED_SEAL_SIZE}');
 
-    // The arithmetic: an 11.36dp cap height wants a 12.68dp box, `Icon` rounds
-    // to 13, and 13 draws the seal 11.65dp tall, within a pixel of the caps and
+    // The arithmetic: a 13.35dp cap height wants a 14.90dp box, `Icon` rounds
+    // to 15, and 15 draws the seal 13.44dp tall, within a pixel of the caps and
     // on the overshoot side a round mark beside flat capitals should be.
-    const cap = capEm * TOKENS.typography.titleMediumEmphasized.fontSize;
-    expect(cap).toBeCloseTo(11.36, 2);
+    const cap = capEm * TOKENS.typography.textXlSemiBold.fontSize;
+    expect(cap).toBeCloseTo(13.35, 2);
     const px = Math.round(cap / (inkTop - inkBottom));
-    expect(px).toBe(13);
+    expect(px).toBe(15);
     // What Icon.tsx renders for the size the row passes it.
-    expect(Math.round((px / 1.2) * 1.2)).toBe(13);
+    expect(Math.round((px / 1.2) * 1.2)).toBe(15);
     const drawn = px * (inkTop - inkBottom);
     expect(drawn).toBeGreaterThanOrEqual(cap);
     expect(drawn - cap).toBeLessThan(0.5);
@@ -844,7 +847,7 @@ describe('every row is still the same height', () => {
     const gap = TOKENS.space['2xs'];
     const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
     const right =
-      TOKENS.typography.titleMediumEmphasized.lineHeight +
+      TOKENS.typography.textXlSemiBold.lineHeight +
       gap +
       TOKENS.typography.bodySmall.lineHeight +
       gap +
@@ -889,7 +892,7 @@ describe('every row is still the same height', () => {
     expect(read(ROW)).toContain('const RING_TO_STARS = TOKENS.space.xs');
 
     const rightFormula = between(src, 'export const PROVIDER_ROW_RIGHT_COLUMN =', ';');
-    expect(rightFormula).toContain('titleMediumEmphasized.lineHeight');
+    expect(rightFormula).toContain('textXlSemiBold.lineHeight');
     expect(rightFormula).toContain('ROW_CTA_VISUAL_HEIGHT');
     expect(rightFormula).not.toContain('ROW_CTA_HEIGHT');
     expect(rightFormula).not.toContain('ROW_TAG_LINE');

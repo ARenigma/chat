@@ -42,6 +42,7 @@ export const LIGHT = {
       positive: '#DCE8E3',
       tokenHealthy: '#0B5F36',
       tokenCritical: '#B3261E',
+      available: '#10855F',
     },
     text: {
       primary: '#1C1C1E',
@@ -61,6 +62,7 @@ export const LIGHT = {
       astrologer: '#5B21B6',
       onAstrologer: '#5B21B6',
       onTokenStrong: '#FFFFFF',
+      available: '#10855F',
     },
     border: {
       hairline: '#C6C6C8',
@@ -606,6 +608,13 @@ export const LIGHT = {
       letterSpacing: 0,
       includeFontPadding: false,
     },
+    textXlSemiBold: {
+      fontFamily: 'Geist-SemiBold',
+      fontSize: 18.8,
+      lineHeight: 24,
+      letterSpacing: 0,
+      includeFontPadding: false,
+    },
     text3xlBold: {
       fontFamily: 'Geist-Bold',
       fontSize: 24.3,
@@ -673,6 +682,7 @@ export const LIGHT = {
     titleLargeEmphasized: 1.5,
     titleMedium: 1.5,
     titleMediumEmphasized: 1.5,
+    textXlSemiBold: 1.5,
     titleSmall: 1.5,
     wordmark: 1,
     wordmarkLarge: 1,
@@ -736,6 +746,7 @@ export const DARK = {
       positive: '#16302A',
       tokenHealthy: '#0E7A45',
       tokenCritical: '#8C1D18',
+      available: '#3FD69B',
     },
     text: {
       primary: '#FFFFFF',
@@ -755,6 +766,7 @@ export const DARK = {
       astrologer: '#A78BFA',
       onAstrologer: '#E5D4FF',
       onTokenStrong: '#FFFFFF',
+      available: '#3FD69B',
     },
     border: {
       hairline: '#303C4A',
@@ -1300,6 +1312,13 @@ export const DARK = {
       letterSpacing: 0,
       includeFontPadding: false,
     },
+    textXlSemiBold: {
+      fontFamily: 'Geist-SemiBold',
+      fontSize: 18.8,
+      lineHeight: 24,
+      letterSpacing: 0,
+      includeFontPadding: false,
+    },
     text3xlBold: {
       fontFamily: 'Geist-Bold',
       fontSize: 24.3,
@@ -1367,6 +1386,7 @@ export const DARK = {
     titleLargeEmphasized: 1.5,
     titleMedium: 1.5,
     titleMediumEmphasized: 1.5,
+    textXlSemiBold: 1.5,
     titleSmall: 1.5,
     wordmark: 1,
     wordmarkLarge: 1,

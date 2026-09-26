@@ -299,20 +299,24 @@ const CTA_VERB_ICON = {
  * THE VERIFIED SEAL IS AS TALL AS THE NAME'S CAPITALS (Amit, 2026-09-26: "with
  * height equal to the first capital letter of the name").
  *
- * Measured from the two fonts, not eyeballed:
+ * Measured from the two fonts, not eyeballed, and RE-DERIVED 2026-09-27 when
+ * the name went from titleMediumEmphasized (Geist-Bold 16) to textXlSemiBold
+ * (Geist-SemiBold 18.8, Bluesky alf text_xl; Amit's call):
  *
- *   Geist cap height    OS/2 sCapHeight 710 / unitsPerEm 1000 = 0.71 em
- *   name cap height     0.71 x titleMediumEmphasized 16 = 11.36dp
+ *   Geist cap height    OS/2 sCapHeight 710 / unitsPerEm 1000 = 0.71 em, the
+ *                       same in the SemiBold and the Bold cut
+ *   name cap height     0.71 x textXlSemiBold 18.8 = 13.35dp
  *   seal ink            `seal-check-fill` in assets/fonts/Phosphor.ttf spans
  *                       y 52..948 of a 1000 em (fontTools glyph bounds), 0.896 em
- *   glyph box           11.36 / 0.896 = 12.68 -> 13dp, since `Icon` rounds its
+ *   glyph box           13.35 / 0.896 = 14.90 -> 15dp, since `Icon` rounds its
  *                       box to a whole dp (Math.round(size x ICON_SCALE))
- *   drawn seal          13 x 0.896 = 11.65dp
+ *   drawn seal          15 x 0.896 = 13.44dp
  *
- * 11.65 against 11.36 is 0.29dp over (under a pixel at the S22's density), and
- * over is the correct side: a round shape set beside flat-topped capitals has to
- * overshoot them to LOOK the same height, which is why a type designer's O is
- * taller than their H. 12dp would have drawn 10.75, visibly short.
+ * 13.44 against 13.35 is 0.09dp over (a quarter of a pixel at the S22's
+ * density), and over is the correct side: a round shape set beside flat-topped
+ * capitals has to overshoot them to LOOK the same height, which is why a type
+ * designer's O is taller than their H. 14dp would have drawn 12.54, visibly
+ * short. (At the old 16dp name it was a 13dp box drawing 11.65.)
  *
  * `__tests__/providerRow.test.ts` reads both numbers out of the .ttf files, so
  * a regenerated icon font or a type-scale change fails there rather than
@@ -321,8 +325,7 @@ const CTA_VERB_ICON = {
 const GEIST_CAP_HEIGHT = 0.71;
 const SEAL_INK_BOTTOM = 0.052;
 const SEAL_INK_TOP = 0.948;
-const NAME_CAP_HEIGHT =
-  GEIST_CAP_HEIGHT * TOKENS.typography.titleMediumEmphasized.fontSize;
+const NAME_CAP_HEIGHT = GEIST_CAP_HEIGHT * TOKENS.typography.textXlSemiBold.fontSize;
 export const VERIFIED_SEAL_PX = Math.round(NAME_CAP_HEIGHT / (SEAL_INK_TOP - SEAL_INK_BOTTOM));
 export const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE;
 
@@ -334,9 +337,9 @@ export const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE;
  * icon font has ascent 1000 / descent 0 and `Icon` sets lineHeight equal to
  * fontSize, so the seal's box bottom IS its baseline, and baseline alignment
  * puts that bottom on the name's baseline. The glyph's ink starts 52/1000 of the
- * em above that bottom, so a translate of 0.052 x 13 = 0.68dp lands the ink
+ * em above that bottom, so a translate of 0.052 x 15 = 0.78dp lands the ink
  * itself on the baseline, and its top at the cap line plus the overshoot above.
- * A transform, so the 0.68dp moves pixels and not the row's layout.
+ * A transform, so the 0.78dp moves pixels and not the row's layout.
  */
 const SEAL_BASELINE_SHIFT = SEAL_INK_BOTTOM * VERIFIED_SEAL_PX;
 
@@ -384,7 +387,7 @@ export const ROW_CARD_GAP = TOKENS.space.sm;
  * list.
  */
 export const PROVIDER_ROW_RIGHT_COLUMN =
-  TOKENS.typography.titleMediumEmphasized.lineHeight +
+  TOKENS.typography.textXlSemiBold.lineHeight +
   ROW_LINE_GAP +
   TOKENS.typography.bodySmall.lineHeight +
   ROW_LINE_GAP +
@@ -802,7 +805,7 @@ function ProviderRowView({
         <View style={styles.label}>
           <View style={styles.nameLine}>
             <Text
-              maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+              maxFontSizeMultiplier={TOKENS.fontScaleCap.textXlSemiBold}
               allowFontScaling
               numberOfLines={1}
               style={styles.name}>
@@ -1135,7 +1138,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   nameLine: {
     flexDirection: 'row',
     // `baseline`, not `center`, since 2026-09-26: three texts in three sizes
-    // share this line now (the 16dp name, the 12dp rate, the seal glyph), and
+    // share this line now (the 18.8dp name, the 12dp rate, the seal glyph), and
     // centring boxes of different heights puts their baselines at three
     // different heights. Fabric resolves a Text's baseline from its first
     // line's ascent (ParagraphShadowNode::baseline), so the rate sits on the
@@ -1145,10 +1148,16 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // icon spacing also increase a bit like clarity" — Clarity sets its badge
     // well clear of the name, and at 4dp ours read as part of the word.
     gap: TOKENS.space.xs,
-    height: TOKENS.typography.titleMediumEmphasized.lineHeight,
+    height: TOKENS.typography.textXlSemiBold.lineHeight,
   },
+  /*
+   * alf text_xl SemiBold, 18.8 on 24 (Amit, 2026-09-27), replacing
+   * titleMediumEmphasized's Bold 16 on 24. The line box is the same 24, so the
+   * name line and the card height do not move; the seal beside it is
+   * re-derived from the new cap height (VERIFIED_SEAL_PX).
+   */
   name: {
-    ...TOKENS.typography.titleMediumEmphasized,
+    ...TOKENS.typography.textXlSemiBold,
     color: t.color.text.primary,
     flexShrink: 1,
   },

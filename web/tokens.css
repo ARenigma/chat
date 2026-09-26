@@ -51,6 +51,8 @@
   --border-strong: #C7C7CC;
   --border-accent: #C2401F;
   --state-available: #12946A;
+  --text-available: #10855F;
+  --bg-available: #10855F;
   --state-danger: #733635;
   --mark-talk: #E0245E;
   --mark-listen: #1D6FE0;
@@ -186,6 +188,8 @@
   --border-strong: #3A4A5C;
   --border-accent: #C2401F;
   --state-available: #3FD69B;
+  --text-available: #3FD69B;
+  --bg-available: #3FD69B;
   --state-danger: #E39B92;
   --mark-talk: #E0245E;
   --mark-listen: #1D6FE0;
