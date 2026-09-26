@@ -1149,3 +1149,21 @@ describe('a section header is not a second title', () => {
     );
   });
 });
+
+/*
+ * The Chats rail is a horizontal ScrollView, which clips its children on
+ * Android, and Badge draws its pill above its anchor. An anchor that does not
+ * make up that overhang puts the top of every unread count outside the
+ * scroller, where it is cut off (2026-09-26, on the S22).
+ */
+describe('Chats rail unread badge', () => {
+  it('is anchored low enough that the whole pill sits inside the scroller', () => {
+    const badge = read('src/components/Badge.tsx');
+    const home = read('src/screens/HomeScreen.tsx');
+    const overhang = Number(/pill:\s*\{[^}]*?top:\s*(-?\d+)/.exec(badge)?.[1]);
+    const anchorTop = Number(/railBadge:\s*\{[^}]*?top:\s*(-?\d+)/.exec(home)?.[1]);
+    expect(Number.isFinite(overhang)).toBe(true);
+    expect(Number.isFinite(anchorTop)).toBe(true);
+    expect(anchorTop + overhang).toBeGreaterThanOrEqual(0);
+  });
+});

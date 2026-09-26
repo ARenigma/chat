@@ -1490,9 +1490,17 @@ const makeStyles = (t: Theme) =>
       borderColor: t.color.bg.accent,
     },
     // Anchor only — M3 Badge owns fill, size, and “9+”.
+    //
+    // `top` is 4, not 0, because Badge's pill sits 4dp ABOVE its anchor
+    // (`top: -4` in Badge.tsx) and this item is the first thing in a horizontal
+    // ScrollView, which always clips its children on Android. At `top: 0` the
+    // top quarter of every unread count was cut off (Amit, on device,
+    // 2026-09-26). At 4 the pill's top edge meets the item's top edge and the
+    // ring's, so the badge still reads as sitting on the ring's corner and the
+    // rail's height, which railEmpty reserves, is unchanged.
     railBadge: {
       position: 'absolute',
-      top: 0,
+      top: 4,
       right: 4,
       width: 0,
       height: 0,
