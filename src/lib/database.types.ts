@@ -506,13 +506,23 @@ export type ProviderSummary = {
    */
   expertise: string[];
   /**
-   * Busy-with-someone-else, and roughly how long until free (Amit,
-   * 2026-09-27). NOT SERVED YET: a server change will add it to
-   * `provider_directory`, so it is optional here and every current row omits
-   * it. `undefined` = not busy, `null` = busy with no estimate, a number =
-   * minutes. Read it through `readBusy` in lib/busy.ts.
+   * Not a directory column: merged in by `withBusyWaits` from
+   * `provider_busy_waits` (migration 154). Undefined means not in a session.
+   * A number is the most whole minutes the session they are in can still run
+   * on its member's balance (1..99, rounded up), so the card reads
+   * "wait ~N m". Null means busy with no computable bound: the card reads
+   * just "Busy". Read it through `readBusy` in lib/busy.ts.
    */
   busy_wait_minutes?: number | null;
+};
+
+/**
+ * One row of `provider_busy_waits` (migration 154): a listed provider who is in
+ * a live paid session, and nothing about the member they are with.
+ */
+export type ProviderBusyWait = {
+  provider_id: string;
+  wait_minutes: number | null;
 };
 
 /**
@@ -1898,6 +1908,15 @@ export type Database = {
           p_report_id?: string | null;
         };
         Returns: string;
+      };
+      /**
+       * The provider card's "Busy, wait ~N m" (migration 154). Up to 100 ids;
+       * one row per listed, unblocked provider in a live paid session. Members
+       * only: a provider caller gets no rows.
+       */
+      provider_busy_waits: {
+        Args: { p_provider_ids: string[] };
+        Returns: ProviderBusyWait[];
       };
     };
     Enums: {

@@ -70,6 +70,12 @@ select 'authenticated', unnest(array[
   'unblock_by_handle', 'unregister_push_token', 'upsert_my_payout_account',
   'voice_peaks_ok']);
 
+-- 154: the provider card's "Busy, wait ~N m". Signed in only; a member reads
+-- the balance-limited minutes left in a listed provider's live session, and
+-- nothing else about it.
+insert into expected_callable (role, proname)
+values ('authenticated', 'provider_busy_waits');
+
 -- Every public function a role can execute, extension functions aside (pgTAP
 -- here, whatever the platform installs live).
 create temporary view actual_callable as

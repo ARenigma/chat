@@ -195,6 +195,7 @@ const MIGRATIONS = [
   'supabase/migrations/151_story_expiry_purge.sql',
   'supabase/migrations/152_story_commenter_block.sql',
   'supabase/migrations/153_function_grants_closed_by_default.sql',
+  'supabase/migrations/154_provider_busy_waits.sql',
 ];
 
 /**
@@ -932,6 +933,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/568_function_grants_inventory.sql'),
     label:
       'the functions a client can call are exactly the listed ones, trigger functions are closed and still fire, and the next function starts closed',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/569_provider_busy_waits.sql'),
+    label:
+      'a busy listed provider shows the balance-limited minutes left in its session, rounded up and capped, to members only, across no block, and with nothing about the member',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

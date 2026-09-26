@@ -1316,7 +1316,7 @@ select is(
        'heartbeat_call', 'insert_next_opener', 'mark_story_viewed', 'member_handle',
        'mock_recharge', 'my_first_recharge_discount_bps',
        'my_story_insights', 'open_conversation', 'pending_policy_acceptances',
-       'post_story_comment', 'provider_is_listed',
+       'post_story_comment', 'provider_busy_waits', 'provider_is_listed',
        'public_display_name', 'react_to_story_comment', 'record_call_quality_samples',
        'record_suggestion_outcome', 'register_push_token', 'report_story',
        'report_story_comment', 'request_media_upgrade', 'respond_media_upgrade',
