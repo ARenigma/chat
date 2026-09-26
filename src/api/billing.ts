@@ -306,17 +306,19 @@ function assertQuotedAmount(order: RechargeResult, expectedTotalInr?: number): v
  * Pappal-branded checkout theme, applied to the UPI-intent surface so the SDK's
  * chrome carries the coral button and header rather than Cashfree's default blue.
  *
- * Values are the resolved brand tokens (design/tokens.json): accent #F2543D on
- * white with the app's ink for text. The hosted page's business NAME and LOGO
+ * Values are the resolved brand tokens (design/tokens.json): bg/accent, ramp
+ * step 500 #C04018 (the logo coral, white on it 5.27:1), on white with the app's
+ * ink for text. Literal hexes because the SDK takes strings before any theme
+ * exists; __tests__/contract.test.ts pins them to the token. The hosted page's business NAME and LOGO
  * are dashboard settings, not SDK-themable — see cf-brand follow-up.
  *
  * doc: https://www.cashfree.com/docs/payments/online/mobile/react-native
  */
 function pappalCheckoutTheme(): CFTheme {
   return new CFThemeBuilder()
-    .setNavigationBarBackgroundColor('#F2543D')
+    .setNavigationBarBackgroundColor('#C04018')
     .setNavigationBarTextColor('#FFFFFF')
-    .setButtonBackgroundColor('#F2543D')
+    .setButtonBackgroundColor('#C04018')
     .setButtonTextColor('#FFFFFF')
     .setBackgroundColor('#FFFFFF')
     .setPrimaryTextColor('#1C1C1E')

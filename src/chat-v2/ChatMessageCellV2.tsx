@@ -144,7 +144,11 @@ function MetaRow({
         <Icon
           name="close"
           size={TOKENS.icon.xs}
-          color={theme.color.state.danger}
+          // Only your own messages fail, and your bubble is the step-500 coral:
+          // state/danger on it is 1.73:1 light, a mark that is not there. It
+          // takes the bubble's ink instead and stays distinct from the tick by
+          // its GLYPH, which is what already told "failed" from "sent".
+          color={mine ? theme.color.bubble.text : theme.color.state.danger}
         />
       ) : receipt !== undefined ? (
         <Icon
@@ -161,15 +165,47 @@ function MetaRow({
   );
 }
 
-/** The quoted parent of a reply, inside the bubble and never a bubble itself. */
-function QuoteBlock({ author, body }: { author: string; body: string }) {
+/**
+ * The quoted parent of a reply, inside the bubble and never a bubble itself.
+ *
+ * `mine` because the two bubbles no longer share an ink. Your bubble is the
+ * step-500 coral and takes white bubble/text for the rule and both lines; the
+ * peer's is neutral and takes text/primary, with the rule in text/accent
+ * (bg/accent is 2.61:1 on the dark peer bubble, step 300 is 5.67:1).
+ */
+function QuoteBlock({
+  author,
+  body,
+  mine,
+}: {
+  author: string;
+  body: string;
+  mine: boolean;
+}) {
   const styles = useStyles(makeStyles);
   return (
-    <View testID="chat-v2-quote" style={styles.quote}>
-      <Text allowFontScaling numberOfLines={1} style={styles.quoteAuthor}>
+    <View
+      testID="chat-v2-quote"
+      style={[styles.quote, mine ? styles.quoteMine : styles.quotePeer]}
+    >
+      <Text
+        allowFontScaling
+        numberOfLines={1}
+        style={[
+          styles.quoteAuthor,
+          mine ? styles.quoteInkMine : styles.quoteInkPeer,
+        ]}
+      >
         {author}
       </Text>
-      <Text allowFontScaling numberOfLines={2} style={styles.quoteBody}>
+      <Text
+        allowFontScaling
+        numberOfLines={2}
+        style={[
+          styles.quoteBody,
+          mine ? styles.quoteInkMine : styles.quoteInkPeer,
+        ]}
+      >
         {body}
       </Text>
     </View>
@@ -676,14 +712,20 @@ function ChatMessageCellV2View(props: ChatV2MessageCellProps) {
                   <Icon
                     name="block"
                     size={TOKENS.icon.xs}
-                    color={theme.color.text.tertiary}
+                    color={
+                      mine ? theme.color.bubble.meta : theme.color.text.tertiary
+                    }
                   />
                   <Text
                     testID={
                       mine ? 'chat-v2-message-mine' : 'chat-v2-message-peer'
                     }
                     allowFontScaling
-                    style={[textStyle, styles.tombstoneText]}
+                    style={[
+                      textStyle,
+                      styles.tombstoneText,
+                      mine ? styles.tombstoneTextMine : null,
+                    ]}
                   >
                     {text}
                   </Text>
@@ -707,15 +749,15 @@ function ChatMessageCellV2View(props: ChatV2MessageCellProps) {
                   durationMs={voice.durationMs}
                   peaks={voice.peaks}
                   /*
-                   * False on BOTH sides, which is a correction rather than an
-                   * omission. `onAccent` paints the player's ink in
-                   * `text/onAccent` — white in light mode — and it was written
-                   * for an outgoing bubble that WAS the accent fill. This
-                   * bubble is `bubble/mine`, pale coral in light, so white ink
-                   * on it is a contrast failure. `text/secondary` is authored
-                   * per mode and reads on both fills.
+                   * `mine`, which is the original intent restored. `onAccent`
+                   * paints the player's ink in `text/onAccent` and was written
+                   * for an outgoing bubble that IS the accent fill. For a while
+                   * it was false on both sides, because `bubble/mine` was a
+                   * pale coral in light and white on it failed; since
+                   * 2026-09-26 your bubble is ramp step 500 in both modes and
+                   * white is 5.27:1 on it, while text/secondary on it is not.
                    */
-                  onAccent={false}
+                  onAccent={mine}
                   pending={pending}
                   onToggle={voicePlayer.toggle}
                   onCycleSpeed={voicePlayer.cycleSpeed}
@@ -735,6 +777,7 @@ function ChatMessageCellV2View(props: ChatV2MessageCellProps) {
                   <QuoteBlock
                     author={quoteAuthor}
                     body={quoteBody ?? 'Voice note'}
+                    mine={mine}
                   />
                 ) : null}
                 <TextBody
@@ -1008,20 +1051,36 @@ const makeStyles = (t: Theme) =>
       fontStyle: 'italic',
       color: t.color.text.tertiary,
     },
+    // Tertiary grey on the step-500 coral is mud. On your own bubble the
+    // tombstone takes the bubble's quiet ink, the same one the clock uses.
+    tombstoneTextMine: {
+      color: t.color.bubble.meta,
+    },
     quote: {
       borderLeftWidth: 2,
-      borderLeftColor: t.color.bg.accentStrong,
       paddingLeft: TOKENS.space.xs,
       marginBottom: TOKENS.space['2xs'],
       gap: 1,
     },
+    // A coral rule cannot be seen on a coral fill, so on your own bubble the
+    // rule is the bubble's ink. Both pairs are registered in check-contrast.
+    quoteMine: {
+      borderLeftColor: t.color.bubble.text,
+    },
+    quotePeer: {
+      borderLeftColor: t.color.text.accent,
+    },
     quoteAuthor: {
       ...TOKENS.typography.labelMediumEmphasized,
-      color: t.color.bubble.text,
     },
     quoteBody: {
       ...TOKENS.typography.bodySmall,
+    },
+    quoteInkMine: {
       color: t.color.bubble.text,
+    },
+    quoteInkPeer: {
+      color: t.color.text.primary,
     },
     mediaFrame: {
       width: MEDIA_WIDTH + MEDIA_INSET * 2,

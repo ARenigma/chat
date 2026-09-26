@@ -94,7 +94,7 @@ export function HomeSuggestionPrompt({ suggestion, onAccept, onDismiss }: Props)
           testID="home-suggestion-dismiss"
           glyph="close"
           label="Not now"
-          tint={theme.color.text.onAccent}
+          tint={theme.color.text.onState}
           background={theme.color.state.danger}
           disabled={busy}
           onPress={onDismiss}
@@ -103,7 +103,7 @@ export function HomeSuggestionPrompt({ suggestion, onAccept, onDismiss }: Props)
           testID="home-suggestion-accept"
           glyph="chat"
           label="Start"
-          tint={theme.color.text.onAccent}
+          tint={theme.color.text.onState}
           background={theme.color.state.available}
           disabled={busy}
           onPress={onAccept}

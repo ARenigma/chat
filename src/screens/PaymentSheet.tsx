@@ -459,7 +459,7 @@ const makeStyles = (t: Theme) =>
     //
     // bg/accentTint, not the deep fill the pack chips take: nothing here is
     // white-on-coral text — the row holds a brand lockup and a text/primary
-    // check, which reads 13.98:1 light / 12.33:1 dark on the tint — and a full
+    // check, which reads 14.54:1 light / 17.01:1 dark on the tint — and a full
     // coral row would compete with the Pay button directly beneath it.
     rowOn: {
       backgroundColor: t.color.bg.accentTint,

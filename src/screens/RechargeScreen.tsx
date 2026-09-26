@@ -930,14 +930,17 @@ const makeStyles = (t: Theme) =>
     cardGstBlock: {
       marginTop: -TOKENS.space['2xs'],
     },
-    // Talk-time value tag along the bottom of the card.
+    // Talk-time value tag along the bottom of the card. On the coral wash, not
+    // the grey `bg/sunken` it used to sit on: once the accent ink became the
+    // logo's step 500, coral on that grey measured 4.19:1 under a 12sp label,
+    // and the wash with its own ink is 9.97:1 / 7.00:1.
     minutesTag: {
       alignSelf: 'flex-start',
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: 3,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.accentTint,
     },
     // Same inset-pill rule as `ribbonOn` and the compact chip's `popularOn`:
     // anything inset into a selected card takes the page colour and accent ink.
@@ -949,7 +952,7 @@ const makeStyles = (t: Theme) =>
     },
     minutesText: {
       ...TOKENS.typography.labelMediumEmphasized,
-      color: t.color.text.accent,
+      color: t.color.text.onAccentTint,
     },
     // Fine print: bodySmall on tertiary ink, and deliberately no louder. These
     // are reassurances, not offers, and a quiet line answers "does my unused
@@ -1114,9 +1117,11 @@ const makeCompactStyles = (t: Theme) =>
     popularOn: {
       backgroundColor: t.color.bg.base,
     },
+    // The wash's ink, and it still reads when the pill flips to the page
+    // colour inside a selected chip (11.67:1 light / 6.94:1 dark on bg/base).
     popularText: {
       ...TOKENS.typography.bodySmall,
-      color: t.color.text.accent,
+      color: t.color.text.onAccentTint,
     },
     amount: {
       ...TOKENS.typography.titleLargeEmphasized,
@@ -1169,9 +1174,10 @@ const makeCompactStyles = (t: Theme) =>
 // makeCompactStyles — the offer looks the same wherever recharge is reached.
 const makeOfferStyles = (t: Theme) =>
   StyleSheet.create({
-    // The offer callout above the grid. bg/accentTint is the light coral surface
-    // the PaymentSheet's selected UPI row already uses; text/accent on it is
-    // 4.58:1 light / 8.22:1 dark, clear of the 4.5:1 sub-18sp floor.
+    // The offer callout above the grid. bg/accentTint is the coral wash the
+    // PaymentSheet's selected UPI row already uses, and its label takes the
+    // wash's own ink: text/onAccentTint is 9.97:1 light / 7.00:1 dark, where
+    // text/accent would be 4.4986:1 in light, under the 4.5:1 sub-18sp floor.
     banner: {
       alignSelf: 'stretch',
       paddingVertical: TOKENS.space.sm,
@@ -1182,7 +1188,7 @@ const makeOfferStyles = (t: Theme) =>
     },
     bannerText: {
       ...TOKENS.typography.labelLargeEmphasized,
-      color: t.color.text.accent,
+      color: t.color.text.onAccentTint,
     },
     // The "Pay …" lead-in and the container ink. bodySmall, the chips' own
     // supporting-line size, so the price sits a step under the balance headline.

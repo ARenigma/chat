@@ -1275,7 +1275,8 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.accentTint,
     },
-    nameRerollLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.accent },
+    // The wash's own ink, the same as ProfileSetup's twin of this pill.
+    nameRerollLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.onAccentTint },
     nameStatus: { flex: 1, paddingTop: TOKENS.space['2xs'] },
     namePositive: { ...TOKENS.typography.bodyMedium, color: t.color.text.positive },
     /* `input` and `multiline` were a 52dp-tall hand-rolled copy of the M3

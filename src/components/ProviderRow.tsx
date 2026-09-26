@@ -970,21 +970,19 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: TOKENS.radius.xs,
     borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: t.color.bg.accent,
+    // The accent INK, not the fill: this outline is the control's only
+    // boundary and it sits on the card. bg/accent (step 500) there is 2.87:1
+    // in dark, under the 3:1 non-text floor; text/accent (step 300) is 6.22:1.
+    borderColor: t.color.text.accent,
     backgroundColor: t.color.bg.raised,
   },
   /*
-   * `text/accent`, NOT `bg/accent`, and the two are different greens on
-   * purpose: #15603E against #1DAA61 in light mode. `bg/accent` is a FILL
-   * colour — what a button is painted, with `text/onAccent` on top — and as a
-   * label on a light card it gives 2.9:1, under the 4.5:1 AA floor for text.
-   * `text/accent` exists for exactly this and is already checked against
-   * bg/base by scripts/check-contrast.mjs.
-   *
-   * The BORDER keeps `bg/accent`, the lighter green that matches the reference.
-   * A border is a non-text boundary, so 3:1 is its target rather than 4.5 — and
-   * it is not the only signal either way, since the label it surrounds says
-   * "Call".
+   * `text/accent`, NOT `bg/accent`. `bg/accent` is a FILL colour, what a button
+   * is painted, with `text/onAccent` on top; `text/accent` is the ink for coral
+   * text on a surface. In light both are ramp step 500 (5.27:1 on the card); in
+   * dark the ink is step 300, 6.22:1 on this card, where step 500 as text would
+   * be 2.87:1. Registered on bg/raised in scripts/check-contrast.mjs, as the
+   * label and as the outline above.
    */
   ctaLabel: {
     ...TOKENS.typography.labelLarge,

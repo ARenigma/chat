@@ -937,9 +937,11 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.accentTint,
     },
+    // On the wash, so the wash's ink: text/accent (step 500) on step 50 is
+    // 4.4986:1, a hair under the floor for a 12sp label.
     statusRetryLabel: {
       ...TOKENS.typography.labelMedium,
-      color: t.color.text.accent,
+      color: t.color.text.onAccentTint,
     },
     suggestHint: {
       ...TOKENS.typography.bodySmall,
@@ -1007,7 +1009,7 @@ const makeStyles = (t: Theme) =>
     },
     suggestRerollLabel: {
       ...TOKENS.typography.labelMedium,
-      color: t.color.text.accent,
+      color: t.color.text.onAccentTint,
     },
     section: {
       ...TOKENS.typography.titleMediumEmphasized,

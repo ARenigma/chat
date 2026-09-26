@@ -297,8 +297,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.textSmSemiBold,
     color: t.color.text.secondary,
   },
+  // Text on the coral wash takes the wash's own ink (ramp 800 / 300): the
+  // accent ink is step 500, and 500 on the step-50 wash is 4.4986:1.
   labelWarm: {
-    color: t.color.text.accent,
+    color: t.color.text.onAccentTint,
   },
   labelPositive: {
     color: t.color.text.positive,

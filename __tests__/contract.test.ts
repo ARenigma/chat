@@ -1254,6 +1254,27 @@ describe('launcher icon', () => {
     expect(declared).toBe(ink);
   });
 
+  it('keeps the native notification accent and the checkout coral on the ramp', () => {
+    // Same reason as the icon background: these carry the coral where no token
+    // can reach (the shade before JS, the payment SDK's own chrome), and both
+    // drifted to retired hexes once (#C0492F, #F2543D). bg/accent Light is ramp
+    // step 500, the logo coral.
+    const tokens = JSON.parse(read('design/tokens.json'));
+    const coral = tokens.color.tokens['bg/accent'].Light.toUpperCase();
+    expect(coral).toBe(tokens.color.ramp.primary_500.toUpperCase());
+    const declared = read(`${RES}/values/colors.xml`)
+      .match(/name="notification_accent">(#[0-9A-Fa-f]{6})</)?.[1]
+      ?.toUpperCase();
+    expect(declared).toBe(coral);
+    const checkout = read('src/api/billing.ts');
+    const hexes = [
+      ...checkout.matchAll(
+        /set(?:NavigationBarBackground|ButtonBackground)Color\('(#[0-9A-Fa-f]{6})'\)/g,
+      ),
+    ].map(m => m[1]!.toUpperCase());
+    expect(hexes).toEqual([coral, coral]);
+  });
+
   it('has a Play listing icon and feature graphic', () => {
     expect(existsSync(join(ROOT, 'docs/play/assets/play-icon-512.png'))).toBe(
       true,
@@ -2894,9 +2915,15 @@ describe('the chat restyle is wired, not just drawn', () => {
      * outside the frame with the delivery tick past the coral edge (measured
      * on device, 2026-09-04).
      */
-    const media = withoutComments(cell).slice(
-      cell.indexOf('function MediaBody'),
-      cell.indexOf('function MessageBubble'),
+    // Both anchors are found in the SAME stripped text the slice is cut from.
+    // They used to be read off the commented source, so any comment added above
+    // MediaBody shifted the window off it; and `function MessageBubble` no
+    // longer exists, so the end was silently -1. The cell component follows
+    // MediaBody, which is the real end of the window.
+    const stripped = withoutComments(cell);
+    const media = stripped.slice(
+      stripped.indexOf('function MediaBody'),
+      stripped.indexOf('function ChatMessageCellV2View'),
     );
     expect(media).toContain('styles.mediaMeta');
     // Drawn inside `mediaInner`, which clips — so there is exactly one use and

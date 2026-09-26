@@ -2058,9 +2058,10 @@ describe('accent budget is enforced in code, not just documented', () => {
        * bubble in light and 1.00:1 in dark — invisible, because the fill and
        * the rule were the same colour. Every other candidate in the neutral
        * ramp has the same problem: the ramp is authored against bg/base, not
-       * against a coral fill. `bg/accentStrong` is 3.79:1 / 4.18:1 on that
-       * fill and 4.96:1 / 6.32:1 on the peer's, all four registered in
-       * check-contrast.mjs.
+       * against a coral fill. Since 2026-09-26 your bubble IS the step-500
+       * coral, so the rule on it is the bubble's white ink, and the coral rule
+       * lives only in the peer's bubble as `text/accent` (5.27:1 light / 5.67:1
+       * dark). Both registered in check-contrast.mjs.
        *
        * And it is the budget being spent on what the budget is FOR. A reply
        * quote is a pointer to one specific earlier message — the most pointed
@@ -2497,7 +2498,10 @@ describe('accent budget is enforced in code, not just documented', () => {
       // that happen to number the same.
       '    borderColor: t.color.bg.accent,', // ring, on every avatar
       '    color: t.color.text.accent,', // the rate inside the CTA
-      '    borderColor: t.color.bg.accent,', // the CTA outline
+      // The CTA outline takes the accent INK since 2026-09-26: it is the
+      // control's only boundary on the card, and step 500 there is 2.87:1 in
+      // dark against the 3:1 non-text floor (step 300 is 6.22:1).
+      '    borderColor: t.color.text.accent,', // the CTA outline
       '    color: t.color.text.accent,', // the CTA label
     ]);
 
