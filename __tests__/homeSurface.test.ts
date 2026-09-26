@@ -192,30 +192,32 @@ describe('the search field is the one the reference app actually ships', () => {
      *           bucket; alpha bounding box 12x12dp at mdpi, 11x11dp at xhdpi and
      *           xxhdpi -> 11-12dp
      *
-     * A Lucide glyph also inks a fraction of its em rather than filling it (the
-     * ICON_SCALE docblock in Icon.tsx measures the set and explains why), so our
-     * ink is `round(size * ICON_SCALE) * gridUnits / 24`. At the old size 20 the
+     * Our glyph also inks a fraction of its em rather than filling it (the
+     * ICON_SCALE docblock in Icon.tsx explains why), so our ink is
+     * `round(size * ICON_SCALE) * emUnits / 24`. At the old size 20 the
      * magnifier drew 19.97dp against 13.94 — 43% oversized, on the one control
      * Amit named.
      *
      * WHAT IS AND IS NOT VERIFIED MECHANICALLY HERE. `ICON_SCALE` is parsed out
      * of Icon.tsx, so a change to it fails this. The reference's ink is
      * RECOMPUTED from the drawable's own four numbers rather than being asserted
-     * as a constant. The two Lucide grid extents are values recorded here from a
-     * fontTools outline-bounds pen over assets/fonts/Lucide.ttf (uniE151 =
-     * `search`, uniE1B2 = `close`; the glyf header's xMin/yMin are zeroed by
-     * lucide-static and must not be used, which is the trap Icon.tsx's header
-     * documents) — Jest has no TTF outline parser, so those two are not
-     * re-measured, and that is stated rather than implied.
+     * as a constant. The two glyph extents are values recorded here from a
+     * fontTools BoundsPen over assets/fonts/Phosphor.ttf (`magnifying-glass`
+     * 19.99 and `x` 15.36 of 24 em units, after the generator's 250-unit
+     * EM_WINDOW; the glyf header's xMin/yMin are zeroed by svg2ttf and must not
+     * be used) — Jest has no TTF outline parser, so those two are not
+     * re-measured, and that is stated rather than implied. They were Lucide's
+     * 19.97 and 13.97 until 2026-09-26; the cross is a bigger drawing in
+     * Phosphor, which is why CLEAR_GLYPH_SIZE moved and SEARCH_GLYPH_SIZE did not.
      */
     const ICON_SCALE = Number(
       /const ICON_SCALE = ([\d.]+)/.exec(read('src/components/Icon.tsx'))?.[1],
     );
     expect(ICON_SCALE).toBe(1.2);
-    /** Lucide draws on a 24x24 grid and the font maps it onto the em 1:1. */
-    const LUCIDE_GRID = 24;
-    const inkOf = (size: number, gridUnits: number): number =>
-      (Math.round(size * ICON_SCALE) * gridUnits) / LUCIDE_GRID;
+    /** Extents below are in 24ths of the em, the unit the scale was set in. */
+    const EM_UNITS = 24;
+    const inkOf = (size: number, emUnits: number): number =>
+      (Math.round(size * ICON_SCALE) * emUnits) / EM_UNITS;
 
     const searchSize = Number(
       /const SEARCH_GLYPH_SIZE = (\d+)/.exec(bar)?.[1],
@@ -227,13 +229,13 @@ describe('the search field is the one the reference app actually ships', () => {
     expect(referenceSearchInk).toBeLessThan(14);
     // Within half a dp of the reference's mark, which is the closest any step of
     // `size` can land: 15 would give 14.98 and 13 would give 12.98.
-    expect(Math.abs(inkOf(searchSize, 19.97) - referenceSearchInk)).toBeLessThan(
+    expect(Math.abs(inkOf(searchSize, 19.99) - referenceSearchInk)).toBeLessThan(
       0.5,
     );
     // The clear cross, inside the range the reference's own density buckets
     // disagree over rather than at one end of it.
-    expect(inkOf(clearSize, 13.97)).toBeGreaterThanOrEqual(11);
-    expect(inkOf(clearSize, 13.97)).toBeLessThanOrEqual(12);
+    expect(inkOf(clearSize, 15.36)).toBeGreaterThanOrEqual(11);
+    expect(inkOf(clearSize, 15.36)).toBeLessThanOrEqual(12);
     // And the oversized value cannot come back at either call site.
     expect(bar).toContain('size={SEARCH_GLYPH_SIZE}');
     expect(bar).toContain('size={CLEAR_GLYPH_SIZE}');
