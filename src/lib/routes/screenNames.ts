@@ -39,6 +39,8 @@ export const LEGACY_KIND: Record<string, LegacyKind> = {
   // Member-only pushed screens
   ChatsList: 'chatsList',
   ProviderDetail: 'providerDetail',
+  // Same screen as a full page from inside a chat; one telemetry kind.
+  ProviderProfile: 'providerDetail',
   Wallet: 'wallet',
   Apply: 'apply',
   ApplicationStatus: 'applicationStatus',

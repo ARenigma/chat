@@ -201,6 +201,38 @@ export function ProviderDetailRoute({ navigation, route }: RouteProps<'ProviderD
   );
 }
 
+/**
+ * The same provider profile as a FULL PAGE, pushed from inside a chat (Amit,
+ * 2026-09-27: "tapping chat header inside chat screen should open full page
+ * for profile not sheet"). The sheet is for discovery (Home, search, cards);
+ * from a conversation the profile is a place you go and come back from, so
+ * it is an ordinary push and back returns to the chat. Chat from here takes
+ * the one-chat-per-peer path, which pops back to the conversation underneath
+ * rather than opening a second copy.
+ */
+export function ProviderProfileRoute({ navigation, route }: RouteProps<'ProviderProfile'>) {
+  const openChat = useOpenChat();
+  const onOpenChat = useCallback(
+    (providerId: string) => openChat(providerId, route.key),
+    [openChat, route.key],
+  );
+  const onStartCall = useCallback(
+    (providerId: string, channel: 'audio' | 'video') =>
+      startCall(providerId, channel === 'video' ? 'video' : 'voice'),
+    [],
+  );
+  return (
+    <Layout.Screen minimalShell>
+      <ProviderDetailScreen
+        providerId={route.params.providerId}
+        onBack={() => navigation.goBack()}
+        onOpenChat={onOpenChat}
+        onStartCall={onStartCall}
+      />
+    </Layout.Screen>
+  );
+}
+
 /** The wallet page, a tall native sheet (owner 2026-09-26, ADR-0032). */
 export function WalletRoute({ navigation }: RouteProps<'Wallet'>) {
   return (

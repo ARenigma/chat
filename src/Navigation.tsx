@@ -104,6 +104,7 @@ import {
   HomeSuggestionRoute,
   InvoicesRoute,
   ProviderDetailRoute,
+  ProviderProfileRoute,
   TransactionsRoute,
   UsageRoute,
   WalletRoute,
@@ -190,6 +191,8 @@ function memberScreens(Stack: typeof HomeStack, background: string) {
     <>
       <Stack.Screen name="ChatsList" getComponent={() => ChatsListRoute} />
       <Stack.Screen name="ProviderDetail" getComponent={() => ProviderDetailRoute} options={sheet} />
+      {/* The same profile as a full-page push, opened from inside a chat. */}
+      <Stack.Screen name="ProviderProfile" getComponent={() => ProviderProfileRoute} />
       <Stack.Screen name="Chat" getComponent={() => ChatRoute} />
       <Stack.Screen name="ChatV2" getComponent={() => ChatRoute} />
       <Stack.Screen name="Call" getComponent={() => CallRoute} options={CALL_OPTIONS} />

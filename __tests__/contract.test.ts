@@ -9335,6 +9335,8 @@ describe('navigation step 7: the graph is the §2 table', () => {
     expect(registered('memberScreens')).toEqual([
       'ChatsList',
       'ProviderDetail',
+      // Full-page profile from inside a chat (Amit, 2026-09-27).
+      'ProviderProfile',
       'Chat',
       'ChatV2',
       'Call',
@@ -9524,5 +9526,14 @@ describe('navigation step 7: the graph is the §2 table', () => {
     expect(chat).toContain('const live = useChatLive();');
     expect(chat).toContain('const focused = useIsFocused();');
     expect(withoutComments(read('src/lib/routes/useChatLive.ts'))).toContain("new Set(['Wallet', 'ChatRequest'])");
+  });
+});
+
+describe('the profile is a sheet from discovery and a full page from a chat', () => {
+  it('pushes ProviderProfile (no sheet options) from the chat header', () => {
+    const nav = read('src/Navigation.tsx');
+    expect(nav).toMatch(/name="ProviderDetail" getComponent=\{\(\) => ProviderDetailRoute\} options=\{sheet\}/);
+    expect(nav).toMatch(/name="ProviderProfile" getComponent=\{\(\) => ProviderProfileRoute\} \/>/);
+    expect(read('src/screens/routes/ChatRoute.tsx')).toContain("nav.push('ProviderProfile', { providerId: id })");
   });
 });

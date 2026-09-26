@@ -147,7 +147,8 @@ export function ChatRoute({ navigation, route }: Props) {
     [peerId],
   );
   const onOpenProfile = useCallback(
-    (id: string) => nav.push('ProviderDetail', { providerId: id }),
+    // Full page from inside a chat, never the discovery sheet (Amit, 2026-09-27).
+    (id: string) => nav.push('ProviderProfile', { providerId: id }),
     [nav],
   );
   const onOpenEarnings = useCallback(() => nav.push('Usage'), [nav]);

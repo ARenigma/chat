@@ -37,6 +37,7 @@ type CommonParams = {
 export type MemberScreenParams = CommonParams & {
   ChatsList: undefined;
   ProviderDetail: { providerId: string };
+  ProviderProfile: { providerId: string };
   Wallet: undefined;
   Apply: { from: 'home' | 'settings' | 'applicationStatus' };
   ApplicationStatus: undefined;
