@@ -15,7 +15,6 @@ import { DURATION, EASE_OUT_QUINT, fadeSwapOutFast, rowIn } from '../theme/motio
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
 import { Avatar } from './Avatar';
 import { ICON_SCALE, Icon, type IconName } from './Icon';
-import { META_CHIP_HEIGHT_SM } from './MetaChip';
 import { Pressable } from './Pressable';
 import { CATEGORY_BADGE, categoryOf, type ProviderCategory } from '../lib/providerFilters';
 import { rowExpertise } from '../lib/expertise';
@@ -143,7 +142,7 @@ const RING_INSET = 2;
 export const ROW_AVATAR_RING = ROW_AVATAR + 2 * (RING_STROKE + RING_INSET);
 
 /**
- * The gap between the ring and the star row.
+ * The LEAST gap between the ring and the star row. A floor now, not the gap.
  *
  * `space.xs` (8) and not `space['2xs']` (4). Amit, on the device: "ratings too
  * close to dp circle.. allow some more spacing" — and the 4dp that looked right
@@ -151,20 +150,30 @@ export const ROW_AVATAR_RING = ROW_AVATAR + 2 * (RING_STROKE + RING_INSET);
  * a hard edge and the stars have their own optical padding inside the glyph
  * box, so the measured gap and the perceived gap are not the same number.
  *
- * It costs the card nothing: the left column goes 120 → 124, still under the
- * right column's 136, so `PROVIDER_CARD_HEIGHT` is unchanged.
+ * Since 2026-09-27 the drawn gap is whatever lands the stars on the CTA's
+ * centre (see PROVIDER_ROW_LEFT_COLUMN), 13.5dp today, and this is the number
+ * the test holds it above, so a later change cannot pull the stars back into
+ * the ring to keep that alignment.
  */
 const RING_TO_STARS = TOKENS.space.xs;
 
 /**
- * The expertise pill line, directly under the name.
+ * THE ONE GAP between the card's text lines, in both columns (Amit, on the
+ * S22, 2026-09-27: the gaps were uneven, and the one after the specialities
+ * read biggest).
  *
- * Amit: "astrotalk also has expertise just below the name" — and it does:
- * `skillET` sits at y323.3 with the name at y295.3, 17.1dp tall, reading
- * "Vedic,  AI Astrologer". Ours is pills rather than a comma list, which is the
- * one thing taken from Clarity instead ("jsut add expertise from clarity").
+ * It was three different numbers. The specialities sat in a 24dp slot left
+ * over from when they were chips (MetaChip's small height), so a 16dp line
+ * inside it carried 4dp of dead space above and below on top of the 2dp hair
+ * gap: 6 above it and 6 below, against 2 between languages and experience,
+ * and 9.5 from experience down to the CTA's drawn edge.
+ *
+ * `space['2xs']` (4), measured line box to line box (every face here sets
+ * includeFontPadding false, so the line box is the glyph box). The scale has
+ * no 6; 2 (`hair`) is what made the lines read as a block with no rhythm, and
+ * 8 would spend 16dp of card on air across the column.
  */
-const ROW_TAG_LINE = META_CHIP_HEIGHT_SM;
+const ROW_LINE_GAP = TOKENS.space['2xs'];
 
 /**
  * The CTA's height, and the one number in this card that is NOT the reference.
@@ -192,8 +201,9 @@ export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
  * that each interactive UI element have a focusable area, or touch target size,
  * of at least 48dp x 48dp"
  * (https://developer.android.com/guide/topics/ui/accessibility/apps).
- * The card height is unchanged: PROVIDER_ROW_RIGHT_COLUMN reserves
- * ROW_CTA_HEIGHT, not this.
+ * Since 2026-09-27 the column reserves THIS, the drawing, and the 48dp row box
+ * bleeds past it (ROW_CTA_BLEED), so the target is still a real 48dp box while
+ * the gap above the button is the same as every other gap on the card.
  *
  * NO WIDTH CONSTANT ANY MORE. It was a fixed 136 because the button carried the
  * rate as well as the verb ("move rate into cta after call text", 2026-09-08).
@@ -203,6 +213,21 @@ export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
  */
 export const ROW_CTA_VISUAL_HEIGHT =
   TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+
+/**
+ * How far the price row's 48dp TARGET box bleeds past its 33dp DRAWING, top
+ * and bottom: (48 - 33) / 2 = 7.5.
+ *
+ * The row keeps its 48 so the CTA's hitSlop has a real box to land in (hitSlop
+ * cannot reach past a parent on Android). What changes is what the row COSTS
+ * the column: a negative margin of this much each side lays it out at 33, so
+ * the uniform ROW_LINE_GAP runs from "Exp" to the button's drawn edge rather
+ * than to an invisible target 7.5dp above it. The margin sits on the plain
+ * `priceLine` View, not on the Pressable, for the reason HomeScreen's
+ * `seeAllBleed` records: Pressable moves minHeight to its root and leaves
+ * margins on its inner view, so a margin there shrinks only the inside.
+ */
+const ROW_CTA_BLEED = (ROW_CTA_HEIGHT - ROW_CTA_VISUAL_HEIGHT) / 2;
 
 /**
  * The outline, drawn INSIDE the 33 rather than around it, and drawn by its own
@@ -338,75 +363,86 @@ export const ROW_CARD_GAP = TOKENS.space.sm;
  * and scroll-to-index accuracy, not correctness, which is exactly why nobody
  * noticed for as long as nobody did.
  *
- * TWO COLUMNS, and the card is the taller of them plus its padding — the shape
- * Astrotalk uses, and the reason the avatar grew:
+ * TWO COLUMNS, and since 2026-09-27 every gap between text lines is the one
+ * ROW_LINE_GAP (4):
  *
- *   left   ring 84 · 4 · stars 14 · 2 · count 16                          = 120
- *   right  name 24 · 2 · tags 24 · 2 · langs 16 · 2 · exp 16 · 2 · CTA 48 = 136
+ *   right  name 24 · 4 · specialities 16 · 4 · langs 16 · 4 · exp 16 · 4 · CTA 33 = 121
+ *   left   ring 84 · 13.5 · stars 14 · 4 · count 16                             = 131.5
  *
- * The last line is a ROW — price on the left, CTA on the right — so it costs
- * the CTA's 48 rather than 48 plus the price's own 20. That is where Astrotalk
- * puts its button too: `call_rl` spans y361.5–397.5, straddling the experience
- * and price lines rather than sitting under them.
+ * The CTA row costs its DRAWN 33, not its 48dp target: the target bleeds 7.5dp
+ * past the drawing each side (ROW_CTA_BLEED), into the gap above and the
+ * card's padding below. The row is still a ROW, category left and CTA right,
+ * which is where Astrotalk puts its button too: `call_rl` spans y361.5–397.5,
+ * straddling the experience and price lines rather than sitting under them.
  *
- * 160dp of card against Astrotalk's 146.2dp `row_content_holder`, and 168 of
- * pitch against their 180.4 — taller than the first build, which is what was
- * asked for ("increase row height for comfortable view"), and inside the
- * reference's own bracket.
+ * Was  right  name 24 · 2 · tags 24 · 2 · langs 16 · 2 · exp 16 · 2 · CTA 48 = 136,
+ * a 160dp card. Now 155.5, and the saving is exactly the dead space the chip
+ * slot and the 48 used to hold, not anything a member could see.
  *
  * `__tests__/providerRow.test.ts` pins the arithmetic from the tokens, so a
- * change to the type scale or a chip height fails there rather than silently
- * mis-hinting the list.
+ * change to the type scale fails there rather than silently mis-hinting the
+ * list.
  */
-/**
- * What the left column actually contains, top to bottom.
- *
- * It is no longer what sizes the card — see below — but it still has to FIT,
- * and the assertion that it does is what keeps the two columns honest.
- */
-export const PROVIDER_ROW_LEFT_COLUMN =
-  ROW_AVATAR_RING +
-  RING_TO_STARS +
-  STARS_HEIGHT +
-  TOKENS.space.hair +
-  TOKENS.typography.bodySmall.lineHeight;
-
 export const PROVIDER_ROW_RIGHT_COLUMN =
   TOKENS.typography.titleMediumEmphasized.lineHeight +
-  TOKENS.space.hair +
-  ROW_TAG_LINE +
-  TOKENS.space.hair +
+  ROW_LINE_GAP +
   TOKENS.typography.bodySmall.lineHeight +
-  TOKENS.space.hair +
+  ROW_LINE_GAP +
   TOKENS.typography.bodySmall.lineHeight +
-  TOKENS.space.hair +
-  ROW_CTA_HEIGHT;
+  ROW_LINE_GAP +
+  TOKENS.typography.bodySmall.lineHeight +
+  ROW_LINE_GAP +
+  ROW_CTA_VISUAL_HEIGHT;
 
 /**
- * The card itself, without the gap under it — the RIGHT column plus padding.
- *
- * It used to be `Math.max` of the two columns, which was correct arithmetic and
- * the wrong shape. Amit, on the device: "strats should align with rate.. pls
- * see how astrotalsk proved space and alignment" — and the reference does align
- * them, exactly: its `average_ratingbar` sits at y384.4 and its `price` at
- * y386.5, two points apart, so the stars and the rate read as one line across
- * the card.
- *
- * Top-aligning two columns of different heights cannot produce that. The left
- * column is shorter, so its stars landed 13dp above the price and the card had
- * two unrelated horizons.
- *
- * The fix is to give the left column the RIGHT column's height and push its
- * contents apart (`justifyContent: 'space-between'`): the ring stays at the
- * top, the stars-and-count block falls to the bottom, and the star row's centre
- * lands within a point of the price row's. That is Astrotalk's arrangement
- * rather than an approximation of it, and it stays true on its own — if a line
- * is added to the right column, both sides grow together.
- *
- * `PROVIDER_ROW_LEFT_COLUMN` therefore no longer sizes anything, and the test
- * asserts it FITS instead.
+ * The CTA's centre, from the top of the right column: 121 - 33 / 2 = 104.5.
+ * The one horizon the two columns share.
  */
-export const PROVIDER_CARD_HEIGHT = CARD_PAD * 2 + PROVIDER_ROW_RIGHT_COLUMN;
+const ROW_CTA_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CTA_VISUAL_HEIGHT / 2;
+
+/**
+ * The left column's height: whatever puts the star row's centre ON the CTA's,
+ * with the review count one ROW_LINE_GAP under the stars.
+ *
+ * Amit, on the device: "strats should align with rate.. pls see how astrotalsk
+ * proved space and alignment" — and the reference does align them: its
+ * `average_ratingbar` sits at y384.4 and its `price` at y386.5, so the rating
+ * and the row beside it read as one line across the card.
+ *
+ * The mechanism is the old one, turned round. The column still pushes exactly
+ * two children apart (`justifyContent: 'space-between'`): the ring to the top,
+ * the stars-and-count block to the bottom. It used to take the RIGHT column's
+ * height, which landed the stars within a point of the 48dp row's centre. With
+ * that row now laid out at its drawn 33, the right column (121) is shorter than
+ * the left column's contents (84 + 8 + 14 + 4 + 16 = 126), so the left column
+ * is sized from the alignment instead: the CTA centre (104.5), half the star
+ * row (7), the gap (4) and the count (16) = 131.5. The ring-to-stars gap is
+ * what is left, 13.5; the second term below is the floor that keeps it at or
+ * above RING_TO_STARS, and the test asserts the first term is the one in force.
+ *
+ * So the card is now sized by the LEFT column, and the review count is its
+ * lowest line, hanging under the CTA row the way Astrotalk's "orders" line
+ * hangs under its price.
+ */
+export const PROVIDER_ROW_LEFT_COLUMN = Math.max(
+  // Aligned: the star row's centre on the CTA's. This is the term that wins.
+  ROW_CTA_CENTRE + STARS_HEIGHT / 2 + ROW_LINE_GAP + TOKENS.typography.bodySmall.lineHeight,
+  // The floor: never closer to the ring than Amit's 8, even if a shorter right
+  // column one day puts the CTA's centre higher than that allows.
+  ROW_AVATAR_RING +
+    RING_TO_STARS +
+    STARS_HEIGHT +
+    ROW_LINE_GAP +
+    TOKENS.typography.bodySmall.lineHeight,
+);
+
+/**
+ * The card itself, without the gap under it: the taller column plus padding.
+ * `Math.max` rather than naming the left column, so a future right-column line
+ * grows the card instead of spilling out of it.
+ */
+export const PROVIDER_CARD_HEIGHT =
+  CARD_PAD * 2 + Math.max(PROVIDER_ROW_LEFT_COLUMN, PROVIDER_ROW_RIGHT_COLUMN);
 
 /** What the list must reserve per item: the card plus the gap beneath it. */
 export const PROVIDER_ROW_HEIGHT = PROVIDER_CARD_HEIGHT + ROW_CARD_GAP;
@@ -834,20 +870,21 @@ function ProviderRowView({
               its skill/language/exp rows are all plain grey text, and that is
               what makes the card breathe — boxed pills read as busy against it.
               Expertise now matches the language and exp lines: the same
-              `secondary` grey text, in the same 24dp slot (no height change, so
-              PROVIDER_CARD_HEIGHT is untouched). `rowExpertise` still caps and
-              dedupes the tag set (ROW_EXPERTISE_LIMIT); only the rendering
+              `secondary` grey text, and since 2026-09-27 the same 16dp line
+              box, not the 24dp slot the chips needed (see ROW_LINE_GAP).
+              `numberOfLines={1}` is what keeps it one line now, where the
+              slot's fixed height and clip used to. `rowExpertise` still caps
+              and dedupes the tag set (ROW_EXPERTISE_LIMIT); only the rendering
               changed from chips to a comma join. The category on the price line
               stopped being a chip too (2026-09-26): coloured text behind a
               filled glyph. */}
-          <View style={styles.tagLine} testID={`provider-tags-${provider.id}`}>
-            <Text
-              allowFontScaling
-              numberOfLines={1}
-              style={channelLine !== null ? styles.channelLine : styles.secondary}>
-              {channelLine ?? (tags.length > 0 ? tags.join(', ') : headline)}
-            </Text>
-          </View>
+          <Text
+            allowFontScaling
+            numberOfLines={1}
+            testID={`provider-tags-${provider.id}`}
+            style={channelLine !== null ? styles.channelLine : styles.secondary}>
+            {channelLine ?? (tags.length > 0 ? tags.join(', ') : headline)}
+          </Text>
 
           <Text allowFontScaling numberOfLines={1} style={styles.secondary}>
             {languages === '' ? ' ' : languages}
@@ -1021,8 +1058,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   card: {
     flexDirection: 'row',
     // `flex-start`, not `center`: the two columns are different heights by
-    // design (120 and 136), and centring would float the avatar down from the
-    // name it belongs to. Astrotalk top-aligns them too.
+    // design (131.5 and 121), and centring would float the text column down
+    // from the top of the avatar it sits beside. Astrotalk top-aligns them too.
     alignItems: 'flex-start',
     gap: TOKENS.space.sm,
     padding: CARD_PAD,
@@ -1059,9 +1096,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    */
   leftColumn: {
     width: ROW_AVATAR_RING,
-    // The RIGHT column's height, so the two share a bottom edge and the
-    // space-between below can land the stars on the price line.
-    height: PROVIDER_ROW_RIGHT_COLUMN,
+    // Sized so the space-between below lands the star row's centre on the
+    // CTA's. See PROVIDER_ROW_LEFT_COLUMN.
+    height: PROVIDER_ROW_LEFT_COLUMN,
     alignItems: 'center',
     justifyContent: 'space-between',
   },
@@ -1088,11 +1125,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   reviews: {
     ...TOKENS.typography.bodySmall,
     color: t.color.text.tertiary,
-    marginTop: TOKENS.space.hair,
+    marginTop: ROW_LINE_GAP,
   },
+  // The one gap between every line of the right column. See ROW_LINE_GAP.
   label: {
     flex: 1,
-    gap: TOKENS.space.hair,
+    gap: ROW_LINE_GAP,
   },
   nameLine: {
     flexDirection: 'row',
@@ -1148,17 +1186,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   seal: {
     transform: [{ translateY: SEAL_BASELINE_SHIFT }],
   },
-  // Fixed height and `overflow: hidden`. The height is the card's promise to
-  // FlashList; the clip is what makes a fourth pill impossible rather than
-  // merely unlikely, since a category badge plus three tags would otherwise
-  // wrap and push the price line down.
-  tagLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: ROW_TAG_LINE,
-    gap: TOKENS.space['2xs'],
-    overflow: 'hidden',
-  },
   secondary: {
     ...TOKENS.typography.bodySmall,
     color: t.color.text.secondary,
@@ -1173,10 +1200,17 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     ...TOKENS.typography.bodySmall,
     color: t.color.text.primary,
   },
+  /*
+   * A 48dp box (the CTA's target) that lays out as 33 (its drawing): the
+   * negative margin is ROW_CTA_BLEED each side, so the gap above reads from
+   * "Exp" to the button's edge. `center` keeps the button and the category line
+   * on the box's middle, which is the middle of the drawing too.
+   */
   priceLine: {
     flexDirection: 'row',
     alignItems: 'center',
     height: ROW_CTA_HEIGHT,
+    marginVertical: -ROW_CTA_BLEED,
   },
   /*
    * The category mark and word. `flexShrink: 1` so at a large font scale the
@@ -1201,7 +1235,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   categoryAstrologer: {
     color: t.color.text.astrologer,
   },
-  // A spacer rather than `justifyContent: 'space-between'`, because the price
+  // A spacer rather than `justifyContent: 'space-between'`, because the category
   // must stay left while the CTA goes to the far edge, and the row may later
   // gain a third child.
   priceSpacer: {

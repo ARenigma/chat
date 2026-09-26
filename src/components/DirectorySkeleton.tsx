@@ -78,7 +78,10 @@ export function DirectorySkeleton({ rows = 5 }: { rows?: number }) {
               <View style={styles.spacer} />
               <Skeleton width={44} height={12} radius={TOKENS.radius.xs} />
             </View>
-            <Skeleton width="76%" height={20} radius={TOKENS.radius.xs} />
+            {/* The specialities: a 12dp bar like the two lines under it,
+                since the real line is plain text in a 16dp line box now, not
+                the 24dp chip slot this bar was 20dp tall to fill. */}
+            <Skeleton width="76%" height={12} radius={TOKENS.radius.xs} />
             <Skeleton width="46%" height={12} radius={TOKENS.radius.xs} />
             <Skeleton width="34%" height={12} radius={TOKENS.radius.xs} />
             <View style={styles.priceLine}>

@@ -128,7 +128,7 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     // Fixed width AND height, so every card's text column starts on the same x
     // and the column cannot swallow its own children — see the avatar-box test.
     expect(style('leftColumn')).toContain('width: ROW_AVATAR_RING');
-    expect(style('leftColumn')).toContain('height: PROVIDER_ROW_RIGHT_COLUMN');
+    expect(style('leftColumn')).toContain('height: PROVIDER_ROW_LEFT_COLUMN');
   });
 
   it('lands the stars on the price line, the way the reference does', () => {
@@ -139,14 +139,19 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
      * how astrotalsk proved space and alignment".
      *
      * Achieved structurally rather than by a tuned offset: the left column
-     * takes the right column's height and pushes exactly two children apart, so
-     * the ring pins to the top and the rating block to the bottom. A hardcoded
-     * `marginTop` would have produced the same pixels today and drifted the
-     * first time a line was added to the other side.
+     * pushes exactly two children apart, so the ring pins to the top and the
+     * rating block to the bottom, and its HEIGHT is derived from the CTA's
+     * centre. A hardcoded `marginTop` would have produced the same pixels today
+     * and drifted the first time a line was added to the other side.
      *
-     * The arithmetic, from the constants above:
-     *   stars centre = 136 − (14 + 2 + 16) + 14/2 = 111
-     *   price centre = (24+2+24+2+16+2+16+2) + 48/2 = 112
+     * Until 2026-09-27 the column took the right column's height (136) and the
+     * centres landed a point apart (111 and 112). With the uniform 4dp line gap
+     * and the CTA row laid out at its drawn 33, the right column is 121, which
+     * is shorter than the left column's contents, so the left column is now
+     * sized FROM the alignment and the two centres are equal:
+     *   CTA centre   = (24+4+16+4+16+4+16+4) + 33/2      = 104.5
+     *   left column  = 104.5 + 14/2 + 4 + 16             = 131.5
+     *   stars centre = 131.5 − (14 + 4 + 16) + 14/2      = 104.5
      */
     const left = style('leftColumn');
     expect(left).toContain("justifyContent: 'space-between'");
@@ -159,21 +164,36 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     // that gap now, and two mechanisms for one space is how they disagree.
     expect(style('ring')).not.toContain('marginBottom');
 
+    const gap = TOKENS.space['2xs'];
+    const line = TOKENS.typography.bodySmall.lineHeight;
+    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
     const starsHeight = Math.round(TOKENS.icon.xs * 1.2);
-    const ratingBlock = starsHeight + TOKENS.space.hair + TOKENS.typography.bodySmall.lineHeight;
+    const ratingBlock = starsHeight + gap + line;
     const right =
-      TOKENS.typography.titleMediumEmphasized.lineHeight +
-      TOKENS.space.hair +
-      24 +
-      TOKENS.space.hair +
-      TOKENS.typography.bodySmall.lineHeight +
-      TOKENS.space.hair +
-      TOKENS.typography.bodySmall.lineHeight +
-      TOKENS.space.hair +
-      TOKENS.interaction.minTarget;
-    const starsCentre = right - ratingBlock + starsHeight / 2;
-    const priceCentre = right - TOKENS.interaction.minTarget + TOKENS.interaction.minTarget / 2;
-    expect(Math.abs(starsCentre - priceCentre)).toBeLessThanOrEqual(2);
+      TOKENS.typography.titleMediumEmphasized.lineHeight + (gap + line) * 3 + gap + drawn;
+    const ctaCentre = right - drawn / 2;
+    const leftHeight = ctaCentre + starsHeight / 2 + gap + line;
+    const starsCentre = leftHeight - ratingBlock + starsHeight / 2;
+    expect(ctaCentre).toBe(104.5);
+    expect(starsCentre).toBe(ctaCentre);
+    // And the ring still clears the stars by at least Amit's 8.
+    const ringToStars = leftHeight - ratingBlock - (76 + 2 * (2 + 2));
+    expect(ringToStars).toBe(13.5);
+    expect(ringToStars).toBeGreaterThanOrEqual(TOKENS.space.xs);
+
+    // The component's own formula, as text: centre-derived, with the floor.
+    const src = read(ROW);
+    expect(src).toContain(
+      'const ROW_CTA_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CTA_VISUAL_HEIGHT / 2',
+    );
+    const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
+    expect(leftFormula).toContain(
+      'ROW_CTA_CENTRE + STARS_HEIGHT / 2 + ROW_LINE_GAP + TOKENS.typography.bodySmall.lineHeight',
+    );
+    expect(leftFormula).toContain('RING_TO_STARS');
+    // The count sits one line gap under the stars, the same gap as the text
+    // column's.
+    expect(style('reviews')).toContain('marginTop: ROW_LINE_GAP');
   });
 
   it('rings the avatar in the accent, on every card without exception', () => {
@@ -579,7 +599,7 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
      * 3.30:1 on the dark card, and a price is not glanceable metadata.
      */
     const body = code(ROW);
-    const nameLine = between(body, '<View style={styles.nameLine}>', 'styles.tagLine');
+    const nameLine = between(body, '<View style={styles.nameLine}>', 'provider-tags-');
     expect(nameLine).toContain('<RateLabel');
     expect(nameLine).toContain('rate={ratePerMin}');
     expect(nameLine).toContain('style={[styles.nameAge, styles.rate]}');
@@ -707,13 +727,17 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
 });
 
 describe('every row is still the same height', () => {
-  it('cannot grow a fourth tag pill', () => {
+  it('keeps the specialities to one plain text line', () => {
     /*
-     * Three, and the ceiling is enforced twice on purpose. `ROW_EXPERTISE_LIMIT`
-     * caps the array — including the category badge that search prepends, which
-     * is why the slice is applied AFTER the concat — and the style clips, so a
-     * longer set cannot wrap and push the price line down even if the cap were
-     * ever raised without looking here.
+     * Three tags at most, and one line always. `ROW_EXPERTISE_LIMIT` caps the
+     * array; `numberOfLines={1}` holds the line, so a longer set ellipsizes
+     * rather than wrapping and pushing the CTA row down.
+     *
+     * It used to be a 24dp slot with `overflow: 'hidden'`, sized for chips
+     * (MetaChip's small height), and that is gone on purpose (Amit, on the S22,
+     * 2026-09-27): the specialities have been plain comma text since the chips
+     * went, and a 16dp line in a 24dp slot put 4dp of dead space either side of
+     * it, which is why the gap after it read biggest on the card.
      */
     /*
      * The cap now lives entirely in `rowExpertise`, where the row used to
@@ -725,36 +749,70 @@ describe('every row is still the same height', () => {
     expect(code('src/lib/expertise.ts')).toContain('export const ROW_EXPERTISE_LIMIT = 3');
     expect(code(ROW)).toContain('const tags = rowExpertise(provider)');
     expect(code(ROW)).not.toContain('.slice(0, ROW_EXPERTISE_LIMIT)');
-    const line = style('tagLine');
-    expect(line).toContain('height: ROW_TAG_LINE');
-    expect(line).toContain("overflow: 'hidden'");
-    expect(line).not.toContain('flexWrap');
+    const body = code(ROW);
+    const tags = between(body, 'testID={`provider-tags-${provider.id}`}', '</Text>');
+    expect(body).toMatch(/numberOfLines=\{1\}\s+testID=\{`provider-tags-/);
+    expect(tags).toContain('styles.channelLine : styles.secondary');
+    // No slot left over from the chips.
+    expect(body).not.toContain('META_CHIP_HEIGHT_SM');
+    expect(body).not.toContain('ROW_TAG_LINE');
+    expect(body).not.toContain('styles.tagLine');
+    expect(style('secondary')).toContain('...TOKENS.typography.bodySmall');
+    expect(style('channelLine')).toContain('...TOKENS.typography.bodySmall');
   });
 
-  it('takes the pill height from the chip rather than repeating 24', () => {
-    expect(code(CHIP)).toContain('export const META_CHIP_HEIGHT_SM = 24');
-    expect(code(ROW)).toContain("import { META_CHIP_HEIGHT_SM } from './MetaChip'");
-    expect(code(ROW)).toContain('const ROW_TAG_LINE = META_CHIP_HEIGHT_SM');
+  it('spaces every text line by the same one gap', () => {
+    /*
+     * Amit, on the S22 (2026-09-27): the gaps between the card's lines were
+     * uneven, and the one after the specialities looked biggest. Measured line
+     * box to line box (includeFontPadding is false throughout), they were
+     * 6 · 6 · 2 · 9.5 down the right column and 8 · 2 down the left. They are
+     * now all ROW_LINE_GAP, `space['2xs']` (4), except the ring-to-stars gap,
+     * which the star/CTA alignment sets (13.5, asserted above).
+     */
+    const src = read(ROW);
+    expect(src).toContain("const ROW_LINE_GAP = TOKENS.space['2xs']");
+    expect(TOKENS.space['2xs']).toBe(4);
+    expect(style('label')).toContain('gap: ROW_LINE_GAP');
+    expect(style('label')).not.toContain('hair');
+    // The 48dp CTA row lays out at its drawn 33: its box bleeds 7.5dp past the
+    // drawing each side, on the plain wrapper View and not on the Pressable
+    // (which would keep its root at 48; see HomeScreen's seeAllBleed).
+    expect(src).toContain(
+      'const ROW_CTA_BLEED = (ROW_CTA_HEIGHT - ROW_CTA_VISUAL_HEIGHT) / 2',
+    );
+    const price = style('priceLine');
+    expect(price).toContain('height: ROW_CTA_HEIGHT');
+    expect(price).toContain('marginVertical: -ROW_CTA_BLEED');
+    expect(price).toContain("alignItems: 'center'");
+    expect(style('cta')).not.toMatch(/margin/);
+    expect(code(ROW)).toMatch(/<View style=\{styles\.priceLine\}>/);
+    // So "Exp" to the button's drawn edge is the same 4 as every other gap.
+    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+    const bleed = (TOKENS.interaction.minTarget - drawn) / 2;
+    expect(bleed).toBe(7.5);
+    // Laid out: gap 4, then the row box starting 7.5 higher, then the drawing
+    // centred 7.5 inside it.
+    expect(TOKENS.space['2xs'] + -bleed + (TOKENS.interaction.minTarget - drawn) / 2).toBe(4);
   });
 
-  it('computes to a 160dp card and a 168dp pitch, from the tokens', () => {
+  it('computes to a 155.5dp card and a 167.5dp pitch, from the tokens', () => {
     /*
      * The card is TWO columns of different heights — the shape the reference
      * uses and the reason the avatar grew. Every term is a token, so a change
-     * to the type scale or a chip height fails here rather than silently
-     * mis-hinting the list.
+     * to the type scale fails here rather than silently mis-hinting the list.
      *
-     *   left   ring 84 · 8 · stars 14 · 2 · count 16                          = 124
-     *   right  name 24 · 2 · tags 24 · 2 · langs 16 · 2 · exp 16 · 2 · CTA 48 = 136
+     *   right  name 24 · 4 · specialities 16 · 4 · langs 16 · 4 · exp 16 · 4 · CTA 33 = 121
+     *   left   ring 84 · 13.5 · stars 14 · 4 · count 16                             = 131.5
      *
-     * The last line is a ROW — price left, CTA right — so it costs the CTA's 48
-     * rather than 48 plus the price's own 20. Astrotalk does the same: its
-     * `call_rl` spans y361.5–397.5, straddling the lines rather than sitting
-     * under them.
+     * The last line is a ROW — category left, CTA right — and since 2026-09-27
+     * it costs the CTA's DRAWN 33, with its 48dp target bleeding 7.5dp past
+     * that each side. Astrotalk's `call_rl` straddles its lines the same way.
      *
-     * 160 of card against the reference's 146.2dp `row_content_holder`, and 168
-     * of pitch against their 180.4 — which is where "increase row height for
-     * comfortable view" landed, inside the reference's own bracket.
+     * Was 160 of card (right column 136: 24 · 2 · 24 · 2 · 16 · 2 · 16 · 2 · 48)
+     * and 172 of pitch. Now 155.5 and 167.5: the 4.5dp saved is the dead space
+     * of the old chip slot and the 48's invisible top, against the reference's
+     * 146.2dp `row_content_holder` and 180.4 pitch.
      *
      * THIS TEST USED TO PASS WHILE DESCRIBING THE WRONG ROW. It recomputed the
      * old four-line stack from tokens and asserted 142, and the arithmetic
@@ -763,9 +821,6 @@ describe('every row is still the same height', () => {
      * value now comes from the same constants the row lays itself out with, so
      * the test cannot agree with itself while disagreeing with the screen.
      */
-    const smallChip = Number(/export const META_CHIP_HEIGHT_SM = (\d+)/.exec(read(CHIP))?.[1]);
-    expect(smallChip).toBe(24);
-
     // The star row's height, as RatingStars computes it, read from source for
     // the same reason as everything else here.
     /*
@@ -786,37 +841,38 @@ describe('every row is still the same height', () => {
     );
     const ringSize = 76 + 2 * (2 + 2);
 
-    const left =
-      ringSize +
-      TOKENS.space.xs +
-      starsHeight +
-      TOKENS.space.hair +
-      TOKENS.typography.bodySmall.lineHeight;
+    const gap = TOKENS.space['2xs'];
+    const drawn = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
     const right =
       TOKENS.typography.titleMediumEmphasized.lineHeight +
-      TOKENS.space.hair +
-      smallChip +
-      TOKENS.space.hair +
+      gap +
       TOKENS.typography.bodySmall.lineHeight +
-      TOKENS.space.hair +
+      gap +
       TOKENS.typography.bodySmall.lineHeight +
-      TOKENS.space.hair +
-      TOKENS.interaction.minTarget;
+      gap +
+      TOKENS.typography.bodySmall.lineHeight +
+      gap +
+      drawn;
+    const leftFloor =
+      ringSize + TOKENS.space.xs + starsHeight + gap + TOKENS.typography.bodySmall.lineHeight;
+    const left = Math.max(
+      right - drawn / 2 + starsHeight / 2 + gap + TOKENS.typography.bodySmall.lineHeight,
+      leftFloor,
+    );
     /*
-     * The left column FITS; it no longer sizes the card. Astrotalk aligns its
-     * rating bar with its price line (y384.4 against y386.5), and top-aligning
-     * two columns of different heights cannot do that — the stars landed 13dp
-     * high and the card had two horizons. The left column now takes the RIGHT
-     * column's height and pushes its two children apart, so the ring stays at
-     * the top and the stars fall level with the price.
-     *
-     * What still matters is that the contents fit inside that height. If they
-     * ever exceed it the stars would be pushed out of the card, which is the
-     * same class of silent clipping the ring's missing box caused.
+     * The LEFT column sizes the card now. Its height comes from the star/CTA
+     * alignment (131.5), which is above both the right column (121) and the
+     * left column's own contents at the minimum ring gap (126): the contents
+     * fit, and the alignment term is the one in force.
      */
-    expect(left).toBe(124);
-    expect(right).toBe(136);
-    expect(left).toBeLessThanOrEqual(right);
+    expect(right).toBe(121);
+    expect(leftFloor).toBe(126);
+    expect(left).toBe(131.5);
+    expect(left).toBeGreaterThan(leftFloor);
+    expect(left).toBeGreaterThan(right);
+    const card = 2 * TOKENS.space.sm + Math.max(left, right);
+    expect(card).toBe(155.5);
+    expect(card + TOKENS.space.sm).toBe(167.5);
 
     /*
      * ...and the COMPONENT'S OWN FORMULA, term for term, which is the half the
@@ -825,24 +881,28 @@ describe('every row is still the same height', () => {
      * text below stops matching even when the total happens to survive.
      */
     const src = read(ROW);
-    const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN =', ';');
+    const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
+    expect(leftFormula).toContain('ROW_CTA_CENTRE');
     expect(leftFormula).toContain('ROW_AVATAR_RING');
-    expect(leftFormula).toContain('STARS_HEIGHT');
+    expect(leftFormula.match(/STARS_HEIGHT/g)?.length).toBe(2);
     expect(leftFormula).toContain('RING_TO_STARS');
     expect(read(ROW)).toContain('const RING_TO_STARS = TOKENS.space.xs');
-    expect(leftFormula.match(/TOKENS\./g)?.length).toBe(2);
 
     const rightFormula = between(src, 'export const PROVIDER_ROW_RIGHT_COLUMN =', ';');
     expect(rightFormula).toContain('titleMediumEmphasized.lineHeight');
-    expect(rightFormula).toContain('ROW_TAG_LINE');
-    expect(rightFormula).toContain('ROW_CTA_HEIGHT');
-    // Two bodySmall lines — languages AND experience. One would mean a line got
-    // dropped while the total still looked plausible.
-    expect(rightFormula.match(/bodySmall\.lineHeight/g)?.length).toBe(2);
-    // Four hair gaps, one between each pair of the five line items.
-    expect(rightFormula.match(/TOKENS\.space\.hair/g)?.length).toBe(4);
+    expect(rightFormula).toContain('ROW_CTA_VISUAL_HEIGHT');
+    expect(rightFormula).not.toContain('ROW_CTA_HEIGHT');
+    expect(rightFormula).not.toContain('ROW_TAG_LINE');
+    // Three bodySmall lines — specialities, languages AND experience. Two
+    // would mean a line got dropped while the total still looked plausible.
+    expect(rightFormula.match(/bodySmall\.lineHeight/g)?.length).toBe(3);
+    // Four gaps, one between each pair of the five line items, all the same.
+    expect(rightFormula.match(/ROW_LINE_GAP/g)?.length).toBe(4);
+    expect(rightFormula).not.toContain('space.hair');
 
-    expect(src).toContain('PROVIDER_CARD_HEIGHT = CARD_PAD * 2 + PROVIDER_ROW_RIGHT_COLUMN');
+    expect(src).toContain(
+      'PROVIDER_CARD_HEIGHT =\n  CARD_PAD * 2 + Math.max(PROVIDER_ROW_LEFT_COLUMN, PROVIDER_ROW_RIGHT_COLUMN)',
+    );
     expect(src).toContain('PROVIDER_CARD_HEIGHT + ROW_CARD_GAP');
     // Derived, never written down.
     expect(src).not.toMatch(/PROVIDER_CARD_HEIGHT = \d/);
@@ -883,8 +943,8 @@ describe('every row is still the same height', () => {
   });
 
   it('leaves the card top-aligned, since the columns differ', () => {
-    // `center` would float the 120dp avatar column down from the name it
-    // belongs to. Astrotalk top-aligns for the same reason.
+    // `center` would float the 121dp text column down from the top of the
+    // 131.5dp avatar column. Astrotalk top-aligns for the same reason.
     expect(style('card')).toContain("alignItems: 'flex-start'");
     expect(rowStyles()).not.toContain('rowTwoLine');
   });
@@ -921,7 +981,7 @@ describe('the tag line always has something in it', () => {
    * suite: `npm run verify` was green, 1608 tests passed, and the row on the
    * Redmi was visibly wrong in two ways.
    */
-  it('falls back to the headline, so an untagged provider is not a 24dp hole', () => {
+  it('falls back to the headline, so an untagged provider is not a blank line', () => {
     /*
      * On the first Redmi build every row had a gap where the pills go — 083 is
      * not on prod, so no provider has tags, and the line is fixed-height
@@ -934,13 +994,15 @@ describe('the tag line always has something in it', () => {
      */
     const body = code(ROW);
     // Expertise is plain comma text now (Astrotalk parity), so tags OR the
-    // headline fill the same fixed-height slot — an untagged provider still gets
-    // the headline rather than a 24dp hole.
+    // headline fill the same line — an untagged provider still gets the
+    // headline rather than a blank line.
     expect(body).toMatch(/tags\.length > 0 \? tags\.join\(', '\) : headline/);
     expect(body).toContain("'Here to listen'");
-    // Still one fixed-height line either way, which is the constraint that made
-    // collapsing it impossible.
-    expect(style('tagLine')).toContain('height: ROW_TAG_LINE');
+    // Still one line either way, which is the constraint that made collapsing
+    // it impossible: the card height counts it.
+    expect(between(body, 'testID={`provider-tags-${provider.id}`}', '</Text>')).toContain(
+      "tags.join(', ')",
+    );
   });
 
   it('states the avatar box, because inferring it hid the rating entirely', () => {
@@ -961,9 +1023,9 @@ describe('the tag line always has something in it', () => {
     expect(tap).toContain('height: ROW_AVATAR_RING');
     const left = style('leftColumn');
     expect(left).toContain('width: ROW_AVATAR_RING');
-    // The RIGHT column's height — the two share a bottom edge so the stars land
-    // on the price line. See the alignment test above.
-    expect(left).toContain('height: PROVIDER_ROW_RIGHT_COLUMN');
+    // The alignment-derived height, so the stars land on the CTA's centre. See
+    // the alignment test above.
+    expect(left).toContain('height: PROVIDER_ROW_LEFT_COLUMN');
     // And the constant it is stated in terms of is the same one the row height
     // is derived from, so the two cannot drift.
     expect(read(ROW)).toContain('export const PROVIDER_ROW_LEFT_COLUMN');
