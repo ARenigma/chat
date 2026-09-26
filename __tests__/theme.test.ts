@@ -353,23 +353,22 @@ describe('typography is bound to real font files', () => {
      * Material Symbols once was: each is real, used, and not chosen
      * per-typography-style.
      *
-     * Lucide: the outline icon set, referenced by icons.generated.ts. One face
-     * ships (Lucide has no filled twin; the active state is colour only for most
-     * icons).
+     * Phosphor: the ONE icon face, 2026-09-26 (Amit: "completely shift to
+     * phosphor for every icon/glyph removing heroicons and lucide completely").
+     * Regular and fill glyphs share it, referenced by icons.generated.ts's
+     * ICON_FAMILY. Exactly `Phosphor.ttf`, not a prefix: the three faces it
+     * replaced (Heroicons, HeroiconsSolid, a Lucide subset) matched a prefix
+     * allowlist, and a stale face left behind by a pattern is the orphan this
+     * test exists to catch.
      *
      * PappalGlyphs: REMOVED 2026-09-16. It was the bespoke filled-heart face,
      * orphaned since the 2026-09-07 heart-fill removal and retained only because
-     * deleting a packaged font needs a rebuild. The Heroicons migration is that
-     * rebuild: the real solid heart now comes from HeroiconsSolid, so
-     * `PappalGlyphs.ttf` and its notice were deleted and this exemption with them.
+     * deleting a packaged font needs a rebuild. `PappalGlyphs.ttf` and its notice
+     * were deleted and its exemption with them.
      */
-    // Heroicons / HeroiconsSolid: the icon set the app migrated to — a matched
-    // outline + solid pair, referenced by icons.generated.ts (family per icon in
-    // ICON_FAMILY_BY_NAME). Lucide is now the fallback face for the handful of
-    // glyphs Heroicons has no correct twin for.
-    const ICON_FONTS = /^(Heroicons|HeroiconsSolid|Lucide)/;
+    const ICON_FONTS = new Set(['Phosphor.ttf']);
     const orphans = FACES.filter(
-      face => !referenced.has(face) && !ICON_FONTS.test(face),
+      face => !referenced.has(face) && !ICON_FONTS.has(face),
     );
     expect(orphans).toEqual([]);
   });
@@ -433,15 +432,9 @@ describe('typography is bound to real font files', () => {
     const NOTICE: Record<string, string> = {
       Inter: 'OFL-Inter.txt',
       TitanOne: 'OFL-TitanOne.txt',
-      // Material Symbols is Apache-2.0, not OFL — a different licence, still
-      // mandatory to ship. Both instances map to the one notice.
-      // Lucide is ISC, not OFL — a different licence, still mandatory to ship.
-      // Kept as the fallback face for glyphs Heroicons has no correct twin for.
-      Lucide: 'LICENSE-Lucide.txt',
-      // Heroicons is MIT (Tailwind Labs) — the outline and solid faces both ship
-      // under the one notice.
-      Heroicons: 'LICENSE-Heroicons.txt',
-      HeroiconsSolid: 'LICENSE-Heroicons.txt',
+      // Phosphor is MIT (Phosphor Icons), not OFL — a different licence, still
+      // mandatory to ship. The generator copies it from the pinned package.
+      Phosphor: 'LICENSE-Phosphor.txt',
       // Geist is OFL (Vercel, 2023).
       Geist: 'OFL-Geist.txt',
     };
@@ -2506,7 +2499,7 @@ describe('accent budget is enforced in code, not just documented', () => {
      * moved out of the style block.
      *
      * The badge was a filled accent disc — a `backgroundColor` the scan above
-     * caught. It is now one Lucide glyph tinted by a `color` PROP, so the style
+     * caught. It is now one icon-font glyph tinted by a `color` PROP, so the style
      * block no longer mentions it and a style-only assertion would have let any
      * amount of accent into the tree without noticing. Counted here instead.
      */

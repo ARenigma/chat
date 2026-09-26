@@ -211,13 +211,13 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
     /*
      * ONE GLYPH, not our own check inside an accent disc — which is what it was
      * first built as, stacking two shapes to approximate a shape the icon set
-     * already had. `badge-check` is Lucide's scalloped rosette, the mark both
+     * already had. `seal-check` is Phosphor's scalloped rosette, the mark both
      * Clarity and Astrotalk draw, added through design/icons.json and
      * regenerated rather than hand-edited (RULE 4).
      */
     expect(code(ROW)).toContain("name=\"badgeCheck\"");
     expect(code(ROW)).not.toContain('styles.verified');
-    expect(read('design/icons.json')).toContain('"badgeCheck": "badge-check"');
+    expect(read('design/icons.json')).toContain('"badgeCheck": "seal-check"');
     expect(read('src/theme/icons.generated.ts')).toContain('badgeCheck:');
     // Out of the accessibility tree: the card's label would otherwise gain a
     // stop that says nothing a member can act on.

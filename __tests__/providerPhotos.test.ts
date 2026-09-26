@@ -432,20 +432,20 @@ describe('the provider hero pages between photos', () => {
 });
 
 /**
- * The favourite heart FILLS when active — a real solid glyph, not a hack.
+ * The favourite heart FILLS when active — a real fill glyph, not a hack.
  *
- * The Heroicons migration reversed the 2026-09-07 "keep the outline, heavier"
- * decision (approved): Heroicons ships a matched outline + solid pair at the same
- * codepoint, so the favourite heart renders the outline face by default and the
- * SOLID face when `active`. The old four-way over-draw that faked a heavier
- * outline (Lucide had no solid twin) is gone, along with its heart-specific
- * branch and box. Icon.tsx now has ONE generic render path for every glyph.
+ * The 2026-09-07 "keep the outline, heavier" decision was reversed (approved)
+ * once the icon set had a real fill: the favourite heart renders Phosphor's
+ * regular `heart` by default and `heart-fill` when `active`, both in the one
+ * Phosphor face. The old four-way over-draw that faked a heavier outline (the
+ * set then had no solid twin) is gone, along with its heart-specific branch
+ * and box. Icon.tsx has ONE generic render path for every glyph.
  *
  * Still gated, not trusted: the bespoke filled-heart FACE (PappalGlyphs) must
- * not come back — the real solid fill comes from HeroiconsSolid via the generic
- * active→filled-family swap, not from that second font file still in the tree.
+ * not come back — the fill comes from the generic active→ICON_GLYPH_ACTIVE
+ * swap, not from a second font file.
  */
-describe('the favourite heart fills when active (Heroicons solid)', () => {
+describe('the favourite heart fills when active (Phosphor fill)', () => {
   const icon = code('src/components/Icon.tsx');
 
   it('renders no bespoke filled-heart face', () => {
@@ -453,12 +453,16 @@ describe('the favourite heart fills when active (Heroicons solid)', () => {
     expect(icon).not.toContain('♥');
   });
 
-  it('carries the fill through the generic active→filled-family swap', () => {
+  it('carries the fill through the generic active→fill-glyph swap', () => {
     // No heart special-case: the fill is the same mechanism every icon uses —
-    // the solid face when active, the outline face otherwise.
+    // the ICON_GLYPH_ACTIVE codepoint when active, ICON_GLYPH otherwise, in the
+    // one face.
     expect(icon).toMatch(
-      /active\s*\?\s*ICON_FAMILY_FILLED_BY_NAME\[name\]\s*:\s*ICON_FAMILY_BY_NAME\[name\]/,
+      /\(active \? ICON_GLYPH_ACTIVE\[name\] : undefined\) \?\? ICON_GLYPH\[name\]/,
     );
+    expect(icon).toContain('fontFamily: ICON_FAMILY');
+    // And the heart actually has a fill to swap to.
+    expect(read('design/icons.json')).toContain('"heart": "heart-fill"');
   });
 
   it('drops the over-draw hack entirely', () => {

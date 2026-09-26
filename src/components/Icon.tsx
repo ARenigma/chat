@@ -2,37 +2,37 @@ import React, { memo } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import {
-  ICON_FAMILY_BY_NAME,
-  ICON_FAMILY_FILLED_BY_NAME,
+  ICON_FAMILY,
   ICON_GLYPH,
+  ICON_GLYPH_ACTIVE,
   type IconName,
 } from '../theme/icons.generated';
 
 /**
- * Every icon in the app, rendered as a Heroicons glyph in a font.
+ * Every icon in the app, rendered as a Phosphor glyph in a font.
  *
  * **A font, not SVG and not hand-drawn geometry.** react-native-svg is banned
  * here — it throws `synchronouslyUpdateUIProps` inside Reanimated views and
  * kills touch on the subtree (RULE 5). A glyph in a font is plain `<Text>`: safe
  * inside Reanimated, tinted by `color`, and scaled by `fontSize`.
  *
- * **Style, weight and set live in `design/icons.json`**, and `npm run icons:font`
- * regenerates the fonts and `icons.generated.ts` from it — the same pipeline as
- * the type tokens.
+ * **Set, glyph and fill live in `design/icons.json`**, and `npm run icons:font`
+ * regenerates `assets/fonts/Phosphor.ttf` and `icons.generated.ts` from it — the
+ * same pipeline as the type tokens.
  *
- * **`active` is a REAL fill now.** Heroicons ships a matched outline + solid pair
- * for every icon, built into two faces at the same codepoint
- * (`ICON_FILL_ON_ACTIVE` is `true`). So `active` swaps the outline face for the
- * solid one and the glyph genuinely FILLS: the favourite heart, the selected nav
- * tab, the filled portion of a rating star. This replaces the old over-drawn
- * outline hack that faked a heavier heart because Lucide had no solid twin. A few
- * icons with no correct Heroicons equivalent fall back to the Lucide face (no
- * solid variant), so for those `active` resolves to the same face and colour
- * carries the state — see ICON_FAMILY_BY_NAME in icons.generated.ts.
+ * **ONE face, and `active` picks a codepoint, not a family.** Phosphor ships
+ * its regular and fill weights under one naming scheme (`heart` /
+ * `heart-fill`), so both glyphs sit in the same font and a selected icon is a
+ * different character in the same `fontFamily`. The names that genuinely fill
+ * when selected (the nav destinations, the favourite heart, the rating star)
+ * have an `ICON_GLYPH_ACTIVE` entry; every other name draws its regular glyph
+ * in both states and colour carries `active`. This replaces the three-face
+ * setup (Heroicons outline + solid, a Lucide subset) and its per-icon family
+ * table.
  */
 interface Props {
   name: IconName;
-  /** Selected / filled state — renders the solid glyph where one exists. */
+  /** Selected state — renders the fill glyph where design/icons.json has one. */
   active?: boolean;
   size?: number;
   color?: string;
@@ -65,9 +65,14 @@ const DEFAULT_SIZE = 24;
  * the same 1.2x this constant names. See RatingStars.tsx for the defect this
  * caused.
  *
- * NOTE (RULE 2): the Heroicons faces have their own stroke weight and fill
- * balance, distinct from Lucide's baked stroke-2. This scale and the on-device
- * fill/outline weight must be re-baselined on a device after the migration.
+ * The scale assumes a full-bleed glyph inks ~0.832 of its em (19.97 of 24),
+ * which is what TOKENS.icon's ink-dp values were derived against. Phosphor
+ * draws on a 256 grid and inks 208 of it, so the generator maps a 250-unit
+ * window onto the em to land on the same 0.832 (EM_WINDOW in
+ * scripts/gen-icons-font.mjs). That keeps this constant and every `size` where
+ * they were; what it cannot keep is Phosphor's regular stroke, 16/256 of the
+ * grid (~1.5 at 24) against Lucide's 2, so glyphs read slightly lighter at the
+ * same size. That is a device judgement (RULE 2), not arithmetic.
  */
 export const ICON_SCALE = 1.2;
 
@@ -83,10 +88,8 @@ function IconView({
   const px = Math.round(size * ICON_SCALE);
   const resolvedColor = color ?? theme.color.text.primary;
 
-  const glyph = ICON_GLYPH[name];
-  const fontFamily = active
-    ? ICON_FAMILY_FILLED_BY_NAME[name]
-    : ICON_FAMILY_BY_NAME[name];
+  const glyph =
+    (active ? ICON_GLYPH_ACTIVE[name] : undefined) ?? ICON_GLYPH[name];
 
   return (
     <Text
@@ -100,7 +103,6 @@ function IconView({
       style={[
         styles.glyph,
         {
-          fontFamily,
           // Square line height so the glyph box is not taller than the glyph,
           // which would misalign it against adjacent text.
           fontSize: px,
@@ -121,6 +123,7 @@ export type { IconName };
 
 const styles = StyleSheet.create({
   glyph: {
+    fontFamily: ICON_FAMILY,
     textAlign: 'center',
     textAlignVertical: 'center',
     // The glyph is centred in an em square; no extra padding.
