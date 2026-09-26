@@ -78,11 +78,13 @@ select has_column(
   'public', 'conversation_summaries', 'peer_presence',
   'and so does the inbox'
 );
--- Removed rather than left beside the new column: a column named "available"
--- that four screens read as "present" is the trap 012 exists to close.
-select hasnt_column(
+-- 012 removed it so nothing could read the listing switch as presence. That
+-- decision was reversed on 2026-09-17 (111): the master switch IS reachability
+-- now, and 037's rebuild left the inbox without it, so every provider read as
+-- not loaded on the rail. 155 put it back on purpose; 570 asserts the value.
+select has_column(
   'public', 'conversation_summaries', 'peer_available',
-  'the listing switch is gone from the inbox, so nothing can read it as presence'
+  'the master switch is back on the inbox, because it is what the rail reads (155)'
 );
 
 -- Dropping and recreating a view discards its grants, and `authenticated`

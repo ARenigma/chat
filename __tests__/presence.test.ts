@@ -53,6 +53,168 @@ describe('readPresence is a reading of the master switch, and nothing else', () 
   });
 });
 
+/**
+ * THE SERVER'S READING (migration 155). `online` and `last_seen_at` are derived
+ * by the database from the provider app's heartbeat, so this only renders them.
+ *
+ * Every case pins `utcOffsetMinutes: 330`, IST: the product's time zone, and one
+ * with no daylight saving, so a midnight boundary means the same thing on any
+ * machine that runs this. `ist()` builds an instant from an IST wall clock.
+ */
+const IST = 330;
+const ist = (y: number, mo: number, d: number, h: number, mi: number, s = 0) =>
+  new Date(Date.UTC(y, mo - 1, d, h, mi, s) - IST * 60_000);
+// Sunday 27 September 2026, 2:30 pm IST.
+const NOW = ist(2026, 9, 27, 14, 30);
+const seen = (at: Date | string | null | undefined, now: Date = NOW) =>
+  readPresence({
+    online: false,
+    lastSeenAt: at instanceof Date ? at.toISOString() : at,
+    now,
+    utcOffsetMinutes: IST,
+  });
+
+describe('readPresence with the server reading: Online', () => {
+  it('lights the dot and says Online, whatever the last seen', () => {
+    expect(
+      readPresence({
+        online: true,
+        lastSeenAt: ist(2026, 9, 27, 14, 29).toISOString(),
+        now: NOW,
+        utcOffsetMinutes: IST,
+      }),
+    ).toEqual({ here: true, line: 'Online' });
+    expect(
+      readPresence({ online: true, lastSeenAt: null, now: NOW }),
+    ).toEqual({ here: true, line: 'Online' });
+  });
+
+  it('never lights the dot for a last seen, however recent', () => {
+    // Availability off with a live heartbeat arrives as online false plus a
+    // stamp from a minute ago; the server already folded the switch in.
+    expect(seen(ist(2026, 9, 27, 14, 30)).here).toBe(false);
+  });
+});
+
+describe('readPresence with the server reading: last seen', () => {
+  it('says today with a 12-hour en-IN clock', () => {
+    expect(seen(ist(2026, 9, 27, 10, 15))).toEqual({
+      here: false,
+      line: 'last seen today at 10:15 am',
+    });
+    expect(seen(ist(2026, 9, 27, 13, 7)).line).toBe(
+      'last seen today at 1:07 pm',
+    );
+    expect(seen(ist(2026, 9, 27, 12, 0)).line).toBe(
+      'last seen today at 12:00 pm',
+    );
+    expect(seen(ist(2026, 9, 27, 0, 5)).line).toBe(
+      'last seen today at 12:05 am',
+    );
+  });
+
+  it('reads the calendar in IST, not UTC', () => {
+    // 00:10 IST on the 27th is 18:40 UTC on the 26th: a UTC reading would say
+    // yesterday.
+    expect(seen(ist(2026, 9, 27, 0, 10)).line).toBe(
+      'last seen today at 12:10 am',
+    );
+    // And 23:50 IST on the 26th is 18:20 UTC the same day, which is still
+    // yesterday in IST.
+    expect(seen(ist(2026, 9, 26, 23, 50)).line).toBe(
+      'last seen yesterday at 11:50 pm',
+    );
+  });
+
+  it('turns over exactly at midnight', () => {
+    const justAfter = ist(2026, 9, 27, 0, 0, 30);
+    expect(seen(ist(2026, 9, 26, 23, 59), justAfter).line).toBe(
+      'last seen yesterday at 11:59 pm',
+    );
+    expect(seen(ist(2026, 9, 27, 0, 0), justAfter).line).toBe(
+      'last seen today at 12:00 am',
+    );
+    const justBefore = ist(2026, 9, 26, 23, 59, 59);
+    expect(seen(ist(2026, 9, 26, 0, 0), justBefore).line).toBe(
+      'last seen today at 12:00 am',
+    );
+    expect(seen(ist(2026, 9, 25, 23, 59), justBefore).line).toBe(
+      'last seen yesterday at 11:59 pm',
+    );
+  });
+
+  it('says yesterday for the whole previous calendar day', () => {
+    expect(seen(ist(2026, 9, 26, 0, 0)).line).toBe(
+      'last seen yesterday at 12:00 am',
+    );
+    expect(seen(ist(2026, 9, 26, 10, 15)).line).toBe(
+      'last seen yesterday at 10:15 am',
+    );
+  });
+
+  it('names the weekday for two to six days back', () => {
+    expect(seen(ist(2026, 9, 25, 10, 15)).line).toBe(
+      'last seen Friday at 10:15 am',
+    );
+    // Six days back is the last weekday that cannot mean two different days.
+    expect(seen(ist(2026, 9, 21, 10, 15)).line).toBe(
+      'last seen Monday at 10:15 am',
+    );
+  });
+
+  it('gives a date from seven days back, without the time', () => {
+    // Seven days back is a Sunday again, which is why the weekday stops at six.
+    expect(seen(ist(2026, 9, 20, 23, 59)).line).toBe('last seen 20 Sep');
+    expect(seen(ist(2026, 9, 12, 10, 15)).line).toBe('last seen 12 Sep');
+    expect(seen(ist(2026, 1, 3, 8, 0)).line).toBe('last seen 3 Jan');
+  });
+
+  it('adds the year when it is not this one', () => {
+    expect(seen(ist(2025, 12, 31, 22, 0)).line).toBe('last seen 31 Dec 2025');
+  });
+
+  it('clamps a stamp ahead of the device clock to now', () => {
+    // Skew, not a visit from the future: never "tomorrow", never a weekday.
+    expect(seen(ist(2026, 9, 27, 14, 33)).line).toBe(
+      'last seen today at 2:30 pm',
+    );
+    expect(seen(ist(2026, 9, 29, 9, 0)).line).toBe(
+      'last seen today at 2:30 pm',
+    );
+  });
+
+  it('says nothing when there is nothing to say', () => {
+    // A member peer, a blocked pair, a provider never seen, or a row not loaded.
+    expect(seen(null)).toEqual({ here: false, line: null });
+    expect(seen(undefined)).toEqual({ here: false, line: null });
+    expect(
+      readPresence({ online: undefined, lastSeenAt: undefined, now: NOW }),
+    ).toEqual({ here: false, line: null });
+    expect(seen('not a timestamp')).toEqual({ here: false, line: null });
+  });
+
+  it('reads the device offset when none is pinned', () => {
+    // Built from the local wall clock, so it holds in whatever zone runs this.
+    const now = new Date(2026, 8, 27, 14, 30);
+    const then = new Date(2026, 8, 27, 9, 5);
+    expect(
+      readPresence({ online: false, lastSeenAt: then.toISOString(), now })
+        .line,
+    ).toBe('last seen today at 9:05 am');
+  });
+
+  it('reads as a phrase for a screen reader', () => {
+    expect(
+      presenceForSpeech(
+        readPresence({ online: true, lastSeenAt: null, now: NOW }),
+      ),
+    ).toBe('online');
+    expect(presenceForSpeech(seen(ist(2026, 9, 26, 10, 15)))).toBe(
+      'last seen yesterday at 10:15 am',
+    );
+  });
+});
+
 describe('presenceForSpeech', () => {
   it('lowercases the line so it reads inside a sentence', () => {
     expect(presenceForSpeech(readPresence(true))).toBe('here now');

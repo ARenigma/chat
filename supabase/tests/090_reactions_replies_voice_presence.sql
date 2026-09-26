@@ -72,9 +72,11 @@ select function_privs_are(
   'public', 'toggle_reaction', ARRAY['uuid', 'text'], 'authenticated', ARRAY['EXECUTE'],
   'reactions go through an RPC, because a policy cannot read the block graph'
 );
+-- 155 retired touch_presence for presence_heartbeat, which says it is here and
+-- still cannot say when it was. 570 covers the heartbeat.
 select function_privs_are(
-  'public', 'touch_presence', ARRAY[]::text[], 'authenticated', ARRAY['EXECUTE'],
-  'a client may say it is here, and cannot say when it was'
+  'public', 'touch_presence', ARRAY[]::text[], 'authenticated', ARRAY[]::text[],
+  'the retired stamp writer is closed to clients (155)'
 );
 select ok(
   (select count(*) = 1 from pg_publication_tables
@@ -367,8 +369,8 @@ select throws_ok(
   'and the older guards still hold, so all three triggers compose'
 );
 select lives_ok(
-  $$select public.touch_presence()$$,
-  'the RPC is how a stamp is written'
+  $$select public.presence_heartbeat()$$,
+  'the RPC is how a stamp is written (presence_heartbeat since 155)'
 );
 select isnt(
   (select last_active_at from public.profiles
@@ -380,9 +382,9 @@ reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
 select isnt(
-  (select peer_last_active_at from public.conversation_peers
+  (select peer_last_seen_at from public.conversation_peers
     where conversation_id = (select v from test.fixture where k = 'thread')),
-  null, 'the peer sees it, because the peer allowed it'
+  null, 'the member sees the provider''s last seen'
 );
 reset role;
 
@@ -397,10 +399,13 @@ reset role;
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"bbbbbbbb-0000-4000-8000-000000000002","role":"authenticated"}';
-select is(
-  (select peer_last_active_at from public.conversation_peers
+-- Reversed by 155 (Amit, 2026-09-27): a provider's last seen is always on for
+-- members, so the old setting no longer hides it. A member's is never shown,
+-- whatever the setting; 570 asserts that direction.
+select isnt(
+  (select peer_last_seen_at from public.conversation_peers
     where conversation_id = (select v from test.fixture where k = 'thread')),
-  null, 'after which the peer sees nothing, retroactively'
+  null, 'and the setting no longer hides a provider''s last seen (155)'
 );
 reset role;
 

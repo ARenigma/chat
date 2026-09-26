@@ -1316,7 +1316,7 @@ select is(
        'heartbeat_call', 'insert_next_opener', 'mark_story_viewed', 'member_handle',
        'mock_recharge', 'my_first_recharge_discount_bps',
        'my_story_insights', 'open_conversation', 'pending_policy_acceptances',
-       'post_story_comment', 'provider_busy_waits', 'provider_is_listed',
+       'post_story_comment', 'presence_heartbeat', 'provider_busy_waits', 'provider_is_listed',
        'public_display_name', 'react_to_story_comment', 'record_call_quality_samples',
        'record_suggestion_outcome', 'register_push_token', 'report_story',
        'report_story_comment', 'request_media_upgrade', 'respond_media_upgrade',
@@ -1328,7 +1328,7 @@ select is(
        'story_reaction_counts', 'story_text_has_control', 'story_text_line_breaks',
        'story_text_trim', 'story_viewers', 'submit_provider_application',
        'submit_report', 'submit_review', 'submit_session_review', 'toggle_favorite',
-       'toggle_reaction', 'toggle_story_reaction', 'touch_presence',
+       'toggle_reaction', 'toggle_story_reaction',
        'unblock_by_handle', 'unregister_push_token', 'upsert_my_payout_account'])),
   null,
   '39t. every function revoked from PUBLIC that a signed-in client can call is a client RPC'

@@ -114,6 +114,8 @@ COLUMN conversation_peers.peer_display_name text null=YES default=-
 COLUMN conversation_peers.peer_id uuid null=YES default=-
 COLUMN conversation_peers.peer_is_provider boolean null=YES default=-
 COLUMN conversation_peers.peer_last_active_at timestamp with time zone null=YES default=-
+COLUMN conversation_peers.peer_last_seen_at timestamp with time zone null=YES default=-
+COLUMN conversation_peers.peer_online boolean null=YES default=-
 COLUMN conversation_peers.peer_presence USER-DEFINED null=YES default=-
 COLUMN conversation_summaries.conversation_id uuid null=YES default=-
 COLUMN conversation_summaries.i_am_member boolean null=YES default=-
@@ -122,10 +124,14 @@ COLUMN conversation_summaries.last_session_at timestamp with time zone null=YES 
 COLUMN conversation_summaries.last_session_channel USER-DEFINED null=YES default=-
 COLUMN conversation_summaries.last_session_duration_seconds integer null=YES default=-
 COLUMN conversation_summaries.last_session_status USER-DEFINED null=YES default=-
+COLUMN conversation_summaries.peer_available boolean null=YES default=-
 COLUMN conversation_summaries.peer_avatar_url text null=YES default=-
 COLUMN conversation_summaries.peer_display_name text null=YES default=-
 COLUMN conversation_summaries.peer_id uuid null=YES default=-
+COLUMN conversation_summaries.peer_is_provider boolean null=YES default=-
 COLUMN conversation_summaries.peer_last_active_at timestamp with time zone null=YES default=-
+COLUMN conversation_summaries.peer_last_seen_at timestamp with time zone null=YES default=-
+COLUMN conversation_summaries.peer_online boolean null=YES default=-
 COLUMN conversation_summaries.peer_presence USER-DEFINED null=YES default=-
 COLUMN conversation_summaries.unread_count_member integer null=YES default=-
 COLUMN conversation_summaries.unread_count_provider integer null=YES default=-
@@ -394,6 +400,7 @@ COLUMN profiles.phone_e164 text null=YES default=-
 COLUMN profiles.phone_verified_at timestamp with time zone null=YES default=-
 COLUMN profiles.preferred_languages ARRAY null=NO default='{}'::text[]
 COLUMN profiles.presence USER-DEFINED null=NO default='hidden'::presence_choice
+COLUMN profiles.presence_online boolean null=NO default=false
 COLUMN profiles.presence_visible boolean null=NO default=false
 COLUMN profiles.profile_completed_at timestamp with time zone null=YES default=-
 COLUMN profiles.promo_balance integer null=NO default=0
@@ -436,7 +443,9 @@ COLUMN provider_directory.id uuid null=YES default=-
 COLUMN provider_directory.is_available boolean null=YES default=-
 COLUMN provider_directory.languages ARRAY null=YES default=-
 COLUMN provider_directory.last_active_at timestamp with time zone null=YES default=-
+COLUMN provider_directory.last_seen_at timestamp with time zone null=YES default=-
 COLUMN provider_directory.median_reply_seconds integer null=YES default=-
+COLUMN provider_directory.online boolean null=YES default=-
 COLUMN provider_directory.presence USER-DEFINED null=YES default=-
 COLUMN provider_directory.provider_category text null=YES default=-
 COLUMN provider_directory.rating_avg numeric null=YES default=-
@@ -1939,6 +1948,7 @@ FUNCTION policy_roles_are(name, name, name, name[], text) returns text security=
 FUNCTION policy_roles_are(name, name, name[]) returns text security=invoker
 FUNCTION policy_roles_are(name, name, name[], text) returns text security=invoker
 FUNCTION post_story_comment(p_comment_id uuid, p_story_id uuid, p_body text) returns json security=definer
+FUNCTION presence_heartbeat(p_online boolean) returns void security=definer
 FUNCTION provider_busy_waits(p_provider_ids uuid[]) returns TABLE(provider_id uuid, wait_minutes integer) security=definer
 FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
 FUNCTION provider_offers_channel(p_provider_id uuid, p_channel session_channel) returns boolean security=definer

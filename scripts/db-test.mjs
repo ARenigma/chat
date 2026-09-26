@@ -196,6 +196,7 @@ const MIGRATIONS = [
   'supabase/migrations/152_story_commenter_block.sql',
   'supabase/migrations/153_function_grants_closed_by_default.sql',
   'supabase/migrations/154_provider_busy_waits.sql',
+  'supabase/migrations/155_provider_presence_last_seen.sql',
 ];
 
 /**
@@ -938,6 +939,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/569_provider_busy_waits.sql'),
     label:
       'a busy listed provider shows the balance-limited minutes left in its session, rounded up and capped, to members only, across no block, and with nothing about the member',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/570_provider_presence_last_seen.sql'),
+    label:
+      'a provider heartbeat reads online for 75 s on every surface, an explicit offline or a closed switch is never online, last seen shows to the minute, never for a member or across a block, and writes are limited to one per 20 s',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

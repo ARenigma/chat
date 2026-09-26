@@ -66,7 +66,7 @@ select 'authenticated', unnest(array[
   'story_reaction_counts', 'story_text_has_control', 'story_text_line_breaks',
   'story_text_trim', 'story_viewers', 'submit_provider_application',
   'submit_report', 'submit_review', 'submit_session_review', 'toggle_favorite',
-  'toggle_reaction', 'toggle_story_reaction', 'touch_presence',
+  'toggle_reaction', 'toggle_story_reaction',
   'unblock_by_handle', 'unregister_push_token', 'upsert_my_payout_account',
   'voice_peaks_ok']);
 
@@ -75,6 +75,12 @@ select 'authenticated', unnest(array[
 -- nothing else about it.
 insert into expected_callable (role, proname)
 values ('authenticated', 'provider_busy_waits');
+
+-- 155: the provider app's presence heartbeat. Signed in only; a member's call
+-- writes nothing. It replaces touch_presence, which 155 closed (no client ever
+-- called it) and which is therefore off this list.
+insert into expected_callable (role, proname)
+values ('authenticated', 'presence_heartbeat');
 
 -- Every public function a role can execute, extension functions aside (pgTAP
 -- here, whatever the platform installs live).
