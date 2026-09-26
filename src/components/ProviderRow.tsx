@@ -1173,10 +1173,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexShrink: 1,
   },
   categoryListener: {
-    color: t.color.text.onListener,
+    color: t.color.text.listener,
   },
   categoryAstrologer: {
-    color: t.color.text.onAstrologer,
+    color: t.color.text.astrologer,
   },
   // A spacer rather than `justifyContent: 'space-between'`, because the price
   // must stay left while the CTA goes to the far edge, and the row may later

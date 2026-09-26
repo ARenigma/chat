@@ -660,11 +660,11 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(category).toContain('size={TOKENS.icon.sm}');
     expect(category).toContain('{category}');
     expect(style('categoryLabel')).toContain('...TOKENS.typography.textSmSemiBold');
-    expect(style('categoryListener')).toContain('color: t.color.text.onListener');
-    expect(style('categoryAstrologer')).toContain('color: t.color.text.onAstrologer');
+    expect(style('categoryListener')).toContain('color: t.color.text.listener');
+    expect(style('categoryAstrologer')).toContain('color: t.color.text.astrologer');
     const contrast = read('scripts/check-contrast.mjs');
-    expect(contrast).toMatch(/fg: 'text\/onListener',\s+bg: 'bg\/raised',\s+target: 4\.5/);
-    expect(contrast).toMatch(/fg: 'text\/onAstrologer',\s+bg: 'bg\/raised',\s+target: 4\.5/);
+    expect(contrast).toMatch(/fg: 'text\/listener',\s+bg: 'bg\/raised',\s+target: 4\.5/);
+    expect(contrast).toMatch(/fg: 'text\/astrologer',\s+bg: 'bg\/raised',\s+target: 4\.5/);
     expect(contrast).toMatch(/fg: 'mark\/verified',\s+bg: 'bg\/raised',\s+target: 3/);
   });
 });

@@ -346,13 +346,13 @@ const PAIRS = [
    * glyph beside it is non-text and passes the same number with room to spare.
    */
   {
-    fg: 'text/onListener',
+    fg: 'text/listener',
     bg: 'bg/raised',
     target: 4.5,
     what: 'the Listener category mark and word on a directory card',
   },
   {
-    fg: 'text/onAstrologer',
+    fg: 'text/astrologer',
     bg: 'bg/raised',
     target: 4.5,
     what: 'the Astrologer category mark and word on a directory card',
