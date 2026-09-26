@@ -36,6 +36,7 @@
   --text-section: #6A6F72;
   --text-muted: #8E8E93;
   --text-accent: #C2401F;
+  --text-nav-selected: #C2401F;
   --text-on-accent: #FFFFFF;
   --text-on-accent-tint: #692110;
   --text-on-state: #FFFFFF;
@@ -173,6 +174,7 @@
   --text-section: #8896A4;
   --text-muted: #5C6B7A;
   --text-accent: #DF9481;
+  --text-nav-selected: #D26E55;
   --text-on-accent: #FFFFFF;
   --text-on-accent-tint: #DF9481;
   --text-on-state: #0A1F14;

@@ -3612,6 +3612,7 @@ describe('the brand stays coral, and coral is a hue', () => {
     'border/accent',
     'text/accent',
     'text/onAccentTint',
+    'text/navSelected',
     'bubble/mine',
   ] as const;
 
@@ -3677,6 +3678,7 @@ describe('every coral role is a step of the one ramp', () => {
     'border/accent',
     'text/accent',
     'text/onAccentTint',
+    'text/navSelected',
     'bubble/mine',
   ] as const;
 

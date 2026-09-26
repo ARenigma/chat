@@ -303,11 +303,12 @@ const PAIRS = [
    * nav-migration step 5). The pill is bg/navIndicator, not the wash, because
    * the wash's dark step 950 is 1.005:1 against the dark bar; 900 is the step
    * that separates from the bar as much as the light pill does (1.13 vs 1.16).
-   * The glyph stays text/accent: bg/accent (step 500) on 900 is 2.87:1, under
-   * the 3:1 non-text floor, so dark keeps the 300 ink (6.16:1).
+   * The glyph is text/navSelected, its own role (owner, 2026-09-27): step 500
+   * light, 400 dark. bg/accent (step 500) on 900 is 2.87:1, under the 3:1
+   * non-text floor; 400 is the nearest step to the brand that clears it.
    */
   {
-    fg: 'text/accent',
+    fg: 'text/navSelected',
     bg: 'bg/navIndicator',
     target: 3,
     what: 'the selected bottom-bar glyph on its indicator pill (non-text)',
