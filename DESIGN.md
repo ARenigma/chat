@@ -27,9 +27,11 @@ Applied globally; verified via the token drift gate.
 - **Type:** Geist (Regular / SemiBold / Bold; was Urbanist), with TitanOne
   reserved for the wordmark. Tabular figures where numerals must align. Ladder
   in `design/tokens.json`.
-- **Icons:** Lucide, rendered as a subset **font** from `design/icons.json`
-  (ADR-0018 superseded in wave-3). Fill-active via `fontFamily` swap in
-  `Icon.tsx`. Never hand-drawn, never SVG (`react-native-svg` is banned).
+- **Icons:** Phosphor (2026-09-26; Heroicons and Lucide removed), rendered as
+  ONE **font**, `assets/fonts/Phosphor.ttf`, from `design/icons.json`. Regular
+  weight by default; `active` swaps to the name's `-fill` glyph in the same face
+  where `icons.json`'s `active` map has one. Never hand-drawn, never SVG
+  (`react-native-svg` is banned).
 - **Colour:** coral accent tokens (`bg/accent` is marks-only, 3.4:1), warm
   gradient "bloom" where the design calls for it. Generated to
   `tokens.generated.ts` + `web/tokens.css` from `design/tokens.json`; `--check`

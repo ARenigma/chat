@@ -37,8 +37,9 @@ interface Props {
   accent?: string;
   /**
    * Drop the leading icon entirely. Fuse's steps carry refined SF Symbols; our
-   * Lucide glyphs read heavier beside the title, so the sign-in checklist runs
-   * icon-less — title-only — which is cleaner and more coherent.
+   * glyphs (Lucide when this was decided) read heavier beside the title, so the
+   * sign-in checklist runs icon-less — title-only — which is cleaner and more
+   * coherent.
    */
   hideIcon?: boolean;
   testID?: string;

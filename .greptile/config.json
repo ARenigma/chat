@@ -44,7 +44,7 @@
       "scope": [
         "src/**/*.generated.ts",
         "web/tokens.css",
-        "assets/fonts/Lucide.ttf"
+        "assets/fonts/Phosphor.ttf"
       ],
       "severity": "high"
     }

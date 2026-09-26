@@ -6133,7 +6133,7 @@ describe('post-release UI regressions', () => {
 
   it('fills the navigation heart when its tab is selected', () => {
     // The earlier "keep the heart outlined in nav" decision was reversed
-    // (approved): with Heroicons shipping a real solid twin, the selected nav
+    // (approved): with a real fill glyph for every tab, the selected nav
     // destination shows its filled glyph — Material 3's active nav icon — and the
     // favourites heart is no longer the exception. So the guard that special-
     // cased it is gone and every tab passes plain `active={on}`.
