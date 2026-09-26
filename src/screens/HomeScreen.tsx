@@ -54,10 +54,14 @@ import { ProviderTypeTabs } from '../components/ProviderTypeTabs';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { OFFERED_EXPERTISE, expertiseFor } from '../lib/expertise';
 import { genderLetter } from '../lib/display';
-import { displayRating, formatReviewCount } from '../lib/systemRating';
+import { displayRating } from '../lib/systemRating';
 import { DirectorySkeleton } from '../components/DirectorySkeleton';
 import { Chip } from '../components/Chip';
-import { HeroCarousel } from '../components/HeroCarousel';
+import {
+  HERO_CARD_GAP,
+  HERO_CARD_HEIGHT,
+  HERO_CARD_WIDTH,
+} from '../lib/carousel';
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
 import { TabTopBar } from '../components/TabTopBar';
@@ -689,25 +693,40 @@ export function HomeScreen({
                 Top profiles this week
               </Text>
             </View>
-            {/* Centred hero, peeking both ways, endless in both directions
-                (Amit, 2026-09-06). The geometry and the wrap arithmetic live in
-                lib/carousel.ts where they can be tested; this only says which
-                cards go in it. No timer — see HeroCarousel for why. */}
-            <HeroCarousel
-              items={topPicks}
-              columnWidth={columnWidth}
-              keyOf={p => p.id}
-              testID="top-picks"
-              render={(p, width) => (
-                <Card>
+            {/* PORTRAIT STORY CARDS, start-aligned, about 2.3 across (Amit,
+                2026-09-26: the centred landscape hero cropped faces). Android's
+                uncontained carousel: one fixed item size flowing past the edge,
+                https://developer.android.com/develop/ui/compose/components/carousel
+                — geometry in lib/carousel.ts, where it is tested.
+
+                NOT ENDLESS ANY MORE, and that reverses the 2026-09-06 "endless
+                rotation" on purpose: the wrap worked by holding three copies of
+                the list, and with THREE picks and 2.3 cards in view the first
+                card would sit right beside the last, the same face twice on
+                screen. A three-card strip that ends is the honest shape. The
+                snap is kept (one card pitch, start-aligned, no multi-card
+                flings), and still no timer: nothing moves under a still finger.
+                HeroCarousel keeps its centred, endless geometry for the profile
+                photo pager. */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={HERO_CARD_WIDTH + HERO_CARD_GAP}
+              snapToAlignment="start"
+              disableIntervalMomentum
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={styles.picksStrip}
+              testID="top-picks">
+              {topPicks.map(p => (
+                <Card key={p.id} style={styles.featuredCard}>
                   <FeaturedCard
                     provider={p}
-                    imageWidth={width}
+                    imageWidth={HERO_CARD_WIDTH}
                     onPress={() => onOpenProvider(p.id)}
                   />
                 </Card>
-              )}
-            />
+              ))}
+            </ScrollView>
           </>
         ) : null}
         {/* Spacing that separates the featured card (or explore heading) from
@@ -724,7 +743,6 @@ export function HomeScreen({
       styles,
       topPicks,
       onOpenProvider,
-      columnWidth,
       handleOpenConversation,
       onSeeAllChats,
       theme,
@@ -1150,6 +1168,13 @@ function FeaturedCard({
       ? ` ${letter === null ? '' : `${letter}-`}${provider.age}`
       : '';
   const presence = readPresence(provider.is_available);
+  /*
+   * SPOKEN, NO LONGER DRAWN (2026-09-26). The card is 150dp wide now, 126 inside
+   * its padding, and a one-line tagline there holds about 18 characters of
+   * bodyMedium: every real headline is a sentence, so it would draw as an
+   * ellipsis on every card. It stays in the card's spoken label and in full on
+   * the profile, one tap away.
+   */
   const tagline =
     provider.headline && provider.headline !== ''
       ? provider.headline
@@ -1166,23 +1191,18 @@ function FeaturedCard({
   const rating = displayRating(provider);
   const years = seededExperienceYears(provider.id);
   /*
-   * Experience and reviews INLINE (Amit, 2026-09-08: "carousle cards should
-   * laos have experience and ratings inline -- place them smartly and space
-   * efficiently").
+   * Experience INLINE, beside the rating (Amit, 2026-09-08: "carousle cards
+   * should laos have experience and ratings inline -- place them smartly and
+   * space efficiently").
    *
-   * One text line REPLACING the two language chips, rather than a third row
-   * added under them. The chips cost 32dp of a 210dp card to say two words that
-   * fit in a shared line with room to spare; dot-separated text carries four
-   * facts in 16dp. That is where the "space efficiently" is — the card did not
-   * get taller.
+   * NARROWED 2026-09-26 for the 150dp portrait card: the line used to carry
+   * reviews, years and languages ("1.2k reviews  ·  7 yrs  ·  Hindi, English"),
+   * about 250dp of text, and the card has 126dp inside its padding with the
+   * rating pill already on the same row. The years are the one fact that always
+   * fits beside the pill; the review count and the languages are spoken in the
+   * card's label, drawn on every row below and on the profile.
    */
-  const heroMeta = [
-    `${formatReviewCount(rating.count)} reviews`,
-    `${years} ${years === 1 ? 'yr' : 'yrs'}`,
-    provider.languages.slice(0, 2).join(', '),
-  ]
-    .filter(x => x !== '')
-    .join('  ·  ');
+  const heroMeta = `${years} ${years === 1 ? 'yr' : 'yrs'}`;
   /*
    * AWAY, AND WHAT THE CARD OFFERS BECAUSE OF IT.
    *
@@ -1201,16 +1221,15 @@ function FeaturedCard({
    */
   const away = !presence.here;
   /*
-   * A tall crop, not a 178dp band: the window into it happens in the layout
-   * (`featuredPhoto`), so asking the server for a frame-height image would
-   * centre-crop the head off before it arrived. `HERO_PHOTO_HEIGHT_RATIO` is
-   * 4/3 scaled to this card's height — see its note for why that is a trim and
-   * not that band.
+   * The card IS 3:4 now, the crop migration 087 stores every avatar at, so the
+   * server is asked for exactly the frame: a resize, not a crop. The old
+   * landscape band had to request a taller image and window into it, because
+   * Supabase's `resize=cover` crops from the centre and took heads off.
    */
   const heroPhoto = avatarImageSource(
     provider.avatar_url,
     imageWidth,
-    Math.round(imageWidth * HERO_PHOTO_HEIGHT_RATIO),
+    HERO_CARD_HEIGHT,
   );
   /*
    * The rating has to be spoken in WORDS from here, because the chip below is
@@ -1256,26 +1275,6 @@ function FeaturedCard({
           </Text>
         </>
       )}
-      {/* The star and the number, nothing else. "Top rated" repeated the section
-          header immediately above the carousel, on all three cards, so it said
-          nothing the header had not already said (Amit). With the words gone
-          there is no sensible fallback: a solid accent pill asserting nothing,
-          on a card in a "Top profiles this week" strip, is an advert rather than
-          a status — so a provider with no ratings gets no pill at all. Same
-          glyph and precision as ProviderCard.tsx:168-170 and
-          ProviderRow.tsx:226-228; `accessible={false}` folds it into the card,
-          whose label says "rated 4.8 from 12 reviews" in words. `?? 0` rather
-          than the peers' `?.` because on the hero a null average would print the
-          literal "★ undefined". */}
-      <View accessible={false} style={styles.featuredBadge}>
-        {/* Number first, star last (Amit: "interchange position" of the two,
-            2026-09-08) — the opposite order from ProviderRow/ProviderCard's
-            "★ 4.8" chip. Kept local to the hero rather than flipped
-            everywhere: only the hero pill was asked to change. */}
-        <Text allowFontScaling style={styles.featuredBadgeText}>
-          {`${rating.score.toFixed(1)} ★`}
-        </Text>
-      </View>
       {away ? (
         <View accessible={false} style={styles.featuredNotify}>
           <Icon name="bell" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
@@ -1288,21 +1287,43 @@ function FeaturedCard({
       )}
       <View style={styles.featuredBody}>
         <View style={styles.featuredNameRow}>
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling numberOfLines={1} style={styles.featuredName}>
+          {/* The row's name role (titleMediumEmphasized over a nested bodySmall
+              "F-28"), not the old 24dp headline: at 126dp a 24dp name held
+              about seven characters. */}
+          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.featuredName}>
             {provider.display_name}
-            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} style={styles.featuredAge}>{age}</Text>
+            <Text style={styles.featuredAge}>{age}</Text>
           </Text>
         </View>
-        {tagline !== '' ? (
-          <Text allowFontScaling numberOfLines={1} style={styles.featuredTagline}>
-            {tagline}
+        {/* The rating AT THE BOTTOM with the name (Amit, 2026-09-26: "name +
+            F-28 and rating at the bottom"), so the photo's top corners hold
+            only presence. Same pill, same fill, one step smaller. */}
+        <View style={styles.featuredMetaRow}>
+          {/* The star and the number, nothing else. "Top rated" repeated the section
+              header immediately above the carousel, on all three cards, so it said
+              nothing the header had not already said (Amit). With the words gone
+              there is no sensible fallback: a solid accent pill asserting nothing,
+              on a card in a "Top profiles this week" strip, is an advert rather than
+              a status — so a provider with no ratings gets no pill at all. Same
+              glyph and precision as ProviderCard.tsx:168-170 and
+              ProviderRow.tsx:226-228; `accessible={false}` folds it into the card,
+              whose label says "rated 4.8 from 12 reviews" in words. `?? 0` rather
+              than the peers' `?.` because on the hero a null average would print the
+              literal "★ undefined". */}
+          <View accessible={false} style={styles.featuredBadge}>
+            {/* Number first, star last (Amit: "interchange position" of the two,
+                2026-09-08) — the opposite order from ProviderRow/ProviderCard's
+                "★ 4.8" chip. Kept local to the hero rather than flipped
+                everywhere: only the hero pill was asked to change. */}
+            <Text allowFontScaling style={styles.featuredBadgeText}>
+              {`${rating.score.toFixed(1)} ★`}
+            </Text>
+          </View>
+          {/* Experience beside the rating. See `heroMeta`. */}
+          <Text allowFontScaling numberOfLines={1} style={styles.featuredMeta}>
+            {heroMeta}
           </Text>
-        ) : null}
-        {/* Reviews, experience and languages on one line, where two language
-            chips used to sit. See `heroMeta`. */}
-        <Text allowFontScaling numberOfLines={1} style={styles.featuredMeta}>
-          {heroMeta}
-        </Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -1340,33 +1361,6 @@ const RAIL_ITEM_HEIGHT =
  */
 const SEE_ALL_BLEED =
   (TOKENS.interaction.minTarget - TOKENS.typography.textLgSemiBold.lineHeight) / 2;
-
-/** How much shorter the hero card is than the 210dp it shipped at. */
-const HERO_HEIGHT_REDUCTION = TOKENS.space['2xl'];
-
-/** The hero card's frame height. */
-const HERO_HEIGHT = 210 - HERO_HEIGHT_REDUCTION;
-
-/**
- * The photo's height as a multiple of the card's width — 4/3 scaled by the
- * SAME factor the frame shrank by.
- *
- * The magnification a face renders at is `frameHeight / photoHeight`: how much
- * of the photo the window shows. Shrinking the frame to 178dp while the photo
- * stayed pinned at `width * 4/3` cut that fraction from 43% to 36%, so the
- * same face filled more of a smaller box — Amit: "zoom out the photo to be in
- * perfect view in hero cards.. (too zoomed in for smaller carousel)".
- *
- * Scaling the photo's height by `HERO_HEIGHT / 210` restores the fraction the
- * 210dp card was tuned at, which is the zoom that was already right. The
- * shorter crop comes from the server (`sizedStorageImageUri` asks for this
- * height too), and it is a ~15% trim of a stored 3:4 image rather than a
- * short band cut from a tall one — the failure mode the `featuredPhoto` note
- * warns about needs the latter. 087 puts the face 34% down the stored crop; a
- * centred 15% trim moves it to ~31% of the shorter one, still well inside the
- * top 43% this frame shows.
- */
-const HERO_PHOTO_HEIGHT_RATIO = (4 / 3) * (HERO_HEIGHT / 210);
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
@@ -1606,22 +1600,28 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.textLgSemiBold,
       color: t.color.text.primary,
     },
-    // Card wraps the featured hero; Card owns borderRadius and overflow.
+    /*
+     * The picks strip: inset by the page's 16dp so the first card lines up with
+     * "Top profiles this week" above it, and `space.xs` between cards.
+     */
+    picksStrip: {
+      paddingHorizontal: TOKENS.space.md,
+      gap: HERO_CARD_GAP,
+    },
+    // Card wraps each pick; Card owns borderRadius and overflow. The box is
+    // stated here so a card is 150x200 before its photo arrives.
     featuredCard: {
-      marginHorizontal: TOKENS.space.md,
+      width: HERO_CARD_WIDTH,
+      height: HERO_CARD_HEIGHT,
     },
     featured: {
-      // 178, not 210: on the Redmi's default (unscrolled) Home, the 210dp hero
-      // pushed the FIRST ProviderRow card's last line ("X reviews") underneath
-      // the fixed bottom tab bar (Amit: "at least first explore row card should
-      // be visible fully without getting cut off -- carousel size down?").
-      // Measured on-device with a screenshot at the app's default scroll
-      // position: the clipped line needed about 30dp of headroom back, so this
-      // gives up one `space['2xl']` (32dp) rather than an unmeasured guess.
-      height: HERO_HEIGHT,
+      // PORTRAIT 3:4, 150x200 (Amit, 2026-09-26: the landscape hero cropped
+      // faces). Was a 178dp-tall band the width of the column. The 178 itself
+      // was a measured fix (the 210 hid the first row's last line under the tab
+      // bar); 200 is 22dp taller, which is why the first-row check below is on
+      // the S22 list for this change.
+      height: HERO_CARD_HEIGHT,
       justifyContent: 'flex-end',
-      // The photo is taller than this frame and anchored to its top; without
-      // the clip it would spill over the card below. See `featuredPhoto`.
       overflow: 'hidden',
     },
     /*
@@ -1632,38 +1632,36 @@ const makeStyles = (t: Theme) =>
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     },
     /*
-     * A PHOTO is anchored to the TOP instead, at its natural 3:4, and the frame
-     * clips the rest.
-     *
-     * Supabase's image transform only offers `resize=cover`, which crops from
-     * the CENTRE and has no gravity parameter. A 900x1200 portrait squeezed
-     * into a 210dp landscape band centre-crops to the middle third — which on
-     * the first astrologer build was a suit and a chin, with the head cut off
-     * above the frame. The listeners never showed it because their crops happen
-     * to put the face near the middle.
-     *
-     * So the window is cut here rather than asked for: the photo keeps a tall
-     * ratio and the parent's overflow does the cutting. The height is
-     * `HERO_PHOTO_HEIGHT_RATIO` — 4/3 scaled by how much the frame shrank, so
-     * the fraction of the photo this window shows (and therefore the zoom the
-     * face renders at) is the one the 210dp card was tuned at, not a tighter
-     * one. See that constant for the arithmetic and for where the face lands.
+     * The photo FILLS the card. The card is 3:4 and so is every stored avatar
+     * (087), so filling it is the whole selfie: no top anchoring, no taller
+     * request windowed down, which is what the landscape band needed because
+     * Supabase's `resize=cover` crops from the centre and took heads off.
      */
     featuredPhoto: {
-      position: 'absolute', top: 0, left: 0, right: 0,
-      aspectRatio: 1 / HERO_PHOTO_HEIGHT_RATIO,
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     },
+    /*
+     * FULL STRENGTH UNDER ALL OF THE TEXT, then a fade. The text block (12 of
+     * padding, the name's 24, 4, the pill row's 20, 12) is 72dp, 36% of the
+     * card, so the scrim holds its 62% to 38% of the height and fades out by
+     * 68%, above which the face sits (~34% from the top). scripts/check-contrast.mjs
+     * measures the text against that 62%, which is now true of every line
+     * rather than only of the bottom edge.
+     */
     featuredScrim: {
       position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-      experimental_backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0) 55%)',
+      experimental_backgroundImage:
+        'linear-gradient(0deg, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.62) 38%, rgba(0,0,0,0) 68%)',
     },
+    // The fallback initial, scaled with the card: 160 on a 178dp band, 120
+    // on a 200dp portrait, so it still reads as a watermark and not a clip.
     featuredWatermark: {
       position: 'absolute',
-      right: 16,
-      top: -12,
+      right: TOKENS.space.xs,
+      top: -TOKENS.space.xs,
       fontFamily: TOKENS.face.semibold,
-      fontSize: 160,
-      lineHeight: 190,
+      fontSize: 120,
+      lineHeight: 144,
       color: 'rgba(255,255,255,0.16)',
     },
     /*
@@ -1678,12 +1676,11 @@ const makeStyles = (t: Theme) =>
      * text/onAccent measures 5.19:1 light / 6.13:1 dark.
      * https://developer.android.com/guide/topics/ui/accessibility/apps
      */
+    // In flow now, first on the bottom row, and one padding step smaller for
+    // a 150dp card: 8 across and 2 down around the 16dp line, a 20dp pill.
     featuredBadge: {
-      position: 'absolute',
-      top: TOKENS.space.md,
-      left: TOKENS.space.md,
-      paddingHorizontal: TOKENS.space.sm,
-      paddingVertical: TOKENS.space['2xs'],
+      paddingHorizontal: TOKENS.space.xs,
+      paddingVertical: TOKENS.space.hair,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.accentStrong,
@@ -1693,20 +1690,25 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.onAccent,
     },
     featuredBody: {
-      padding: TOKENS.space.md,
+      padding: TOKENS.space.sm,
       gap: TOKENS.space['2xs'],
+    },
+    featuredMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
     },
     featuredNameRow: {
       flexDirection: 'row',
       alignItems: 'baseline',
     },
     featuredName: {
-      ...TOKENS.typography.headlineSmallEmphasized,
+      ...TOKENS.typography.titleMediumEmphasized,
       color: '#FFFFFF',
       flex: 1,
     },
     featuredAge: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.bodySmall,
       color: 'rgba(255,255,255,0.82)',
     },
     /*
@@ -1722,8 +1724,8 @@ const makeStyles = (t: Theme) =>
      */
     featuredNotify: {
       position: 'absolute',
-      top: TOKENS.space.md,
-      right: TOKENS.space.md,
+      top: TOKENS.space.xs,
+      right: TOKENS.space.xs,
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.hair,
@@ -1734,21 +1736,18 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.accentStrong,
     },
     // Presence dot, top-right of the card: sage with a white ring so it stays
-    // legible over any photo.
+    // legible over any photo. 12dp with an 8dp inset on the 150dp card (was
+    // 14 at 16 on the column-wide band): the ring stays 2dp, the fill 8.
     featuredOnline: {
       position: 'absolute',
-      top: TOKENS.space.md,
-      right: TOKENS.space.md,
-      width: 14,
-      height: 14,
-      borderRadius: 7,
+      top: TOKENS.space.xs,
+      right: TOKENS.space.xs,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
       backgroundColor: t.color.state.available,
       borderWidth: 2,
       borderColor: '#FFFFFF',
-    },
-    featuredTagline: {
-      ...TOKENS.typography.bodyMedium,
-      color: 'rgba(255,255,255,0.92)',
     },
     /*
      * The hero's meta line, where two language chips used to be. `onMedia` is
@@ -1760,7 +1759,7 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodySmall,
       color: '#FFFFFF',
       opacity: 0.85,
-      paddingTop: TOKENS.space['2xs'],
+      flexShrink: 1,
     },
     rows: {
       paddingTop: TOKENS.space.sm,

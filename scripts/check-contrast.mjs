@@ -526,12 +526,15 @@ for (const mode of ['Light', 'Dark']) {
  *
  * Hand-maintained, not derived from a token: these are literal style values
  * in HomeScreen.tsx (`featuredScrim`/`featuredName`/`featuredAge`/
- * `featuredTagline`/`featuredMeta`), the same reason `bubble/meta`'s rgba is
+ * `featuredMeta`), the same reason `bubble/meta`'s rgba is
  * named as a gap above rather than parsed — this file's token reader only
  * takes six-digit hex from design/tokens.json. If any of these five values
  * change in HomeScreen.tsx, this block has to change with them by hand.
  */
-const SCRIM_OPACITY_AT_TEXT = 0.62; // featuredScrim's 0% stop, where featuredBody sits
+// featuredScrim holds 0.62 from 0% to 38% of the card's height (2026-09-26,
+// the 150x200 portrait card), and the whole text block is the bottom 36%, so
+// every line sits on the full 62% rather than only the bottom edge.
+const SCRIM_OPACITY_AT_TEXT = 0.62;
 const WORST_CASE_PHOTO = '#ffffff'; // whitest a photo can be behind the scrim
 
 const composite = (fgHex, alpha, bgHex) => {
@@ -559,22 +562,22 @@ const scrimOverWorstPhoto = composite(
 );
 
 const HERO_TEXT_PAIRS = [
+  /*
+   * The name took the row's name role on the portrait card: 16px Bold is NOT
+   * large text (large is >=18.66px bold), so it needs the full 4.5 where the
+   * old 24px name needed 3. The tagline is gone from the card (it held about
+   * 18 characters at 126dp), so it is gone from here.
+   */
   {
-    what: 'featuredName (headlineSmallEmphasized, 24px Bold — large text)',
+    what: 'featuredName (titleMediumEmphasized, 16px Bold — not large text)',
     color: '#ffffff',
     alpha: 1,
-    target: 3,
-  },
-  {
-    what: 'featuredAge (titleMediumEmphasized, 16px Bold — not large text)',
-    color: '#ffffff',
-    alpha: 0.82,
     target: 4.5,
   },
   {
-    what: 'featuredTagline (bodyMedium, 14px Regular)',
+    what: 'featuredAge (bodySmall, 12px Regular)',
     color: '#ffffff',
-    alpha: 0.92,
+    alpha: 0.82,
     target: 4.5,
   },
   {

@@ -1023,21 +1023,52 @@ describe('the week\'s carousel says the rating and nothing else', () => {
     expect(featured).toContain('displayRating(provider)');
   });
 
-  it('carries experience and reviews inline, without growing the card', () => {
+  it('carries experience inline with the rating, at the bottom of the card', () => {
     /*
      * Amit, 2026-09-08: "carousle cards should laos have experience and ratings
      * inline -- place them smartly and space efficiently".
      *
-     * One text line REPLACING the two language chips, not a third row added
-     * under them. The chips cost 32dp of a 210dp card to say two words; the
-     * dot-separated line carries reviews, experience AND languages in 16dp. The
-     * card did not get taller, which is where the "space efficiently" is.
+     * NARROWED 2026-09-26 for the 150dp portrait card (Amit: "name + F-28 and
+     * rating at the bottom"). The line used to carry reviews, years and
+     * languages, ~250dp of text; the card has 126dp inside its padding with the
+     * rating pill on the same row, so the years are what is drawn beside it and
+     * the review count is spoken (the label still says "from N reviews").
      */
     expect(featured).toContain('heroMeta');
-    expect(featured).toContain('formatReviewCount(rating.count)');
     expect(featured).toContain('seededExperienceYears(provider.id)');
     expect(featured).not.toMatch(/<MetaChip[^>]*tone="onMedia"/);
     expect(featured).toMatch(/numberOfLines=\{1\}[\s\S]{0,80}featuredMeta/);
+    // The pill and the years share ONE row, under the name, at the bottom.
+    const body = featured.slice(featured.indexOf('styles.featuredBody'));
+    const row = body.slice(body.indexOf('styles.featuredMetaRow'));
+    expect(body.indexOf('styles.featuredName')).toBeLessThan(body.indexOf('styles.featuredMetaRow'));
+    expect(row).toContain('styles.featuredBadge');
+    expect(row).toContain('{heroMeta}');
+    expect(home.slice(home.indexOf('featuredBadge: {'), home.indexOf('featuredBadgeText: {'))).not.toContain(
+      "position: 'absolute'",
+    );
+    // The tagline is spoken, no longer drawn: ~18 characters fit at 126dp.
+    expect(featured).not.toContain('styles.featuredTagline');
+    expect(featured).toContain('tagline,');
+  });
+
+  it('is a portrait 3:4 card the photo fills, so the selfie shows whole', () => {
+    // Amit, 2026-09-26: the landscape hero cropped faces. 087 stores avatars at
+    // 3:4, so a 150x200 request is a resize and the photo fills the frame.
+    expect(featured).toContain('HERO_CARD_HEIGHT,');
+    const photo = home.slice(home.indexOf('featuredPhoto: {'), home.indexOf('featuredScrim: {'));
+    expect(photo).toContain('bottom: 0');
+    expect(photo).not.toContain('aspectRatio');
+    expect(home).not.toContain('HERO_PHOTO_HEIGHT_RATIO');
+    const card = home.slice(home.indexOf('featuredCard: {'), home.indexOf('featured: {'));
+    expect(card).toContain('width: HERO_CARD_WIDTH');
+    expect(card).toContain('height: HERO_CARD_HEIGHT');
+    // The skeleton draws the same cards, so nothing jumps when the data lands.
+    const skeleton = withoutComments(read('src/components/DirectorySkeleton.tsx'));
+    expect(skeleton).toContain('width={HERO_CARD_WIDTH}');
+    expect(skeleton).toContain('height={HERO_CARD_HEIGHT}');
+    expect(skeleton).toContain('gap: HERO_CARD_GAP');
+    expect(skeleton).not.toContain('height={190}');
   });
 
   it('still announces what the number means', () => {

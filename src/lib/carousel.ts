@@ -1,3 +1,5 @@
+import { TOKENS } from '../theme/tokens';
+
 /**
  * The geometry and the index arithmetic of a centred, endless hero carousel.
  *
@@ -107,4 +109,34 @@ export function heroSlots(count: number): { key: string; index: number }[] {
 /** Looping needs at least two items; one item wrapping to itself is a still image. */
 export function heroCanLoop(count: number): boolean {
   return count >= 2;
+}
+
+/**
+ * THE HOME PICKS STRIP: portrait "story" cards, not the centred hero above.
+ *
+ * Amit, 2026-09-26: the hero crops faces, so the cards go PORTRAIT 3:4 and the
+ * selfie shows whole, about 2.3 cards across a 384dp screen, like the
+ * reference's story cards. That is Android's UNCONTAINED carousel, not its
+ * hero: "items that are a single size and flow past the edge of the screen",
+ * sized by an exact `itemWidth` rather than derived from the column
+ * (https://developer.android.com/develop/ui/compose/components/carousel). So
+ * the width is a fixed dp and a wider screen shows more cards, not bigger
+ * ones. The centred hero geometry above stays for the profile photo pager.
+ *
+ * 3:4 because that is the crop migration 087 stores every avatar at, so a
+ * 150x200 request is a resize, not a crop: the whole selfie, face ~34% down.
+ */
+export const HERO_CARD_WIDTH = 150;
+export const HERO_CARD_HEIGHT = (HERO_CARD_WIDTH * 4) / 3;
+/** Card-to-card gap, the `space.xs` the centred hero used. */
+export const HERO_CARD_GAP = TOKENS.space.xs;
+
+/**
+ * How many cards a column shows at rest, the strip inset from the leading edge:
+ * (column - inset) / (width + gap). At 384dp with the 16dp page inset that is
+ * 368 / 158 = 2.33, the "about 2.3" asked for; 2.18 on a 360dp phone, 2.51 on
+ * a 412dp one. Always a fraction, which is what tells the eye the strip scrolls.
+ */
+export function heroCardsVisible(columnWidth: number, inset: number): number {
+  return (columnWidth - inset) / (HERO_CARD_WIDTH + HERO_CARD_GAP);
 }

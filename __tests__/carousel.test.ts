@@ -1,5 +1,10 @@
+import { TOKENS } from '../src/theme/tokens';
 import {
+  HERO_CARD_GAP,
+  HERO_CARD_HEIGHT,
+  HERO_CARD_WIDTH,
   HERO_COPIES,
+  heroCardsVisible,
   heroCanLoop,
   heroFocusedIndex,
   heroInitialOffset,
@@ -89,5 +94,30 @@ describe('carousel arithmetic: endless in both directions', () => {
     expect(heroCanLoop(2)).toBe(true);
     expect(heroCanLoop(3)).toBe(true);
     expect(heroRecentre(0, pitch, 0)).toBeNull();
+  });
+});
+
+describe('the Home picks are portrait story cards, 2.3 across a 384dp phone', () => {
+  it('is 3:4, the crop every avatar is stored at, so the selfie shows whole', () => {
+    // Migration 087 stores avatars at 3:4; a 3:4 request is a resize, not a
+    // crop, which is the whole point (Amit, 2026-09-26: the hero cropped faces).
+    expect(HERO_CARD_WIDTH).toBe(150);
+    expect(HERO_CARD_HEIGHT).toBe(200);
+    expect(HERO_CARD_HEIGHT / HERO_CARD_WIDTH).toBeCloseTo(4 / 3, 10);
+    expect(HERO_CARD_GAP).toBe(TOKENS.space.xs);
+  });
+
+  it('shows about 2.3 cards at 384dp, and always a fraction', () => {
+    const inset = TOKENS.space.md;
+    expect(heroCardsVisible(384, inset)).toBeCloseTo(2.33, 2);
+    // A fixed item width (Android's uncontained carousel): wider phones show
+    // more cards rather than bigger ones, and every common width shows a
+    // partial card at the edge, which is the cue that the strip scrolls.
+    for (const w of [360, 384, 393, 412]) {
+      const visible = heroCardsVisible(w, inset);
+      expect(visible).toBeGreaterThan(2);
+      expect(visible).toBeLessThan(3);
+      expect(visible % 1).toBeGreaterThan(0.1);
+    }
   });
 });

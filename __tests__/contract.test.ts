@@ -7187,12 +7187,14 @@ describe('search opens the way the reference app opens it, and the week has a ca
     expect(home).not.toContain("data={trimmed === '' ? [] : results}");
   });
 
-  it('spotlights three profiles in an M3 hero carousel, not one card', () => {
+  it('spotlights three profiles in a portrait story strip, not one card', () => {
     /*
-     * Android's carousel guidance names hero for "spotlighting content that you
-     * want to emphasize" and describes it as one large image with "a peek of
-     * what's next". Three items, snapped to the item pitch, with the peek
-     * derived from the column so it holds on a 320dp phone.
+     * Three picks, snapped one card at a time. Since 2026-09-26 an Android
+     * UNCONTAINED carousel rather than its hero: "items that are a single size
+     * and flow past the edge of the screen", at an exact item width
+     * (https://developer.android.com/develop/ui/compose/components/carousel),
+     * 150x200 portrait cards about 2.3 across (Amit: the landscape hero cropped
+     * faces).
      *
      * NOT the banned WordCarousel: that was a TEXT fade at 10% alpha which
      * could not reach AA at body size, and it auto-advanced, which is how it
@@ -7205,16 +7207,28 @@ describe('search opens the way the reference app opens it, and the week has a ca
     expect(home).toContain('const TOP_PICKS = 3');
     expect(home).toContain('testID="top-picks"');
     expect(home).toContain('Top profiles this week');
-    expect(home).toContain('<HeroCarousel');
     expect(home).toContain('.slice(0, TOP_PICKS)');
     // The picks are lifted out of the list below, so nobody appears twice.
     expect(home).toContain('const shown = new Set(topPicks.map(p => p.id))');
 
     /*
-     * Centred, peeking BOTH ways, and endless (Amit, 2026-09-06). The geometry
-     * and the wrap arithmetic live in lib/carousel.ts so they can be tested;
-     * the component only owns the ScrollView.
+     * Start-aligned and FINITE now. The endless wrap (Amit, 2026-09-06) held
+     * three copies of the list, and with three picks and 2.3 in view the first
+     * card would sit beside the last: the same face twice. The snap stays.
      */
+    const strip = home.slice(home.indexOf('testID="top-picks"') - 400, home.indexOf('testID="top-picks"'));
+    expect(strip).toContain('snapToInterval={HERO_CARD_WIDTH + HERO_CARD_GAP}');
+    expect(strip).toContain('snapToAlignment="start"');
+    expect(strip).toContain('disableIntervalMomentum');
+    expect(home).not.toContain('<HeroCarousel');
+    // Still no timer: nothing moves under a still finger.
+    expect(home).not.toMatch(/carouselDwell/);
+
+    /*
+     * The centred, endless hero lives on for the profile photo pager, and its
+     * wrap arithmetic keeps its guards.
+     */
+    expect(read('src/screens/ProviderDetailScreen.tsx')).toContain('HeroCarousel');
     const carousel = withoutComments(read('src/components/HeroCarousel.tsx'));
     expect(carousel).toContain('snapToInterval={pitch}');
     expect(carousel).toContain('heroRecentre(');
@@ -7223,8 +7237,6 @@ describe('search opens the way the reference app opens it, and the week has a ca
     // would otherwise strand the strip in an outer copy.
     expect(carousel).toContain('onMomentumScrollEnd={onSettled}');
     expect(carousel).toContain('onScrollEndDrag={onSettled}');
-    // Endless is a swipe that never stops, NOT a timer. The banned component
-    // advanced itself, which is how it ran backwards through three green builds.
     expect(carousel).not.toMatch(
       /setInterval|setTimeout|withRepeat|carouselDwell/,
     );

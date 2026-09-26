@@ -10,6 +10,14 @@ import {
   ROW_CTA_VISUAL_HEIGHT,
 } from './ProviderRow';
 import { STARS_WIDTH } from './RatingStars';
+import { HERO_CARD_GAP, HERO_CARD_HEIGHT, HERO_CARD_WIDTH } from '../lib/carousel';
+
+/**
+ * How many pick placeholders to draw. The real strip holds three and shows
+ * about 2.3; three here means the partial card at the edge is there too, so the
+ * skeleton says "this scrolls" the way the strip will.
+ */
+const HERO_PLACEHOLDERS = 3;
 
 /**
  * The CTA placeholder's width. The real button has no fixed width any more (it
@@ -36,7 +44,20 @@ export function DirectorySkeleton({ rows = 5 }: { rows?: number }) {
   const styles = useStyles(makeStyles);
   return (
     <View style={styles.root} accessible={false} pointerEvents="none">
-      <Skeleton height={190} radius={TOKENS.radius.lg} style={styles.hero} />
+      {/* The picks strip: the same 150x200 portrait cards, inset and gapped
+          like the real one (lib/carousel.ts), so the rows below start where
+          they will once the data lands. Was one column-wide 190dp block for a
+          178dp band. */}
+      <View style={styles.hero}>
+        {Array.from({ length: HERO_PLACEHOLDERS }).map((_, i) => (
+          <Skeleton
+            key={i}
+            width={HERO_CARD_WIDTH}
+            height={HERO_CARD_HEIGHT}
+            radius={TOKENS.radius.lg}
+          />
+        ))}
+      </View>
       {Array.from({ length: rows }).map((_, i) => (
         <View key={i} style={styles.card}>
           {/* Left column: the ringed avatar, the star row, the review count. */}
@@ -81,9 +102,15 @@ const makeStyles = (t: Theme) =>
     root: {
       paddingTop: TOKENS.space.sm,
     },
+    // A row that clips rather than wraps, like the ScrollView it stands in for.
+    // `2xl` under it is the real screen's spacer between the strip and the
+    // first row.
     hero: {
-      marginHorizontal: TOKENS.space.md,
-      marginBottom: TOKENS.space.lg,
+      flexDirection: 'row',
+      gap: HERO_CARD_GAP,
+      paddingHorizontal: TOKENS.space.md,
+      marginBottom: TOKENS.space['2xl'],
+      overflow: 'hidden',
     },
     // The card's own box, so the skeleton occupies exactly the height the list
     // will need and nothing shifts when the data lands.
