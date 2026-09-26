@@ -130,7 +130,7 @@ const PAIRS = [
    * ramp (design/tokens.json `color.ramp`, Bluesky's alf model). Every fill is
    * step 500 in both modes, so the rows below that used to exist to PROHIBIT a
    * label on the pale "bright" coral are now rows that PERMIT one: white on
-   * step 500 is 5.27:1, the same number in light and dark. What changed shape
+   * step 500 is 5.19:1, the same number in light and dark. What changed shape
    * is the ink: accent text is 500 light / 300 dark, text on a tint is its own
    * role (800 / 300), and the own bubble takes white.
    */
@@ -259,7 +259,7 @@ const PAIRS = [
   },
   /*
    * The outline of ProviderRow's CTA, which sits on the card fill and is that
-   * control's only boundary. bg/accent there is 2.87:1 in dark, under 3, so the
+   * control's only boundary. bg/accent there is 2.91:1 in dark, under 3, so the
    * stroke takes the accent INK instead: 6.22:1.
    */
   {

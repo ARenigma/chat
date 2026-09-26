@@ -971,7 +971,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderCurve: 'continuous',
     borderWidth: 1,
     // The accent INK, not the fill: this outline is the control's only
-    // boundary and it sits on the card. bg/accent (step 500) there is 2.87:1
+    // boundary and it sits on the card. bg/accent (step 500) there is 2.91:1
     // in dark, under the 3:1 non-text floor; text/accent (step 300) is 6.22:1.
     borderColor: t.color.text.accent,
     backgroundColor: t.color.bg.raised,
@@ -979,9 +979,9 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   /*
    * `text/accent`, NOT `bg/accent`. `bg/accent` is a FILL colour, what a button
    * is painted, with `text/onAccent` on top; `text/accent` is the ink for coral
-   * text on a surface. In light both are ramp step 500 (5.27:1 on the card); in
+   * text on a surface. In light both are ramp step 500 (5.19:1 on the card); in
    * dark the ink is step 300, 6.22:1 on this card, where step 500 as text would
-   * be 2.87:1. Registered on bg/raised in scripts/check-contrast.mjs, as the
+   * be 2.91:1. Registered on bg/raised in scripts/check-contrast.mjs, as the
    * label and as the outline above.
    */
   ctaLabel: {

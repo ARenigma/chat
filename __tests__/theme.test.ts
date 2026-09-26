@@ -2061,7 +2061,7 @@ describe('accent budget is enforced in code, not just documented', () => {
        * ramp has the same problem: the ramp is authored against bg/base, not
        * against a coral fill. Since 2026-09-26 your bubble IS the step-500
        * coral, so the rule on it is the bubble's white ink, and the coral rule
-       * lives only in the peer's bubble as `text/accent` (5.27:1 light / 5.67:1
+       * lives only in the peer's bubble as `text/accent` (5.19:1 light / 5.67:1
        * dark). Both registered in check-contrast.mjs.
        *
        * And it is the budget being spent on what the budget is FOR. A reply
@@ -2500,7 +2500,7 @@ describe('accent budget is enforced in code, not just documented', () => {
       '    borderColor: t.color.bg.accent,', // ring, on every avatar
       '    color: t.color.text.accent,', // the rate inside the CTA
       // The CTA outline takes the accent INK since 2026-09-26: it is the
-      // control's only boundary on the card, and step 500 there is 2.87:1 in
+      // control's only boundary on the card, and step 500 there is 2.91:1 in
       // dark against the 3:1 non-text floor (step 300 is 6.22:1).
       '    borderColor: t.color.text.accent,', // the CTA outline
       '    color: t.color.text.accent,', // the CTA label
@@ -3247,7 +3247,7 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
 
   it('dark incoming bubble is neutral; outgoing bubble is the brand coral', () => {
     /*
-     * 2026-09-26: the outgoing bubble is ramp step 500 (#C04018) in BOTH modes,
+     * 2026-09-26: the outgoing bubble is ramp step 500 (#C2401F) in BOTH modes,
      * the brand fill carrying white, the way Bluesky's DM bubble is
      * primary_500. The history below is why it was coral at all.
      */
@@ -3263,7 +3263,7 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
      * disabled fills — it simply is not the peer bubble any more.
      */
     expect(DARK.color.bubble.theirs).toBe('#232E3B');
-    expect(DARK.color.bubble.mine).toBe('#C04018');
+    expect(DARK.color.bubble.mine).toBe('#C2401F');
     expect(DARK.color.bg.sunken).toBe('#232E3B');
   });
 
@@ -3276,12 +3276,12 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
      * blue #5FA3DE / #64B5EF.
      *
      * 2026-09-26: one ramp. The dark FILL is the same step 500 as light
-     * (#C04018, the logo), not a separate brighter dark-page coral; accent TEXT
-     * in dark is step 300 (#DE947F), the ramp's lighter step that clears AA on
+     * (#C2401F, the logo), not a separate brighter dark-page coral; accent TEXT
+     * in dark is step 300 (#DF9481), the ramp's lighter step that clears AA on
      * the dark card as well as the base. Was #FF8457 / #FFAD8F.
      */
-    expect(DARK.color.bg.accent).toBe('#C04018');
-    expect(DARK.color.text.accent).toBe('#DE947F');
+    expect(DARK.color.bg.accent).toBe('#C2401F');
+    expect(DARK.color.text.accent).toBe('#DF9481');
     // The retired brand greens must not creep back in as the accent.
     expect(DARK.color.bg.accent).not.toBe('#21C063');
     expect(DARK.color.bg.accent).not.toBe('#25D366');
@@ -3555,7 +3555,7 @@ describe('the brand stays coral, and coral is a hue', () => {
    * The anti-brown floor, take two, was a LIGHTNESS floor (L50) on `bg/accent`
    * alone, the token a member points at and calls "our coral". RETIRED
    * 2026-09-26, not loosened: the identity colour is now the logo coral itself,
-   * #C04018 at L42, ramp step 500 (Amit, approved from a mockup), and a floor
+   * #C2401F at L42, ramp step 500 (Amit, approved from a mockup), and a floor
    * that the logo fails is a floor measuring the wrong thing. What replaces it is
    * stronger: `bg/accent` must BE the logo value, asserted in the ramp suite
    * below, so it cannot drift muddy or pale by any amount. MIN_SAT above still
@@ -3620,7 +3620,7 @@ describe('every coral role is a step of the one ramp', () => {
    * Amit, 2026-09-26, approved from a mockup: the brand colour is coherent the
    * way Bluesky's alf makes it coherent. ONE hand-authored ramp
    * (design/tokens.json `color.ramp`, named like alf's `primary_*`), step 500 is
-   * the logo coral #C04018, and every coral role is PINNED to a step rather than
+   * the logo coral #C2401F, and every coral role is PINNED to a step rather than
    * given its own hex. The failure this exists to stop is the one the palette
    * had: five corals authored one at a time (#F26836, #C14B1F, #BD3E0F,
    * #FBDAD0, #FCE7E2), each tuned for its own pair, which added up to no
@@ -3648,7 +3648,7 @@ describe('every coral role is a step of the one ramp', () => {
   ] as const;
 
   it('puts the logo coral at step 500', () => {
-    expect(ramp.primary_500).toBe('#C04018');
+    expect(ramp.primary_500).toBe('#C2401F');
   });
 
   it('has the thirteen alf steps, lightest to darkest', () => {

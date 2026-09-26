@@ -21,9 +21,9 @@
   --bg-selected: #D1D1D6;
   --bg-inverse: #1C1C1E;
   --bg-scrim: #000000;
-  --bg-accent: #C04018;
-  --bg-accent-strong: #C04018;
-  --bg-accent-tint: #F9EAE6;
+  --bg-accent: #C2401F;
+  --bg-accent-strong: #C2401F;
+  --bg-accent-tint: #F9EBE7;
   --bg-listener: #D8E8FF;
   --bg-astrologer: #EBE0FF;
   --bg-positive: #DCE8E3;
@@ -34,9 +34,9 @@
   --text-tertiary: #78787D;
   --text-section: #6A6F72;
   --text-muted: #8E8E93;
-  --text-accent: #C04018;
+  --text-accent: #C2401F;
   --text-on-accent: #FFFFFF;
-  --text-on-accent-tint: #67210C;
+  --text-on-accent-tint: #692110;
   --text-on-state: #FFFFFF;
   --text-on-inverse: #FFFFFF;
   --text-positive: #1F4A3F;
@@ -46,7 +46,7 @@
   --text-on-token-strong: #FFFFFF;
   --border-hairline: #C6C6C8;
   --border-strong: #C7C7CC;
-  --border-accent: #C04018;
+  --border-accent: #C2401F;
   --state-available: #12946A;
   --state-danger: #733635;
   --mark-talk: #E0245E;
@@ -54,7 +54,7 @@
   --mark-vent: #C25E00;
   --mark-share: #7A3DE0;
   --mark-unwind: #0F7F62;
-  --bubble-mine: #C04018;
+  --bubble-mine: #C2401F;
   --bubble-theirs: #FFFFFF;
   --bubble-text: #FFFFFF;
   --bubble-meta: rgba(255,255,255,0.8);
@@ -150,9 +150,9 @@
   --bg-selected: #26303D;
   --bg-inverse: #E9EEF4;
   --bg-scrim: #000000;
-  --bg-accent: #C04018;
-  --bg-accent-strong: #C04018;
-  --bg-accent-tint: #351107;
+  --bg-accent: #C2401F;
+  --bg-accent-strong: #C2401F;
+  --bg-accent-tint: #361108;
   --bg-listener: #20507F;
   --bg-astrologer: #452F70;
   --bg-positive: #16302A;
@@ -163,9 +163,9 @@
   --text-tertiary: #687788;
   --text-section: #8896A4;
   --text-muted: #5C6B7A;
-  --text-accent: #DE947F;
+  --text-accent: #DF9481;
   --text-on-accent: #FFFFFF;
-  --text-on-accent-tint: #DE947F;
+  --text-on-accent-tint: #DF9481;
   --text-on-state: #0A1F14;
   --text-on-inverse: #151E27;
   --text-positive: #A8D8C8;
@@ -175,7 +175,7 @@
   --text-on-token-strong: #FFFFFF;
   --border-hairline: #303C4A;
   --border-strong: #3A4A5C;
-  --border-accent: #C04018;
+  --border-accent: #C2401F;
   --state-available: #3FD69B;
   --state-danger: #E39B92;
   --mark-talk: #E0245E;
@@ -183,7 +183,7 @@
   --mark-vent: #C25E00;
   --mark-share: #7A3DE0;
   --mark-unwind: #0F7F62;
-  --bubble-mine: #C04018;
+  --bubble-mine: #C2401F;
   --bubble-theirs: #232E3B;
   --bubble-text: #FFFFFF;
   --bubble-meta: rgba(255,255,255,0.8);

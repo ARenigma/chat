@@ -307,7 +307,7 @@ function assertQuotedAmount(order: RechargeResult, expectedTotalInr?: number): v
  * chrome carries the coral button and header rather than Cashfree's default blue.
  *
  * Values are the resolved brand tokens (design/tokens.json): bg/accent, ramp
- * step 500 #C04018 (the logo coral, white on it 5.27:1), on white with the app's
+ * step 500 #C2401F (the logo coral, white on it 5.27:1), on white with the app's
  * ink for text. Literal hexes because the SDK takes strings before any theme
  * exists; __tests__/contract.test.ts pins them to the token. The hosted page's business NAME and LOGO
  * are dashboard settings, not SDK-themable — see cf-brand follow-up.
@@ -316,9 +316,9 @@ function assertQuotedAmount(order: RechargeResult, expectedTotalInr?: number): v
  */
 function pappalCheckoutTheme(): CFTheme {
   return new CFThemeBuilder()
-    .setNavigationBarBackgroundColor('#C04018')
+    .setNavigationBarBackgroundColor('#C2401F')
     .setNavigationBarTextColor('#FFFFFF')
-    .setButtonBackgroundColor('#C04018')
+    .setButtonBackgroundColor('#C2401F')
     .setButtonTextColor('#FFFFFF')
     .setBackgroundColor('#FFFFFF')
     .setPrimaryTextColor('#1C1C1E')
