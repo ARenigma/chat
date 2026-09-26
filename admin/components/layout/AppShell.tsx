@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Menu } from 'lucide-react';
+import { List as Menu } from '@phosphor-icons/react/dist/ssr';
 import { SidebarNav } from './SidebarNav';
 import { Button } from '@/components/ui/button';
 

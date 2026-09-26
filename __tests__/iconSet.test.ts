@@ -20,10 +20,11 @@ const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
  * and font files are gone, and every name the app can ask for resolves to a
  * glyph the shipped font actually contains.
  *
- * SCOPE: the React Native app and its build scripts. `admin/` is a separate
- * Next.js app with its own package.json whose shadcn components import
- * `lucide-react`; it ships nothing to the APK and is not covered by this
- * decision or by this file.
+ * SCOPE: the React Native app, its build scripts, and since 2026-09-26
+ * ("phosphor all the way") the Next.js admin console too. The admin renders
+ * Phosphor through `@phosphor-icons/react` (SVG in the DOM is fine on the
+ * web); the app keeps the font, because the React Native port depends on the
+ * banned react-native-svg.
  */
 
 type IconsJson = {
@@ -291,5 +292,29 @@ describe('every icon name resolves to a glyph the font draws', () => {
     // Astrologer = filled moon-stars (or sparkle).
     expect(config.glyphs.listener).toBe('headset-fill');
     expect(config.glyphs.astrologer).toBe('moon-stars-fill');
+  });
+});
+
+describe('the admin console uses Phosphor too', () => {
+  const { readFileSync: rf, readdirSync: rd } = require('fs') as typeof import('fs');
+  const { join: j } = require('path') as typeof import('path');
+  const root = j(__dirname, '..', 'admin');
+  it('depends on @phosphor-icons/react, exactly pinned, and not lucide-react', () => {
+    const pkg = JSON.parse(rf(j(root, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(pkg.dependencies?.['@phosphor-icons/react']).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(JSON.stringify(pkg)).not.toMatch(/lucide/);
+    expect(rf(j(root, 'components.json'), 'utf8')).not.toMatch(/lucide/);
+  });
+  it('imports no lucide icon anywhere in its source', () => {
+    const offenders: string[] = [];
+    for (const dir of ['app', 'components', 'lib']) {
+      for (const f of rd(j(root, dir), { recursive: true }) as string[]) {
+        if (!/\.(ts|tsx)$/.test(f)) continue;
+        if (/lucide/.test(rf(j(root, dir, f), 'utf8'))) offenders.push(`${dir}/${f}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

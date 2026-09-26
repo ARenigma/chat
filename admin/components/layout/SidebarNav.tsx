@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Flag, Settings, ScrollText, LogOut, Users, Wallet } from 'lucide-react';
+import { SquaresFour as LayoutDashboard, Flag, Gear as Settings, Scroll as ScrollText, SignOut as LogOut, Users, Wallet } from '@phosphor-icons/react/dist/ssr';
 import {
   Sheet,
   SheetContent,

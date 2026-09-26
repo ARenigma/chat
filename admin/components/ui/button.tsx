@@ -64,7 +64,7 @@ function Button({
 export { Button, buttonVariants }
 
 // ── Pappal async button (shows spinner while pending) ─────────────────────
-import { Loader2 } from "lucide-react"
+import { CircleNotch as Loader2 } from "@phosphor-icons/react/dist/ssr"
 
 interface AsyncButtonProps extends React.ComponentProps<typeof Button> {
   pending?: boolean;
