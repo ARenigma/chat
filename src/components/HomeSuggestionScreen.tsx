@@ -1,6 +1,10 @@
 /**
- * Idle-home suggestion prompt — the "calling"-style full-screen overlay that
+ * Idle-home suggestion prompt — the "calling"-style full-screen surface that
  * appears when a member idles on Home (migration 126, HOME_SUGGESTIONS_ENABLED).
+ *
+ * HomeSuggestionScreen since navigation step 6: already props-driven (the
+ * suggestion in, Start and Not now out), renamed for the `HomeSuggestion`
+ * route it becomes in step 7. Home still mounts it over itself until then.
  *
  * Amit chose "X is calling" copy even though the provider did not initiate the
  * contact (2026-09-20). The visual is full-screen like ChatRequestScreen but uses
@@ -32,7 +36,7 @@ interface Props {
 
 const RING_FACE = 88;
 
-export function HomeSuggestionPrompt({ suggestion, onAccept, onDismiss }: Props) {
+export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();

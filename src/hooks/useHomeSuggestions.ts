@@ -4,7 +4,7 @@
  * Wired into HomeScreen when HOME_SUGGESTIONS_ENABLED = true. Manages:
  *   - idle timer (10 s before first prompt)
  *   - server fetch (`get_home_suggestions`)
- *   - per-prompt countdown (30 s per prompt, handled in HomeSuggestionPrompt)
+ *   - per-prompt countdown (30 s per prompt, handled in HomeSuggestionScreen)
  *   - AppState transitions (background cancels)
  *   - suppression when a real call or chat-ring is active
  *
@@ -26,6 +26,14 @@ import {
 interface Options {
   /** Suppressed while a real call or chat-request ring is active. */
   hasActiveCallOrRing: boolean;
+  /**
+   * Whether Home is the screen the member is on. The campaign's HOME_MOUNT and
+   * HOME_UNMOUNT follow it rather than the mount (nav-migration §5): under the
+   * navigator Home stays mounted beneath a pushed chat, and an idle timer
+   * running there would open a prompt over the chat. The old tree passes
+   * nothing, so this is `true` and the events follow the mount as before.
+   */
+  focused?: boolean;
   /** Navigate to the provider's chat thread on accept. */
   onOpenConversation: (providerId: string) => void;
 }
@@ -40,6 +48,7 @@ interface Result {
 export function useHomeSuggestions({
   hasActiveCallOrRing,
   onOpenConversation,
+  focused = true,
 }: Options): Result {
   const [state, setState] = useState<CampaignState>(INITIAL_STATE);
   const [suggestions, setSuggestions] = useState<HomeSuggestion[]>([]);
@@ -54,11 +63,16 @@ export function useHomeSuggestions({
     setState(prev => transitionCampaign(prev, event));
   }, []);
 
-  // Mount/unmount — called by HomeScreen's useEffect.
+  // Home shown / Home left. Keyed on `focused`, so a blur is a HOME_UNMOUNT
+  // and a return is a fresh HOME_MOUNT, exactly as an unmount and a remount
+  // were in the old tree.
   useEffect(() => {
+    if (!focused) {
+      return;
+    }
     dispatch({ type: 'HOME_MOUNT' });
     return () => dispatch({ type: 'HOME_UNMOUNT' });
-  }, [dispatch]);
+  }, [focused, dispatch]);
 
   // AppState transitions.
   useEffect(() => {

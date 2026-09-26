@@ -60,7 +60,7 @@ recorded here so a future agent does not re-open it without a new fact.
    `WalletLayer`, `useScreenEnter`/`screenOut`, `navDirection`, `homeShift` /
    `revealHome`, `topLevelIn`/`topLevelOut`, the `transitioning` lock,
    `AfterPaint` deferrals, and the two hand-rolled full-screen overlays (the
-   ChatRing layer and HomeSuggestionPrompt). These become routes or are removed.
+   ChatRing layer and HomeSuggestionPrompt, now HomeSuggestionScreen). These become routes or are removed.
    Kept under animate-expo: in-screen content motion (search, sheets, menus,
    press feedback, the bar pill, onboarding steps, Apply phases).
 

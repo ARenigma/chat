@@ -9018,3 +9018,26 @@ describe('navigation step 6: provider split', () => {
     }
   });
 });
+
+describe('navigation step 6: Home waits for focus', () => {
+  it('gates the idle campaign, the tour and the spotlight on focus, in guards and deps', () => {
+    const hook = withoutComments(read('src/hooks/useHomeSuggestions.ts'));
+    expect(hook).toMatch(/if \(!focused\) \{\s*return;\s*\}\s*dispatch\(\{ type: 'HOME_MOUNT' \}\)/);
+    expect(hook).toContain('}, [focused, dispatch]);');
+    const home = withoutComments(read('src/screens/HomeScreen.tsx'));
+    expect(home).toContain('useHomeSuggestions({ hasActiveCallOrRing: hasActiveCall, onOpenConversation, focused })');
+    expect(home).toMatch(/if \(!focused \|\| loading \|\| balance === null \|\| featured === null/);
+    expect(home).toContain('}, [focused, loading, balance, featured, searching, tourComplete, firstUser]);');
+    expect(home).toMatch(/if \(!focused \|\| loading \|\| balance === null \|\| searching \|\| tourSeen/);
+    expect(home).toContain('}, [focused, loading, balance, searching, tourSeen, firstUser, startTour]);');
+    // Defaults keep the old tree as it was.
+    expect(home).toContain('focused = true,');
+    expect(hook).toContain('focused = true,');
+  });
+
+  it('renders the suggestion as a props-driven screen', () => {
+    const screen = withoutComments(read('src/components/HomeSuggestionScreen.tsx'));
+    expect(screen).toContain('export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)');
+    expect(screen).not.toContain('useStore');
+  });
+});

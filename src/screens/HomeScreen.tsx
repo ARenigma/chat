@@ -82,7 +82,7 @@ import {
   searchResultsOut,
 } from '../theme/motion';
 import { HOME_SUGGESTIONS_ENABLED } from '../config';
-import { HomeSuggestionPrompt } from '../components/HomeSuggestionPrompt';
+import { HomeSuggestionScreen } from '../components/HomeSuggestionScreen';
 import { useHomeSuggestions } from '../hooks/useHomeSuggestions';
 
 /**
@@ -141,6 +141,13 @@ interface Props {
    * suppresses itself. Passed from App.tsx which owns the route state.
    */
   hasActiveCall?: boolean;
+  /**
+   * Whether Home is the screen on top (nav-migration §5). The idle campaign,
+   * the tour and the spotlight sheet all wait for it, so a cold start into
+   * `[Home, Chat]` opens nothing over the chat. Defaults to true: the old tree
+   * unmounts or covers Home the way it always has and passes nothing.
+   */
+  focused?: boolean;
 }
 
 /**
@@ -165,6 +172,7 @@ export function HomeScreen({
   onCallProvider,
   onSeeAllChats,
   hasActiveCall = false,
+  focused = true,
 }: Props) {
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
@@ -196,7 +204,7 @@ export function HomeScreen({
      compile-time false. The hook is unconditionally called (rule of hooks) but
      returns null suggestion when the flag is off. */
   const { currentSuggestion, onAccept: onAcceptSuggestion, onDismiss: onDismissSuggestion } =
-    useHomeSuggestions({ hasActiveCallOrRing: hasActiveCall, onOpenConversation });
+    useHomeSuggestions({ hasActiveCallOrRing: hasActiveCall, onOpenConversation, focused });
 
   const railPrefs = useRailPrefs();
   const startTour = useHomeTour(s => s.start);
@@ -559,7 +567,7 @@ export function HomeScreen({
   const tourComplete = tourSeen || !firstUser;
 
   useEffect(() => {
-    if (loading || balance === null || featured === null || searching) {
+    if (!focused || loading || balance === null || featured === null || searching) {
       return;
     }
     // Tutorial first, then the spotlight — always, on first sign-in. The tour is
@@ -589,17 +597,19 @@ export function HomeScreen({
     }
     const timer = setTimeout(() => setPotdVisible(true), 2000);
     return () => clearTimeout(timer);
-  }, [loading, balance, featured, searching, tourComplete, firstUser]);
+  }, [focused, loading, balance, featured, searching, tourComplete, firstUser]);
 
   useEffect(() => {
     // Product identity rule: first-user UI is balance-only. A stale local
     // `seen=false` value must never replay onboarding for a funded account.
-    if (loading || balance === null || searching || tourSeen || !firstUser) {
+    // And only while Home is on top: a tour pointing at a covered screen has
+    // nothing to point at (nav-migration §5).
+    if (!focused || loading || balance === null || searching || tourSeen || !firstUser) {
       return;
     }
     const timer = setTimeout(() => startTour(), 700);
     return () => clearTimeout(timer);
-  }, [loading, balance, searching, tourSeen, firstUser, startTour]);
+  }, [focused, loading, balance, searching, tourSeen, firstUser, startTour]);
 
   const dismissPotd = useCallback(() => {
     potdDismissedThisRun = true;
@@ -966,7 +976,7 @@ export function HomeScreen({
           all Home content (absolute position with zIndex) but below the app
           navigation layer (App.tsx's call ring is at zIndex 40). */}
       {HOME_SUGGESTIONS_ENABLED && currentSuggestion !== null ? (
-        <HomeSuggestionPrompt
+        <HomeSuggestionScreen
           suggestion={currentSuggestion}
           onAccept={onAcceptSuggestion}
           onDismiss={onDismissSuggestion}
