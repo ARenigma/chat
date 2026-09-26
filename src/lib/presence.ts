@@ -36,9 +36,11 @@
  * heartbeats, and the server derives `online` (open, a heartbeat within 75 s,
  * no explicit offline since) and `last_seen_at` (that event, to the minute) in
  * the directory and the inbox views, withheld for member peers and across a
- * block. `readPresence({ online, lastSeenAt, now })` renders them. The boolean
- * form is kept only until the call sites move to the server fields; see
- * `readPresence` for what it still says.
+ * block. `readPresence({ online, lastSeenAt, now })` renders them, and it is
+ * the only form: every dot and line reads the server's two fields, and the
+ * pre-155 boolean form (the master switch as the dot, "Here now" / "Away")
+ * was deleted once the last call site moved. The switch still decides what a
+ * member can DO (the Notify route); it no longer decides the dot.
  *
  * Kept pure and here rather than in a hook for the reason `datetime.ts` and
  * `transcript.ts` are: it is the part with rules in it, and it is testable
@@ -206,9 +208,9 @@ function lastSeenLine(
 }
 
 /**
- * The one reading of whether somebody is reachable.
+ * The one reading of whether somebody is here.
  *
- * With the server's reading (migration 155), `{ online, lastSeenAt, now }`:
+ * The server's reading (migration 155), `{ online, lastSeenAt, now }`:
  *   - `online` true lights the dot and says "Online";
  *   - otherwise a known last seen says "last seen today at 10:15 am",
  *     "last seen yesterday at ...", "last seen Monday at ..." inside a week and
@@ -219,33 +221,17 @@ function lastSeenLine(
  *     recent heartbeat reads as a last-seen line and never as "Online", because
  *     the server's `online` already requires the switch.
  *
- * With a bare boolean, the pre-155 reading of the master switch alone, kept
- * only so the call sites not yet moved to the server fields keep compiling and
- * say what they said: true is "Here now", false is "Away", nullish is nothing.
- * Delete that branch when the last of them moves.
+ * `here` is the dot and nothing else. A surface deciding whether a provider
+ * can be REACHED (Call versus Notify) reads `is_available`, not this: open but
+ * idle for more than 75 s is not online, and is still callable.
  */
-export function readPresence(
-  input: PresenceInput | boolean | null | undefined,
-): PresenceRead {
-  if (typeof input === 'object' && input !== null) {
-    if (input.online === true) {
-      return { here: true, line: 'Online' };
-    }
-    if (typeof input.lastSeenAt === 'string') {
-      const line = lastSeenLine(
-        input.lastSeenAt,
-        input.now,
-        input.utcOffsetMinutes,
-      );
-      return line === null ? NOTHING : { here: false, line };
-    }
-    return NOTHING;
+export function readPresence(input: PresenceInput): PresenceRead {
+  if (input.online === true) {
+    return { here: true, line: 'Online' };
   }
-  if (input === true) {
-    return { here: true, line: 'Here now' };
-  }
-  if (input === false) {
-    return { here: false, line: 'Away' };
+  if (typeof input.lastSeenAt === 'string') {
+    const line = lastSeenLine(input.lastSeenAt, input.now, input.utcOffsetMinutes);
+    return line === null ? NOTHING : { here: false, line };
   }
   return NOTHING;
 }
@@ -253,8 +239,8 @@ export function readPresence(
 /**
  * The same reading, lowercased, for an accessibility label that is read as part
  * of a sentence rather than on its own line. Separate from `line` so the visible
- * label can stay title-case without a screen reader announcing 'Here Now' mid
- * sentence.
+ * label can stay capitalised ("Online") without a screen reader announcing it
+ * capitalised mid sentence ("Priya, online, speaks Hindi").
  */
 export function presenceForSpeech(read: PresenceRead): string | null {
   return read.line === null ? null : read.line.toLowerCase();
