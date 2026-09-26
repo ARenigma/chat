@@ -231,20 +231,59 @@ describe('every icon name resolves to a glyph the font draws', () => {
     }
   });
 
-  it('fills every nav destination when it is selected', () => {
-    // FloatingToolbar passes `active={on}` to every tab (contract.test.ts pins
-    // that). A tab glyph without an `active` entry would select by colour
-    // alone, which is the state-by-hue failure the fill exists to prevent.
-    const toolbar = read('src/components/FloatingToolbar.tsx');
-    const tabs = [...toolbar.matchAll(/glyph: '(\w+)'/g)].map(m => m[1] ?? '');
-    expect(tabs.length).toBeGreaterThanOrEqual(4);
-    const unfilled = tabs.filter(t => !(t in ICON_GLYPH_ACTIVE));
-    expect(unfilled).toEqual([]);
-    // And the other two `active` call sites: the favourite heart and the
-    // rating star.
-    expect(Object.keys(ICON_GLYPH_ACTIVE)).toEqual(
-      expect.arrayContaining(['heart', 'star']),
+  it('has a fill for every name any call site renders `active`', () => {
+    /*
+     * A name with no ICON_GLYPH_ACTIVE entry does not fail: Icon falls back to
+     * the regular glyph, and the selected state quietly becomes colour-only,
+     * the state-by-hue failure the fill exists to prevent. Heroicons hid this
+     * by giving every icon a solid twin; the Phosphor map lists fills
+     * explicitly, so the call sites are SCANNED, never listed, and the next
+     * `active` on a new name fails here instead of on a device.
+     *
+     * A literal `name="x"` is checked directly. A computed name is resolved
+     * through the one pattern its file uses; a computed name in a file with no
+     * resolver below fails rather than being skipped.
+     */
+    const RESOLVERS: Record<string, RegExp> = {
+      // TABS: { key, glyph: 'home', ... }
+      'src/components/FloatingToolbar.tsx': /glyph: '(\w+)'/g,
+      // <TabButton icon="chat" ... />
+      'src/screens/ProviderHomeScreen.tsx': /<TabButton\s+icon="(\w+)"/g,
+    };
+    const names = new Map<string, string>(); // name -> first call site
+    let dynamicSites = 0;
+    for (const file of appSources().filter(f => f.includes('/src/'))) {
+      const src = readFileSync(file, 'utf8');
+      const rel = relative(ROOT, file);
+      for (const m of src.matchAll(/<Icon\b([\s\S]*?)\/>/g)) {
+        const props = m[1] ?? '';
+        if (!/\bactive\b/.test(props)) {
+          continue;
+        }
+        const literal = /\bname="(\w+)"/.exec(props);
+        if (literal?.[1] !== undefined) {
+          names.set(literal[1], rel);
+          continue;
+        }
+        const resolver = RESOLVERS[rel];
+        expect({ rel, resolvable: resolver !== undefined }).toEqual({
+          rel,
+          resolvable: true,
+        });
+        dynamicSites += 1;
+        for (const r of src.matchAll(resolver ?? /$^/g)) {
+          names.set(r[1] ?? '', rel);
+        }
+      }
+    }
+    // The scan found what is known to be there, so a regex that silently
+    // matched nothing cannot pass this.
+    expect(dynamicSites).toBe(2);
+    expect([...names.keys()]).toEqual(
+      expect.arrayContaining(['home', 'heart', 'person', 'chat', 'star']),
     );
+    const unfilled = [...names].filter(([n]) => !(n in ICON_GLYPH_ACTIVE));
+    expect(unfilled).toEqual([]);
   });
 
   it('draws the provider-type marks as filled Phosphor glyphs', () => {

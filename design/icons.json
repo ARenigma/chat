@@ -70,12 +70,14 @@
     "listener": "headset-fill",
     "astrologer": "moon-stars-fill"
   },
-  "$active": "semantic name -> the FILL glyph `<Icon active>` renders for that name. Only where a selected state genuinely fills: the four nav destinations (Material 3's filled active nav icon, https://m3.material.io/components/navigation-bar/guidelines), the favourite heart, and the rating star. A name with no entry here renders its regular glyph in both states and colour carries `active`, which is correct for a control whose selected state is not a fill. Heroicons gave every icon a solid twin whether anything used it or not; this list is the ones something uses, so the font carries only glyphs that render.",
+  "$active": "semantic name -> the FILL glyph `<Icon active>` renders for that name. Only where something renders the name active and the selected state genuinely fills: the member nav destinations in FloatingToolbar (home, heart, call, person) and the provider tab bar in ProviderHomeScreen (chat, heart, person) - Material 3's filled active nav icon, https://m3.material.io/components/navigation-bar/guidelines - plus the favourite heart, the rating star, and the TokenCounter wallet, which has passed `active` unconditionally since 2026-09-01 and so has always drawn the filled wallet. A name with no entry here renders its regular glyph in both states and colour carries `active`. Heroicons gave every icon a solid twin whether anything used it or not; this list is the ones something uses, so the font carries only glyphs that render. __tests__/iconSet.test.ts scans every `<Icon ... active>` call site and fails on a name missing from this map, because a missing fill does not error: it renders the regular glyph and the selected state silently becomes colour-only.",
   "active": {
     "home": "house-fill",
     "heart": "heart-fill",
     "call": "phone-fill",
     "person": "user-fill",
-    "star": "star-fill"
+    "chat": "chat-circle-fill",
+    "star": "star-fill",
+    "wallet": "wallet-fill"
   }
 }

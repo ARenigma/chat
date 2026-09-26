@@ -24,9 +24,11 @@ import {
  * its regular and fill weights under one naming scheme (`heart` /
  * `heart-fill`), so both glyphs sit in the same font and a selected icon is a
  * different character in the same `fontFamily`. The names that genuinely fill
- * when selected (the nav destinations, the favourite heart, the rating star)
- * have an `ICON_GLYPH_ACTIVE` entry; every other name draws its regular glyph
- * in both states and colour carries `active`. This replaces the three-face
+ * when selected (the nav destinations, the favourite heart, the rating star,
+ * the balance wallet) have an `ICON_GLYPH_ACTIVE` entry; every other name
+ * draws its regular glyph in both states and colour carries `active`, and
+ * __tests__/iconSet.test.ts fails if a call site passes `active` to a name
+ * with no fill. This replaces the three-face
  * setup (Heroicons outline + solid, a Lucide subset) and its per-icon family
  * table.
  */
