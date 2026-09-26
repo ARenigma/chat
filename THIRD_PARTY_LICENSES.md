@@ -31,7 +31,18 @@ to the license Telegram for Android ships under.
 
 ## Bluesky (social-app)
 
-Portions of `src/lib/routes/helpers.ts` are adapted from the Bluesky social-app:
+Portions of the following are adapted from the Bluesky social-app:
+
+- `src/lib/routes/helpers.ts` (upstream `src/lib/routes/helpers.ts`)
+- `src/shell/bottom-bar/BottomBar.tsx`, `BottomBarStyles.ts` — the custom tab bar, its
+  soft-reset / pop-to-top / navigate press logic and bar geometry (upstream
+  `src/view/shell/bottom-bar/*`)
+- `src/shell/minimalMode.tsx`, `src/shell/useMinimalShellTransform.ts`,
+  `src/shell/shellLayout.tsx`, `src/shell/ShellStateProvider.tsx`,
+  `src/shell/useBottomBarOffset.ts` (upstream `src/state/shell/minimal-mode.tsx`,
+  `src/lib/hooks/useMinimalShellTransform.ts`, `src/state/shell/shell-layout.tsx`,
+  `src/state/shell/index.tsx`, `src/lib/hooks/useBottomBarOffset.ts`)
+- `src/components/Layout/*` — `Layout.Screen` (upstream `src/components/Layout/*`)
 
 ```
 MIT License
