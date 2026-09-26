@@ -24,6 +24,7 @@
   --bg-accent: #C2401F;
   --bg-accent-strong: #C2401F;
   --bg-accent-tint: #F9EBE7;
+  --bg-nav-indicator: #F9EBE7;
   --bg-listener: #D8E8FF;
   --bg-astrologer: #EBE0FF;
   --bg-positive: #DCE8E3;
@@ -42,6 +43,8 @@
   --text-positive: #1F4A3F;
   --text-rating: #B7791F;
   --text-on-listener: #0B4A8F;
+  --text-listener: #0B4A8F;
+  --text-astrologer: #5B21B6;
   --text-on-astrologer: #5B21B6;
   --text-on-token-strong: #FFFFFF;
   --border-hairline: #C6C6C8;
@@ -88,6 +91,8 @@
   --layout-appbarmedium: 112px;
   --layout-appbarmediumsubtitle: 128px;
   --layout-bubbleminheight: 30px;
+  --layout-bottombarinsetmin: 15px;
+  --layout-bottombarinsetmax: 60px;
 
   --radius-tail: 5px;
   --radius-xs: 8px;
@@ -154,6 +159,7 @@
   --bg-accent: #C2401F;
   --bg-accent-strong: #C2401F;
   --bg-accent-tint: #361108;
+  --bg-nav-indicator: #49170A;
   --bg-listener: #20507F;
   --bg-astrologer: #452F70;
   --bg-positive: #16302A;
@@ -172,6 +178,8 @@
   --text-positive: #A8D8C8;
   --text-rating: #F6C453;
   --text-on-listener: #CFE4FF;
+  --text-listener: #75AFFF;
+  --text-astrologer: #A78BFA;
   --text-on-astrologer: #E5D4FF;
   --text-on-token-strong: #FFFFFF;
   --border-hairline: #303C4A;

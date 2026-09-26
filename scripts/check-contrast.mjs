@@ -323,6 +323,20 @@ const PAIRS = [
       'a glyph, not a label: 3:1 is the non-text target. The destination label under it is text, and the indicator pill is a second signal',
   },
   /*
+   * The bottom bar's selected glyph on its own pill (src/shell/bottom-bar,
+   * nav-migration step 5). The pill is bg/navIndicator, not the wash, because
+   * the wash's dark step 950 is 1.005:1 against the dark bar; 900 is the step
+   * that separates from the bar as much as the light pill does (1.13 vs 1.16).
+   * The glyph stays text/accent: bg/accent (step 500) on 900 is 2.87:1, under
+   * the 3:1 non-text floor, so dark keeps the 300 ink (6.16:1).
+   */
+  {
+    fg: 'text/accent',
+    bg: 'bg/navIndicator',
+    target: 3,
+    what: 'the selected bottom-bar glyph on its indicator pill (non-text)',
+  },
+  /*
    * Glyph ink on the state fills of the ring and suggestion prompts. These took
    * text/onAccent while it was near-black in dark; when that went white for
    * the step-500 coral, the dark state fills (both LIGHT colours) would have

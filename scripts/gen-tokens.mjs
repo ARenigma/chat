@@ -177,6 +177,10 @@ function springs() {
       damping: s.damping,
       stiffness: s.stiffness,
       mass: s.mass,
+      // Only when authored, so the four interaction springs emit exactly what
+      // they did. `shell` (the bottom bar hiding) sets it: a hidden bar that
+      // overshoots its rest line would flash back into view.
+      ...(s.overshootClamping === true ? { overshootClamping: true } : {}),
       ...rest,
     };
   }

@@ -505,10 +505,13 @@ describe('motion tokens', () => {
   const { spring, springMeta, press, gesture, decay, duration, opacity } =
     LIGHT.motion;
 
-  it('declares exactly the four named springs', () => {
+  it('declares exactly the five named springs', () => {
+    // `shell` joined 2026-09-27 (nav-migration step 5): the bottom bar hiding
+    // and showing. Its physics are pinned in platform.test.ts.
     expect(Object.keys(spring).sort()).toEqual([
       'bounce',
       'gentle',
+      'shell',
       'smooth',
       'snap',
     ]);
@@ -3579,6 +3582,7 @@ describe('the brand stays coral, and coral is a hue', () => {
     'bg/accent',
     'bg/accentStrong',
     'bg/accentTint',
+    'bg/navIndicator',
     'border/accent',
     'text/accent',
     'text/onAccentTint',
@@ -3643,6 +3647,7 @@ describe('every coral role is a step of the one ramp', () => {
     'bg/accent',
     'bg/accentStrong',
     'bg/accentTint',
+    'bg/navIndicator',
     'border/accent',
     'text/accent',
     'text/onAccentTint',

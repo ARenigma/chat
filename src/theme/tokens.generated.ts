@@ -36,6 +36,7 @@ export const LIGHT = {
       accent: '#C2401F',
       accentStrong: '#C2401F',
       accentTint: '#F9EBE7',
+      navIndicator: '#F9EBE7',
       listener: '#D8E8FF',
       astrologer: '#EBE0FF',
       positive: '#DCE8E3',
@@ -143,6 +144,8 @@ export const LIGHT = {
     appBarMedium: 112,
     appBarMediumSubtitle: 128,
     bubbleMinHeight: 30,
+    bottomBarInsetMin: 15,
+    bottomBarInsetMax: 60,
   },
   motion: {
     spring: {
@@ -174,6 +177,14 @@ export const LIGHT = {
         restDisplacementThreshold: 0.01,
         restSpeedThreshold: 2,
       },
+      shell: {
+        damping: 80,
+        stiffness: 1600,
+        mass: 1,
+        overshootClamping: true,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
     },
     springMeta: {
       snap: {
@@ -195,6 +206,11 @@ export const LIGHT = {
         ratio: 0.849,
         settleMs: 333,
         overshoots: true,
+      },
+      shell: {
+        ratio: 1,
+        settleMs: 100,
+        overshoots: false,
       },
     },
     decay: {
@@ -714,6 +730,7 @@ export const DARK = {
       accent: '#C2401F',
       accentStrong: '#C2401F',
       accentTint: '#361108',
+      navIndicator: '#49170A',
       listener: '#20507F',
       astrologer: '#452F70',
       positive: '#16302A',
@@ -821,6 +838,8 @@ export const DARK = {
     appBarMedium: 112,
     appBarMediumSubtitle: 128,
     bubbleMinHeight: 30,
+    bottomBarInsetMin: 15,
+    bottomBarInsetMax: 60,
   },
   motion: {
     spring: {
@@ -852,6 +871,14 @@ export const DARK = {
         restDisplacementThreshold: 0.01,
         restSpeedThreshold: 2,
       },
+      shell: {
+        damping: 80,
+        stiffness: 1600,
+        mass: 1,
+        overshootClamping: true,
+        restDisplacementThreshold: 0.01,
+        restSpeedThreshold: 2,
+      },
     },
     springMeta: {
       snap: {
@@ -873,6 +900,11 @@ export const DARK = {
         ratio: 0.849,
         settleMs: 333,
         overshoots: true,
+      },
+      shell: {
+        ratio: 1,
+        settleMs: 100,
+        overshoots: false,
       },
     },
     decay: {
