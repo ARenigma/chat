@@ -1058,7 +1058,14 @@ describe('every row is still the same height', () => {
     expect(code(ROW)).toContain('ratePerMin');
     const home = code('src/screens/HomeScreen.tsx');
     expect(home).toContain('useEconomicsConfig()');
-    expect(home.match(/ratePerMin=\{ratePerMin\}/g)?.length).toBe(2);
+    /*
+     * Three since 2026-09-27, still read once: the search row, the directory
+     * row, and the hand-off into `DirectoryPage` (one per category page of the
+     * Home pager), which passes its prop straight to its rows. The hook itself
+     * is still called exactly once on the screen.
+     */
+    expect(home.match(/ratePerMin=\{ratePerMin\}/g)?.length).toBe(3);
+    expect(home.match(/useEconomicsConfig\(\)/g)?.length).toBe(1);
   });
 
   it('leaves the card top-aligned, since the columns differ', () => {

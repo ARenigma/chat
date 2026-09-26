@@ -241,7 +241,7 @@ class FeelBenchmark {
                 scope.requireObject("chat-back").click()
                 scope.waitUntilGone("chat-title")
                 scope.requireDescription("Home")
-                scope.requireObject("home-scroll")
+                scope.requireObject("home-scroll-listener")
             }
         }
 
@@ -260,7 +260,7 @@ class FeelBenchmark {
                 killProcess()
                 pressHome()
                 startActivityAndWait()
-                requireObject("home-scroll")
+                requireObject("home-scroll-listener")
                 waitForIme(shown = false)
             },
         ) {

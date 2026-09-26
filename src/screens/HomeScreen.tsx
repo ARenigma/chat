@@ -16,7 +16,7 @@ import type { ConversationSummary, ProviderSummary } from '../lib/database.types
 import { initialOf } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import Animated from 'react-native-reanimated';
+import Animated, { useSharedValue } from 'react-native-reanimated';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { avatarImageSource } from '../lib/clayAvatars';
@@ -50,6 +50,7 @@ import {
   ProviderRow,
   seededExperienceYears,
 } from '../components/ProviderRow';
+import { ProviderPager, type ProviderPagerRef } from '../components/ProviderPager';
 import { ProviderTypeTabs } from '../components/ProviderTypeTabs';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { OFFERED_EXPERTISE, expertiseFor } from '../lib/expertise';
@@ -115,6 +116,9 @@ let potdDismissedThisRun = false;
  */
 const TOP_PICKS = 3;
 
+/** A stable empty directory, so an effect keyed on it does not re-run. */
+const NO_PROVIDERS: ProviderSummary[] = [];
+
 
 interface Props {
   onOpenConversation: (peerId: string) => void;
@@ -162,10 +166,10 @@ export function HomeScreen({
   hasActiveCall = false,
 }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const columnWidth = contentColumnWidth(windowWidth);
+  const listBottomPadding = insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl;
   const balance = useStore(s => s.balance);
   // Read rather than called for its side effect: the directory's ORDER now
   // depends on the member's language preference, so this screen needs the row
@@ -208,6 +212,25 @@ export function HomeScreen({
   const [exploreCategory, setExploreCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
   const [searchFilter, setSearchFilter] = useState<DirectoryFilter>(NO_FILTER);
 
+  /*
+   * The category is a PAGE now (owner decision, Amit 2026-09-26/27: Bluesky's
+   * pager mechanics exactly), so there are two sources of truth with two
+   * different jobs, and neither is allowed to do the other's:
+   *
+   *   `categoryProgress` — `position + offset`, written on the UI thread by
+   *   `ProviderPager` for every frame of a drag or a tapped page scroll. Only
+   *   worklets read it (the tab indicator and label inks). A drag never
+   *   renders React.
+   *
+   *   `exploreCategory` — the SETTLED page, set once per page change from
+   *   `onPageSelected`. It picks the spotlight's provider, tells TalkBack which
+   *   tab is `checked`, and says which page may register tour anchors and play
+   *   row entrances. It no longer filters any list: every page filters by its
+   *   OWN category, below.
+   */
+  const categoryProgress = useSharedValue(PROVIDER_CATEGORIES.indexOf(DEFAULT_CATEGORY));
+  const pagerRef = useRef<ProviderPagerRef>(null);
+
   const categoryById = useMemo(() => {
     const map = new Map<string, ProviderCategory>();
     for (const p of providers ?? []) {
@@ -216,23 +239,32 @@ export function HomeScreen({
     return map;
   }, [providers]);
 
-  const chats = useMemo(
-    () =>
-      (conversations ?? [])
-        .filter(c => !blocked.has(c.peer_id) && visibleOnRail(railPrefs, c.peer_id))
-        .filter(
-          c => (categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === exploreCategory,
-        )
-        .slice()
-        .sort((a, b) =>
-          compareConversations(
-            railPrefs,
-            { peerId: a.peer_id, at: a.last_session_at ?? '', unread: a.i_am_member ? Number(a.unread_count_member) : Number(a.unread_count_provider) },
-            { peerId: b.peer_id, at: b.last_session_at ?? '', unread: b.i_am_member ? Number(b.unread_count_member) : Number(b.unread_count_provider) },
-          ),
+  /*
+   * The rail, sorted once and then split by category, one list per page. A
+   * peer with no directory row — a suspended provider, or a member on the
+   * provider tree — keeps their thread under the default tab rather than
+   * disappearing from the app: a conversation you have had is not something a
+   * filter should be able to hide from you.
+   */
+  const chatsByCategory = useMemo(() => {
+    const sorted = (conversations ?? [])
+      .filter(c => !blocked.has(c.peer_id) && visibleOnRail(railPrefs, c.peer_id))
+      .slice()
+      .sort((a, b) =>
+        compareConversations(
+          railPrefs,
+          { peerId: a.peer_id, at: a.last_session_at ?? '', unread: a.i_am_member ? Number(a.unread_count_member) : Number(a.unread_count_provider) },
+          { peerId: b.peer_id, at: b.last_session_at ?? '', unread: b.i_am_member ? Number(b.unread_count_member) : Number(b.unread_count_provider) },
         ),
-    [conversations, blocked, railPrefs, categoryById, exploreCategory],
-  );
+      );
+    const byCategory = {} as Record<ProviderCategory, ConversationSummary[]>;
+    for (const category of PROVIDER_CATEGORIES) {
+      byCategory[category] = sorted.filter(
+        c => (categoryById.get(c.peer_id) ?? DEFAULT_CATEGORY) === category,
+      );
+    }
+    return byCategory;
+  }, [conversations, blocked, railPrefs, categoryById]);
 
   // The directory, blocked people removed. The featured pick is lifted out of the
   // list so it is not shown twice.
@@ -261,8 +293,27 @@ export function HomeScreen({
   );
 
   /*
-   * What Explore shows: one category at a time. The featured pick and the rows
-   * both come from here, so the hero always belongs to the tab you are on.
+   * The topic chips the search panel offers.
+   *
+   * 083 splits the vocabulary by provider_category, so the panel follows the
+   * category chip above it — offering Tarot next to Anxiety would describe
+   * neither kind of provider. With no category picked, search spans both tabs,
+   * so the union is shown rather than an arbitrary default; a member who has
+   * not narrowed to Astrologers should still be able to ask for Tarot.
+   *
+   * Deduplicated, because the two lists genuinely overlap: 'Career' is offered
+   * to both, and two identical chips in one row is a visible bug.
+   */
+  const searchTopics = useMemo(() => {
+    if (searchFilter.category !== null) {
+      return [...expertiseFor(searchFilter.category)];
+    }
+    return [...new Set([...OFFERED_EXPERTISE.listener, ...OFFERED_EXPERTISE.astrologer])];
+  }, [searchFilter.category]);
+
+  /*
+   * What each PAGE shows: one category. Its picks and its rows both come from
+   * here, so the hero always belongs to the page it sits on.
    *
    * Then reordered so providers who share the member's languages come first
    * (Amit, 2026-09-07: "sort the profiles with language on user's home screen
@@ -283,63 +334,52 @@ export function HomeScreen({
    * sort's own tie-break is the incoming order, a language match now decides
    * which of two equally-rated providers is spotlighted.
    */
-  /*
-   * The topic chips the search panel offers.
-   *
-   * 083 splits the vocabulary by provider_category, so the panel follows the
-   * category chip above it — offering Tarot next to Anxiety would describe
-   * neither kind of provider. With no category picked, search spans both tabs,
-   * so the union is shown rather than an arbitrary default; a member who has
-   * not narrowed to Astrologers should still be able to ask for Tarot.
-   *
-   * Deduplicated, because the two lists genuinely overlap: 'Career' is offered
-   * to both, and two identical chips in one row is a visible bug.
-   */
-  const searchTopics = useMemo(() => {
-    if (searchFilter.category !== null) {
-      return [...expertiseFor(searchFilter.category)];
-    }
-    return [...new Set([...OFFERED_EXPERTISE.listener, ...OFFERED_EXPERTISE.astrologer])];
-  }, [searchFilter.category]);
-
-  const directory = useMemo(
+  const pages = useMemo(
     () =>
-      sortByLanguageMatch(
-        /*
-         * `...NO_FILTER` rather than two more empty arrays: Explore filters by
-         * the TAB only. Language is a sort here and a filter in search (see
-         * DirectoryFilter.languages for why the two differ on purpose), and
-         * expertise is not a browse-level question at all.
+      PROVIDER_CATEGORIES.map(category => {
+        const directory = sortByLanguageMatch(
+          /*
+           * `...NO_FILTER` rather than two more empty arrays: Explore filters
+           * by the PAGE's category only. Language is a sort here and a filter
+           * in search (see DirectoryFilter.languages for why the two differ on
+           * purpose), and expertise is not a browse-level question at all.
+           */
+          filterProviders(allProviders, { ...NO_FILTER, category }),
+          preferredLanguages,
+        );
+        /**
+         * The week's top picks: best-rated who are here now, then best-rated
+         * at all. Deterministic, so the carousel does not reshuffle on every
+         * render — a hero that changes under the eye reads as broken.
+         *
+         * Three rather than one (Amit, 2026-09-06). One card is a claim; three
+         * is a choice, and M3's hero carousel is the layout its own guidance
+         * names for "spotlighting content that you want to emphasize" while
+         * showing a peek of what is next.
          */
-        filterProviders(allProviders, { ...NO_FILTER, category: exploreCategory }),
-        preferredLanguages,
-      ),
-    [allProviders, exploreCategory, preferredLanguages],
+        const score = (p: ProviderSummary) =>
+          (readPresence(p.is_available).here ? 1000 : 0) + (p.rating_avg ?? 0);
+        const topPicks = [...directory].sort((a, b) => score(b) - score(a)).slice(0, TOP_PICKS);
+        // The picks are lifted out of the list below so nobody is shown twice.
+        const shown = new Set(topPicks.map(p => p.id));
+        const rows = directory.filter(p => !shown.has(p.id));
+        return {
+          category,
+          directory,
+          topPicks,
+          rows,
+          chats: chatsByCategory[category],
+        };
+      }),
+    [allProviders, preferredLanguages, chatsByCategory],
   );
 
-  /**
-   * The week's top picks: best-rated who are here now, then best-rated at all.
-   * Deterministic, so the carousel does not reshuffle on every render — a hero
-   * that changes under the eye reads as broken.
-   *
-   * Three rather than one (Amit, 2026-09-06). One card is a claim; three is a
-   * choice, and M3's hero carousel is the layout its own guidance names for
-   * "spotlighting content that you want to emphasize" while showing a peek of
-   * what is next.
-   */
-  const topPicks = useMemo<ProviderSummary[]>(() => {
-    const score = (p: ProviderSummary) =>
-      (readPresence(p.is_available).here ? 1000 : 0) + (p.rating_avg ?? 0);
-    return [...directory].sort((a, b) => score(b) - score(a)).slice(0, TOP_PICKS);
-  }, [directory]);
-
-  const featured = topPicks[0] ?? null;
-
-  // The picks are lifted out of the list below so nobody is shown twice.
-  const rows = useMemo(() => {
-    const shown = new Set(topPicks.map(p => p.id));
-    return directory.filter(p => !shown.has(p.id));
-  }, [directory, topPicks]);
+  const categoryIndex = PROVIDER_CATEGORIES.indexOf(exploreCategory);
+  // The settled page's view: the spotlight sheet and the prefetch follow the
+  // page the member is actually on.
+  const current = pages[categoryIndex];
+  const directory = current?.directory ?? NO_PROVIDERS;
+  const featured = current?.topPicks[0] ?? null;
 
   // A3: stable callbacks so ProviderRow.memo holds across balance ticks.
   // An inline `onPress={() => onOpenProvider(p.id)}` creates a new function on
@@ -371,9 +411,9 @@ export function HomeScreen({
 
   const handleOpenProvider = useCallback(
     (id: string) => {
-      const p =
-        directory.find(x => x.id === id) ??
-        (featured?.id === id ? featured : undefined);
+      // Looked up across BOTH pages: a row can be tapped on the page that is
+      // still settling, before `exploreCategory` has caught up with it.
+      const p = allProviders.find(x => x.id === id);
       const hero = p?.avatar_url
         ? sizedStorageImageUri(
             p.avatar_url,
@@ -387,12 +427,50 @@ export function HomeScreen({
       }
       onOpenProvider(id);
     },
-    [onOpenProvider, directory, featured, columnWidth],
+    [onOpenProvider, allProviders, columnWidth],
   );
   // A4: stable callback for RailItem so memo holds when balance ticks.
   const handleOpenConversation = useCallback(
     (peerId: string) => onOpenConversation(peerId),
     [onOpenConversation],
+  );
+
+  const onRailLongPress = useCallback((peerId: string, anchor: MenuAnchor) => {
+    setMenuAnchor(anchor);
+    setMenuPeer(peerId);
+  }, []);
+
+  /*
+   * The settled page, once per change (never per frame — see
+   * `categoryProgress`). An out-of-range index cannot come from a two-page
+   * pager; the fallback only keeps the type honest.
+   */
+  const onPageSelected = useCallback((index: number) => {
+    setExploreCategory(PROVIDER_CATEGORIES[index] ?? DEFAULT_CATEGORY);
+  }, []);
+
+  /*
+   * A tapped tab asks the PAGER to move (Bluesky's `onTabBarSelect` →
+   * `pagerView.setPage(index)`); the pager's scroll then moves the indicator
+   * and, via `onPageSelected`, the settled category. Nothing is set here while
+   * the pager exists, so a tap and a swipe take the same path.
+   *
+   * While the skeleton is up (or search is open) there is no pager to scroll,
+   * yet the tabs can be on screen and a tap must still land. Then the choice
+   * is applied directly and the indicator jumps to it — there is no page
+   * underneath to follow — and the pager, when it mounts, starts on that page.
+   */
+  const selectCategory = useCallback(
+    (category: ProviderCategory) => {
+      const index = PROVIDER_CATEGORIES.indexOf(category);
+      if (pagerRef.current !== null) {
+        pagerRef.current.setPage(index);
+        return;
+      }
+      setExploreCategory(category);
+      categoryProgress.set(index);
+    },
+    [categoryProgress],
   );
 
   // Inline search (#5). Replaces the placeholder that opened Recharge. Filters the
@@ -554,44 +632,6 @@ export function HomeScreen({
   const ratePerMin =
     economics?.chat_rate_tokens_per_min ?? FALLBACK_ECONOMICS.chat_rate_tokens_per_min;
 
-  /*
-   * `onCall` is passed for EVERY row, including a row for somebody who is away,
-   * and that is correct rather than an oversight: the row decides. Since
-   * 2026-09-13 `ProviderRow` computes `away` from the same `readPresence` and
-   * drops its Call for a bell (ProviderRow.tsx:413), so no away row on this
-   * screen can ring anyone — the CTA falls through to `onPress`.
-   *
-   * Where that lands is this screen's choice and it is deliberate: `onPress` is
-   * `handleOpenProvider`, the PROFILE, whose only action for an away provider
-   * is now Notify (ProviderDetailScreen.tsx:146) and where Notify opens the
-   * conversation — the thing that actually pushes to them
-   * (`announce_chat_open`, migration 068). Home's card body has opened the
-   * profile since v13 and the CTA shares that press, so routing the bell
-   * straight into a conversation would need a third callback on the row rather
-   * than a change here.
-   */
-  const renderExploreRow = useCallback(
-    ({ item, index }: { item: ProviderSummary; index: number }) => {
-      const animate = !seenIds.current.has(item.id);
-      if (animate) {
-        seenIds.current.add(item.id);
-      }
-      return (
-        <ProviderRow
-          provider={item}
-          index={index}
-          isLast={index === rows.length - 1}
-          onPress={handleOpenProvider}
-          onPressAvatar={handleOpenProvider}
-          onCall={onCallProvider}
-          ratePerMin={ratePerMin}
-          animateEntrance={animate}
-        />
-      );
-    },
-    [rows.length, handleOpenProvider, onCallProvider, ratePerMin],
-  );
-
   const renderSearchRow = useCallback(
     ({ item, index }: { item: ProviderSummary; index: number }) => {
       const animate = !searchSeenIds.current.has(item.id);
@@ -613,145 +653,6 @@ export function HomeScreen({
     },
     [results.length, handleOpenProvider, onCallProvider, ratePerMin],
   );
-
-  // ListHeaderComponent for the main Explore FlashList: chats rail + section
-  // head + featured card. Kept outside the FlashList data so only the provider
-  // rows are virtualised; the chrome above them is always rendered.
-  const ExploreHeader = useCallback(
-    () => (
-      <>
-        <TourAnchor id="chats">
-        <View style={styles.rail}>
-          <View style={styles.railHeader}>
-            <Text allowFontScaling accessibilityRole="header" style={styles.railLabel}>
-              Chats
-            </Text>
-            {chats.length > 0 ? (
-              <View style={styles.seeAllBleed}>
-                <Pressable
-                  onPress={onSeeAllChats}
-                  testID="chats-see-all"
-                  accessibilityLabel="See all chats"
-                  press="none"
-                  style={styles.seeAll}>
-                  <Text allowFontScaling style={styles.seeAllText}>
-                    See all
-                  </Text>
-                  <Icon name="chevronRight" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
-          {chats.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              {...SCROLL_PHYSICS}
-              contentContainerStyle={styles.railScroll}>
-              {chats.map(chat => (
-                <RailItem
-                  key={chat.conversation_id}
-                  chat={chat}
-                  onPress={handleOpenConversation}
-                  onLongPress={(peerId, anchor) => {
-                    setMenuAnchor(anchor);
-                    setMenuPeer(peerId);
-                  }}
-                />
-              ))}
-            </ScrollView>
-          ) : (
-            <View style={styles.railEmpty}>
-              <ChatStartHint />
-            </View>
-          )}
-        </View>
-        </TourAnchor>
-        <TourAnchor id="explore">
-        <View style={styles.exploreHead}>
-          {/* Heading ROLE, not decoration: TalkBack lets a user jump between
-              headings instead of walking every row, and the reference marks
-              these same cells with `ViewCompat.setAccessibilityHeading(this,
-              true)` (GraySectionCell.java:76, HeaderCell.java:107). RN's
-              `header` role is "an element that acts as a header for a content
-              section". Applied to Chats, Explore and the picks header, which
-              are Home's three headings.
-              https://reactnative.dev/docs/accessibility
-              https://developer.android.com/guide/topics/ui/accessibility/principles */}
-          <Text allowFontScaling accessibilityRole="header" style={styles.exploreTitle}>
-            Explore
-          </Text>
-        </View>
-        </TourAnchor>
-        {topPicks.length > 0 ? (
-          <>
-            <View style={styles.picksHead}>
-              <Text
-                allowFontScaling
-                accessibilityRole="header"
-                style={styles.picksTitle}>
-                Top profiles this week
-              </Text>
-            </View>
-            {/* PORTRAIT STORY CARDS, start-aligned, about 2.3 across (Amit,
-                2026-09-26: the centred landscape hero cropped faces). Android's
-                uncontained carousel: one fixed item size flowing past the edge,
-                https://developer.android.com/develop/ui/compose/components/carousel
-                — geometry in lib/carousel.ts, where it is tested.
-
-                NOT ENDLESS ANY MORE, and that reverses the 2026-09-06 "endless
-                rotation" on purpose: the wrap worked by holding three copies of
-                the list, and with THREE picks and 2.3 cards in view the first
-                card would sit right beside the last, the same face twice on
-                screen. A three-card strip that ends is the honest shape. The
-                snap is kept (one card pitch, start-aligned, no multi-card
-                flings), and still no timer: nothing moves under a still finger.
-                HeroCarousel keeps its centred, endless geometry for the profile
-                photo pager. */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={HERO_CARD_WIDTH + HERO_CARD_GAP}
-              snapToAlignment="start"
-              disableIntervalMomentum
-              {...SCROLL_PHYSICS}
-              contentContainerStyle={styles.picksStrip}
-              testID="top-picks">
-              {topPicks.map(p => (
-                <Card key={p.id} style={styles.featuredCard}>
-                  <FeaturedCard
-                    provider={p}
-                    imageWidth={HERO_CARD_WIDTH}
-                    onPress={() => onOpenProvider(p.id)}
-                  />
-                </Card>
-              ))}
-            </ScrollView>
-          </>
-        ) : null}
-        {/* Spacing that separates the featured card (or explore heading) from
-            the first provider row. Widened from `sm` (12) to `2xl` (32) so the
-            first card sits lower and the top edge of the SECOND card no longer
-            peeks above the fold on the default Home viewport (Amit, on device).
-            The exact value is viewport-dependent; confirm on the S22/Redmi and
-            nudge if the second card still shows a sliver. */}
-        <View style={{ height: TOKENS.space['2xl'] }} />
-      </>
-    ),
-    [
-      chats,
-      styles,
-      topPicks,
-      onOpenProvider,
-      handleOpenConversation,
-      onSeeAllChats,
-      theme,
-    ],
-  );
-
-  // ListFooterComponent for the main Explore FlashList: the "tap someone above"
-  // hint that shows only on a fresh install before any conversation exists.
-  const ExploreFooter = useCallback(() => null, []);
 
   // SearchFlashList header and empty components defined as variables to avoid
   // embedding double-quote literals inside JSX prop expressions (a TSX parser
@@ -814,7 +715,8 @@ export function HomeScreen({
       {searching ? null : (
         <ProviderTypeTabs
           value={exploreCategory}
-          onChange={setExploreCategory}
+          progress={categoryProgress}
+          onSelect={selectCategory}
           testID="explore-tabs"
         />
       )}
@@ -971,7 +873,7 @@ export function HomeScreen({
               {...SCROLL_PHYSICS}
               contentContainerStyle={[
                 styles.scroll,
-                { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
+                { paddingBottom: listBottomPadding },
               ]}
               overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = PROVIDER_ROW_HEIGHT; }}
             />
@@ -981,42 +883,45 @@ export function HomeScreen({
             <DirectorySkeleton />
           </View>
         ) : (
-          // Only the provider rows are virtualised. The chats rail, explore head
-          // and featured card live in ListHeaderComponent so they scroll together
-          // with the list but are always fully rendered.
+          /* THE PAGER (owner decision, Amit 2026-09-26/27: Bluesky's mechanics
+             exactly). One page per category, each its own list; a horizontal
+             swipe moves between them and the tabs above track it. It lives
+             INSIDE the directory layer, so search still replaces the whole
+             directory the way it did and the search surface has no pager at
+             all. Remounted after search closes, it starts on the category the
+             member left (`initialPage`). */
           <Animated.View
             key="directory"
             style={styles.swapLayer}
             entering={directoryIn}
             exiting={directoryOut}>
-            <FlashList
-              testID="home-scroll"
-              data={rows}
-              keyExtractor={p => p.id}
-              renderItem={renderExploreRow}
-              ListHeaderComponent={ExploreHeader}
-              ListFooterComponent={ExploreFooter}
-              ListEmptyComponent={
-                featured === null ? (
-                  <View style={styles.empty}>
-                    <Text allowFontScaling style={styles.emptyText}>
-                      Nobody is available just yet. Check back shortly.
-                    </Text>
-                  </View>
-                ) : null
-              }
-              showsVerticalScrollIndicator={false}
-              {...SCROLL_PHYSICS}
-              contentContainerStyle={[
-                styles.scroll,
-                // The nav is a frosted overlay, so the list scrolls under it.
-                // Clear its full height (bar + safe-area inset) plus the usual
-                // end breathing room, so the last row lands above the bar
-                // rather than behind it.
-                { paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl },
-              ]}
-              overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = PROVIDER_ROW_HEIGHT; }}
-            />
+            <ProviderPager
+              ref={pagerRef}
+              initialPage={categoryIndex}
+              dragProgress={categoryProgress}
+              onPageSelected={onPageSelected}
+              testID="home-pager">
+              {pages.map(page => (
+                <View key={page.category} collapsable={false}>
+                  <DirectoryPage
+                    category={page.category}
+                    focused={page.category === exploreCategory}
+                    chats={page.chats}
+                    topPicks={page.topPicks}
+                    rows={page.rows}
+                    seenIds={seenIds}
+                    bottomPadding={listBottomPadding}
+                    ratePerMin={ratePerMin}
+                    onOpenProvider={onOpenProvider}
+                    onOpenRow={handleOpenProvider}
+                    onCallProvider={onCallProvider}
+                    onOpenConversation={handleOpenConversation}
+                    onRailLongPress={onRailLongPress}
+                    onSeeAllChats={onSeeAllChats}
+                  />
+                </View>
+              ))}
+            </ProviderPager>
           </Animated.View>
         )}
       </View>
@@ -1129,6 +1034,269 @@ const RailItem = memo(function ({
         </Text>
       </Pressable>
     </View>
+  );
+});
+
+/**
+ * One category's page of the directory pager: its own Chats rail, Explore
+ * head, week's picks and provider rows, in its own FlashList.
+ *
+ * A component rather than two copies of the old inline list because both pages
+ * are MOUNTED at once — the pager keeps its neighbour laid out
+ * (`offscreenPageLimit={1}`, see ProviderPager) so the first swipe does not
+ * build a list mid-drag — and each needs its own list data, its own scroll
+ * position and its own recycling pool. Memoised so a settled-page change
+ * re-renders only what reads `focused`.
+ *
+ * The header is an ELEMENT, not a component. It used to be a `useCallback`
+ * returning JSX, and FlashList treats a new function as a new component type:
+ * any dependency change remounted the whole header, resetting the rail's and
+ * the picks' horizontal scroll. With `focused` now changing on every swipe
+ * that would have reset both strips on every page change.
+ */
+const DirectoryPage = memo(function ({
+  category,
+  focused,
+  chats,
+  topPicks,
+  rows,
+  seenIds,
+  bottomPadding,
+  ratePerMin,
+  onOpenProvider,
+  onOpenRow,
+  onCallProvider,
+  onOpenConversation,
+  onRailLongPress,
+  onSeeAllChats,
+}: {
+  category: ProviderCategory;
+  /** The settled page. Gates tour anchors and row entrances, never content. */
+  focused: boolean;
+  chats: ConversationSummary[];
+  topPicks: ProviderSummary[];
+  rows: ProviderSummary[];
+  seenIds: React.RefObject<Set<string>>;
+  bottomPadding: number;
+  ratePerMin: number;
+  /** The picks' press, unchanged: the profile, no prefetch. */
+  onOpenProvider: (providerId: string) => void;
+  /** The rows' press: the profile, with the hero warmed first. */
+  onOpenRow: (providerId: string) => void;
+  onCallProvider: (providerId: string) => void;
+  onOpenConversation: (peerId: string) => void;
+  onRailLongPress: (peerId: string, anchor: MenuAnchor) => void;
+  onSeeAllChats: () => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+
+  /*
+   * `onCall` is passed for EVERY row, including a row for somebody who is away,
+   * and that is correct rather than an oversight: the row decides. Since
+   * 2026-09-13 `ProviderRow` computes `away` from the same `readPresence` and
+   * drops its Call for a bell (ProviderRow.tsx:413), so no away row on this
+   * screen can ring anyone — the CTA falls through to `onPress`.
+   *
+   * Where that lands is this screen's choice and it is deliberate: `onPress` is
+   * `handleOpenProvider`, the PROFILE, whose only action for an away provider
+   * is now Notify (ProviderDetailScreen.tsx:146) and where Notify opens the
+   * conversation — the thing that actually pushes to them
+   * (`announce_chat_open`, migration 068). Home's card body has opened the
+   * profile since v13 and the CTA shares that press, so routing the bell
+   * straight into a conversation would need a third callback on the row rather
+   * than a change here.
+   */
+  /*
+   * Entrances play on the FOCUSED page only. The neighbouring page is mounted
+   * and laid out off screen (see the component note), so a stagger there would
+   * run where nobody can see it; and when the member swipes to it, its rows
+   * should already be there — Bluesky's feeds do not animate in under a page
+   * that is sliding in, and a second motion on top of the page's own would be
+   * noise. Its ids are still marked seen, so FlashList recycling cannot replay
+   * an entrance on scroll-back, which is the rule `seenIds` exists for.
+   */
+  const renderExploreRow = useCallback(
+    ({ item, index }: { item: ProviderSummary; index: number }) => {
+      const animate = focused && !seenIds.current.has(item.id);
+      seenIds.current.add(item.id);
+      return (
+        <ProviderRow
+          provider={item}
+          index={index}
+          isLast={index === rows.length - 1}
+          onPress={onOpenRow}
+          onPressAvatar={onOpenRow}
+          onCall={onCallProvider}
+          ratePerMin={ratePerMin}
+          animateEntrance={animate}
+        />
+      );
+    },
+    [focused, seenIds, rows.length, onOpenRow, onCallProvider, ratePerMin],
+  );
+
+  // ListHeaderComponent: chats rail + section head + the week's picks. Kept
+  // outside the FlashList data so only the provider rows are virtualised; the
+  // chrome above them is always rendered.
+  const exploreHeader = useMemo(
+    () => (
+      <>
+        <TourAnchor id="chats" active={focused}>
+        <View style={styles.rail}>
+          <View style={styles.railHeader}>
+            <Text allowFontScaling accessibilityRole="header" style={styles.railLabel}>
+              Chats
+            </Text>
+            {chats.length > 0 ? (
+              <View style={styles.seeAllBleed}>
+                <Pressable
+                  onPress={onSeeAllChats}
+                  testID="chats-see-all"
+                  accessibilityLabel="See all chats"
+                  press="none"
+                  style={styles.seeAll}>
+                  <Text allowFontScaling style={styles.seeAllText}>
+                    See all
+                  </Text>
+                  <Icon name="chevronRight" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+          {chats.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={styles.railScroll}>
+              {chats.map(chat => (
+                <RailItem
+                  key={chat.conversation_id}
+                  chat={chat}
+                  onPress={onOpenConversation}
+                  onLongPress={onRailLongPress}
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.railEmpty}>
+              <ChatStartHint />
+            </View>
+          )}
+        </View>
+        </TourAnchor>
+        <TourAnchor id="explore" active={focused}>
+        <View style={styles.exploreHead}>
+          {/* Heading ROLE, not decoration: TalkBack lets a user jump between
+              headings instead of walking every row, and the reference marks
+              these same cells with `ViewCompat.setAccessibilityHeading(this,
+              true)` (GraySectionCell.java:76, HeaderCell.java:107). RN's
+              `header` role is "an element that acts as a header for a content
+              section". Applied to Chats, Explore and the picks header, which
+              are Home's three headings.
+              https://reactnative.dev/docs/accessibility
+              https://developer.android.com/guide/topics/ui/accessibility/principles */}
+          <Text allowFontScaling accessibilityRole="header" style={styles.exploreTitle}>
+            Explore
+          </Text>
+        </View>
+        </TourAnchor>
+        {topPicks.length > 0 ? (
+          <>
+            <View style={styles.picksHead}>
+              <Text
+                allowFontScaling
+                accessibilityRole="header"
+                style={styles.picksTitle}>
+                Top profiles this week
+              </Text>
+            </View>
+            {/* PORTRAIT STORY CARDS, start-aligned, about 2.3 across (Amit,
+                2026-09-26: the centred landscape hero cropped faces). Android's
+                uncontained carousel: one fixed item size flowing past the edge,
+                https://developer.android.com/develop/ui/compose/components/carousel
+                — geometry in lib/carousel.ts, where it is tested.
+
+                NOT ENDLESS ANY MORE, and that reverses the 2026-09-06 "endless
+                rotation" on purpose: the wrap worked by holding three copies of
+                the list, and with THREE picks and 2.3 cards in view the first
+                card would sit right beside the last, the same face twice on
+                screen. A three-card strip that ends is the honest shape. The
+                snap is kept (one card pitch, start-aligned, no multi-card
+                flings), and still no timer: nothing moves under a still finger.
+                HeroCarousel keeps its centred, endless geometry for the profile
+                photo pager. */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={HERO_CARD_WIDTH + HERO_CARD_GAP}
+              snapToAlignment="start"
+              disableIntervalMomentum
+              {...SCROLL_PHYSICS}
+              contentContainerStyle={styles.picksStrip}
+              testID="top-picks">
+              {topPicks.map(p => (
+                <Card key={p.id} style={styles.featuredCard}>
+                  <FeaturedCard
+                    provider={p}
+                    imageWidth={HERO_CARD_WIDTH}
+                    onPress={() => onOpenProvider(p.id)}
+                  />
+                </Card>
+              ))}
+            </ScrollView>
+          </>
+        ) : null}
+        {/* Spacing that separates the featured card (or explore heading) from
+            the first provider row. Widened from `sm` (12) to `2xl` (32) so the
+            first card sits lower and the top edge of the SECOND card no longer
+            peeks above the fold on the default Home viewport (Amit, on device).
+            The exact value is viewport-dependent; confirm on the S22/Redmi and
+            nudge if the second card still shows a sliver. */}
+        <View style={{ height: TOKENS.space['2xl'] }} />
+      </>
+    ),
+    [
+      focused,
+      chats,
+      topPicks,
+      styles,
+      theme,
+      onOpenProvider,
+      onOpenConversation,
+      onRailLongPress,
+      onSeeAllChats,
+    ],
+  );
+
+  return (
+    <FlashList
+      testID={`home-scroll-${category}`}
+      data={rows}
+      keyExtractor={p => p.id}
+      renderItem={renderExploreRow}
+      ListHeaderComponent={exploreHeader}
+      ListEmptyComponent={
+        topPicks.length === 0 ? (
+          <View style={styles.empty}>
+            <Text allowFontScaling style={styles.emptyText}>
+              Nobody is available just yet. Check back shortly.
+            </Text>
+          </View>
+        ) : null
+      }
+      showsVerticalScrollIndicator={false}
+      {...SCROLL_PHYSICS}
+      contentContainerStyle={[
+        styles.scroll,
+        // The nav is a frosted overlay, so the list scrolls under it. Clear its
+        // full height (bar + safe-area inset) plus the usual end breathing
+        // room, so the last row lands above the bar rather than behind it.
+        { paddingBottom: bottomPadding },
+      ]}
+      overrideItemLayout={layout => { (layout as { span?: number; size?: number }).size = PROVIDER_ROW_HEIGHT; }}
+    />
   );
 });
 
