@@ -18,7 +18,7 @@ name: Back walks the stack and confirms at the root
 - tapOn: 'Ada'
 - extendedWaitUntil:
     visible:
-      id: 'detail-back'
+      id: 'action-chat'
     timeout: 10000
 - tapOn:
     id: 'action-chat'
@@ -32,13 +32,13 @@ name: Back walks the stack and confirms at the root
       id: 'nav-home'
     timeout: 10000
 - assertNotVisible:
-    id: 'detail-back'
+    id: 'action-chat'
 
 # Profile sheet again, dismissed by back.
 - tapOn: 'Ada'
 - extendedWaitUntil:
     visible:
-      id: 'detail-back'
+      id: 'action-chat'
     timeout: 10000
 - back
 - extendedWaitUntil:

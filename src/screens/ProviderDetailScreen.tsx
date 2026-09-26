@@ -202,8 +202,16 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
 
   return (
     <View style={styles.root}>
-      <View style={[styles.bar, { paddingTop: (sheet ? 0 : insets.top) + TOKENS.space['2xs'] }]}>
-        <BackButton onPress={onBack} testID="detail-back" style={styles.barIcon} />
+      <View
+        style={[
+          styles.bar,
+          { paddingTop: (sheet ? 0 : insets.top) + TOKENS.space['2xs'] },
+          sheet && styles.barSheet,
+        ]}>
+        {/* No back arrow on the sheet: its grabber, the swipe down and the
+            system back already close it, and an arrow under the grabber read
+            as a second header (S22, 2026-09-27). The full page keeps it. */}
+        {sheet ? null : <BackButton onPress={onBack} testID="detail-back" style={styles.barIcon} />}
         <TokenCounter balance={balance} onPress={openWallet} />
       </View>
 
@@ -910,6 +918,10 @@ const makeStyles = (t: Theme) =>
       height: 40,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // The sheet's bar holds only the balance, on the trailing edge.
+    barSheet: {
+      justifyContent: 'flex-end',
     },
     scroll: {
       paddingHorizontal: TOKENS.space.md,
