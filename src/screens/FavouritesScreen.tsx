@@ -7,6 +7,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useProfile, useProviders } from '../api/chat';
+import { useProviderBusyWaits, withBusyWaits } from '../api/busy';
 import { useFavorites } from '../store/useFavorites';
 import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { TabTopBar } from '../components/TabTopBar';
@@ -38,8 +39,18 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
   useProfile();
-  const { data: providers } = useProviders();
+  const { data: directoryRows } = useProviders();
   const ids = useFavorites(s => s.ids);
+  // Busy providers carry `busy_wait_minutes` (migration 154): merged in HERE,
+  // at the one place this screen reads the directory, so every page and row
+  // sees the same answer. The hook polls every 30s while the
+  // app is foregrounded (TanStack focusManager). `focused: true` until these
+  // screens sit under react-navigation (step 7), which gives useIsFocused.
+  const busyWaits = useProviderBusyWaits(ids, { focused: true });
+  const providers = useMemo(
+    () => (directoryRows === undefined ? undefined : withBusyWaits(directoryRows, busyWaits)),
+    [directoryRows, busyWaits],
+  );
   const allFavourites = useMemo(
     () => (providers ?? []).filter(p => ids.includes(p.id)),
     [providers, ids],

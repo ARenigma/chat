@@ -21,6 +21,7 @@ import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { avatarImageSource } from '../lib/clayAvatars';
 import { useConversations, useProfile, useProviders } from '../api/chat';
+import { useProviderBusyWaits, withBusyWaits } from '../api/busy';
 import {
   AGE_BANDS,
   AGE_BAND_LABEL,
@@ -176,7 +177,18 @@ export function HomeScreen({
   // and not just the balance sync it used to be here for.
   const { data: profile } = useProfile();
   const { data: conversations, isPending: convosPending } = useConversations();
-  const { data: providers, isPending: providersPending } = useProviders();
+  const { data: directoryRows, isPending: providersPending } = useProviders();
+  // Busy providers carry `busy_wait_minutes` (migration 154): merged in HERE,
+  // at the one place this screen reads the directory, so every page, row and
+  // pick downstream sees the same answer. The hook polls every 30s while the
+  // app is foregrounded (TanStack focusManager). `focused: true` until these
+  // screens sit under react-navigation (step 7), which gives useIsFocused.
+  const directoryIds = useMemo(() => (directoryRows ?? []).map(p => p.id), [directoryRows]);
+  const busyWaits = useProviderBusyWaits(directoryIds, { focused: true });
+  const providers = useMemo(
+    () => (directoryRows === undefined ? undefined : withBusyWaits(directoryRows, busyWaits)),
+    [directoryRows, busyWaits],
+  );
   const blocked = useBlockedPeerIds();
 
   /* Idle-home campaign — only active when HOME_SUGGESTIONS_ENABLED = true.

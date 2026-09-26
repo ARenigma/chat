@@ -93,3 +93,16 @@ describe('busy wait ids and rows', () => {
     expect(busyWaitsToMap([])).toBe(NO_BUSY_WAITS);
   });
 });
+
+describe('the directory screens merge busy waits at their one directory read', () => {
+  const { readFileSync } = require('fs') as typeof import('fs');
+  const { join } = require('path') as typeof import('path');
+  for (const screen of ['HomeScreen', 'FavouritesScreen']) {
+    it(`${screen} passes useProviders() through withBusyWaits`, () => {
+      const src = readFileSync(join(__dirname, '..', 'src', 'screens', `${screen}.tsx`), 'utf8');
+      expect(src).toContain("from '../api/busy'");
+      expect(src).toMatch(/useProviderBusyWaits\(/);
+      expect(src).toMatch(/withBusyWaits\(directoryRows, busyWaits\)/);
+    });
+  }
+});
