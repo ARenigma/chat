@@ -155,6 +155,12 @@ export function lintPattern(re) {
 }
 
 /** A spec pattern as JavaScript RegExp source (with the u flag). */
+/** A value as TypeScript source with every non-ASCII code unit escaped, so no raw glyph (an em dash in the fold table) reaches the file. */
+const jsStr = v =>
+  JSON.stringify(v).replace(
+    /[\u007f-\uffff]/g,
+    c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
 const toJs = re =>
   re.replace(
     /\\U([0-9a-fA-F]{8})/g,
@@ -830,7 +836,7 @@ export type ContactCategory = ${spec.CATEGORY_ORDER.map(c =>
 
 const SOURCES: ReadonlyArray<readonly [string, string]> = [
 ${jsRegexes
-  .map(r => `  [${JSON.stringify(r.source)}, ${JSON.stringify(r.flags)}],`)
+  .map(r => `  [${jsStr(r.source)}, ${JSON.stringify(r.flags)}],`)
   .join('\n')}
 ];
 
@@ -865,8 +871,8 @@ function re(i: number): RegExp {
   return R[i] as RegExp;
 }
 
-const FOLD_FROM = ${JSON.stringify(tables.fold.from)};
-const FOLD_TO = ${JSON.stringify(tables.fold.to)};
+const FOLD_FROM = ${jsStr(tables.fold.from)};
+const FOLD_TO = ${jsStr(tables.fold.to)};
 
 let fold: Map<string, string> | undefined;
 function foldMap(): Map<string, string> {
@@ -883,8 +889,8 @@ ${jsTmaps
     (t, i) => `let tm${i}: Map<string, string> | undefined;
 function tmap${i}(): Map<string, string> {
   if (tm${i} === undefined) {
-    const from = Array.from(${JSON.stringify(t.from)});
-    const to = Array.from(${JSON.stringify(t.to)});
+    const from = Array.from(${jsStr(t.from)});
+    const to = Array.from(${jsStr(t.to)});
     tm${i} = new Map(from.map((ch, i2) => [ch, to[i2] ?? ch]));
   }
   return tm${i};
@@ -894,7 +900,7 @@ function tmap${i}(): Map<string, string> {
 
 ${jsDicts
   .map(
-    (d, i) => `const DICT${i}: Record<string, string> = ${JSON.stringify(d)};
+    (d, i) => `const DICT${i}: Record<string, string> = ${jsStr(d)};
 let d${i}: Map<string, string> | undefined;
 function dict${i}(): Map<string, string> {
   if (d${i} === undefined) {

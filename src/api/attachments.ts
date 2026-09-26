@@ -24,7 +24,8 @@ import {
 } from '../lib/attachments';
 import { useStore } from '../store/useStore';
 import { keys, memberPaysInThread } from './chat';
-import { sendResultFrom } from '../lib/sendErrors';
+import { sendNotice, sendResultFrom } from '../lib/sendErrors';
+import { CONTACT_GUARD_NOTICE } from '../lib/contactGuard';
 
 /** The private bucket created by migration 014. */
 const BUCKET = 'attachments';
@@ -48,6 +49,7 @@ const NOTICE: Record<SendError | 'UPLOAD', string> = {
   SUSPENDED: 'Your account is under review and cannot send messages.',
   RATE_LIMITED: 'Slow down a moment, then try again.',
   CHANNEL_DISABLED_BY_PROVIDER: 'They are not taking chats right now.',
+  ...CONTACT_GUARD_NOTICE,
   UPLOAD: 'The photo could not be uploaded. Check your connection.',
 };
 
@@ -287,7 +289,7 @@ export function useSendImage(
       if (result === null || !result.success) {
         const code = result?.error;
         track('send_rejected', { reason: code ?? 'network' });
-        keepFailed(code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.');
+        keepFailed(code !== undefined ? (sendNotice(result, NOTICE) ?? NOTICE[code]) : 'Could not send. Check your connection.');
         if (code === 'INSUFFICIENT_BALANCE') {
           openRefill();
         }
@@ -381,7 +383,7 @@ export function useRetryImageSend(
       if (result === null || !result.success) {
         const code = result?.error;
         track('send_rejected', { reason: code ?? 'network' });
-        keepFailed(code !== undefined ? NOTICE[code] : 'Could not send. Check your connection.');
+        keepFailed(code !== undefined ? (sendNotice(result, NOTICE) ?? NOTICE[code]) : 'Could not send. Check your connection.');
         if (code === 'INSUFFICIENT_BALANCE') {
           openRefill();
         }

@@ -131,8 +131,12 @@ const FIELD_LABEL: Record<string, string> = {
  * The line to show for a guard refusal, or null when `result` is not one.
  * Accepts any `{ error }` shape so every caller can pass its RPC result as is.
  */
-export function contactGuardNotice(result: { error?: unknown } | null | undefined): string | null {
-  if (result === null || result === undefined || !isContactGuardError(result.error)) {
+export function contactGuardNotice(result: unknown): string | null {
+  if (
+    typeof result !== 'object' ||
+    result === null ||
+    !isContactGuardError((result as { error?: unknown }).error)
+  ) {
     return null;
   }
   const refusal = result as ContactGuardRefusal;

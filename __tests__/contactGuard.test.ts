@@ -19,7 +19,14 @@ import {
   contactWindow,
   isContactBlocked,
 } from '../src/lib/contactGuard.generated';
-import { contactGuardNotice, precheckContactGuard } from '../src/lib/contactGuard';
+import {
+  contactGuardModeFrom,
+  contactGuardNotice,
+  contactGuardRefusalFromError,
+  precheckContactGuard,
+} from '../src/lib/contactGuard';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 type Row = {
   text: string;
@@ -194,5 +201,57 @@ describe('the composer precheck', () => {
   it('checks the window over the sender’s own recent messages', () => {
     const refusal = precheckContactGuard('84326', 'enforce', ['70158']);
     expect(refusal).toEqual(expect.objectContaining({ error: 'CONTACT_INFO', category: 'window' }));
+  });
+
+  it('maps every refusal the server returns to a line that names it', () => {
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'phone', reason: 'reference' })).toMatch(/go to Help/);
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'phone', reason: 'date_like' })).toMatch(/9\/8\/1962/);
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'payment', warn: true })).toMatch(
+      /UPI IDs.*One more attempt pauses your messaging for 24 hours\./,
+    );
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', category: 'handle', surface: 'story_comment' })).toMatch(/Public posts/);
+    expect(contactGuardNotice({ error: 'CONTACT_INFO', surface: 'profile', field: 'headline' })).toBe(
+      "Your headline can't include contact details, links or social usernames.",
+    );
+    expect(contactGuardNotice({ error: 'CONTACT_COOLDOWN' })).toMatch(/Too many blocked messages/);
+    expect(contactGuardNotice({ error: 'CONTACT_TOO_LONG' })).toMatch(/4,000/);
+    expect(contactGuardNotice({ error: 'IMAGES_DISABLED' })).toMatch(/Photos/);
+    expect(contactGuardNotice({ error: 'RATE_LIMITED' })).toBeNull();
+  });
+
+  it('reads the profile trigger’s raised refusal', () => {
+    expect(
+      contactGuardRefusalFromError({ code: 'P0011', details: '{"category":"link","field":"about"}' }),
+    ).toEqual(expect.objectContaining({ error: 'CONTACT_INFO', category: 'link', field: 'about', surface: 'profile' }));
+    expect(contactGuardRefusalFromError({ code: '23505', details: null })).toBeNull();
+  });
+});
+
+describe('the contact guard mode is a switch the admin console can publish', () => {
+  // The console validates every kill_switches draft against the registry and
+  // rejects a key it does not list, so the field is load-bearing (the
+  // stories_enabled test in contract.test.ts has the same reasoning).
+  const registry = require('../admin/lib/config-registry') as typeof import('../admin/lib/config-registry');
+
+  it('lists contact_guard_mode as off | shadow | enforce, shadow by default', () => {
+    const domain = registry.getDomain('kill_switches')!;
+    const field = domain.fields.find(f => f.key === 'contact_guard_mode');
+    expect(field).toMatchObject({ type: 'enum', default: 'shadow' });
+    expect((field as unknown as { options: { value: string }[] }).options.map(o => o.value)).toEqual([
+      'off',
+      'shadow',
+      'enforce',
+    ]);
+    const published = Object.fromEntries(domain.fields.map(f => [f.key, f.default]));
+    expect(registry.validatePayload(domain, published)).toEqual([]);
+  });
+
+  it('is published as shadow by 157, and read as shadow when unreadable', () => {
+    const migration = readFileSync(join(__dirname, '..', 'supabase/migrations/157_contact_guard_enforcement.sql'), 'utf8');
+    expect(migration).toContain("jsonb_build_object('contact_guard_mode', 'shadow')");
+    expect(migration).toMatch(/when 'off' then 'off'\s+when 'enforce' then 'enforce'\s+else 'shadow'/);
+    expect(contactGuardModeFrom('enforce')).toBe('enforce');
+    expect(contactGuardModeFrom('ENFORCE')).toBe('shadow');
+    expect(contactGuardModeFrom(undefined)).toBe('shadow');
   });
 });
