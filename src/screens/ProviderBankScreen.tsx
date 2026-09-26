@@ -115,7 +115,7 @@ export function ProviderBankScreen({ onBack }: Props) {
           <Icon name="chevronLeft" size={TOKENS.icon.md} />
         </Pressable>
         <Text
-          maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+          maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight}
           allowFontScaling
           numberOfLines={1}
           style={styles.headerTitle}>
@@ -312,7 +312,7 @@ const makeStyles = (t: Theme) =>
     },
     back: { width: 28, height: 40, alignItems: 'center', justifyContent: 'center' },
     headerTitle: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
       flex: 1,
       textAlign: 'center',

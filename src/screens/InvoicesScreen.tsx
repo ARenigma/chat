@@ -192,7 +192,7 @@ export function InvoicesScreen({ onBack }: Props) {
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="invoices-back" style={styles.barIcon} />
         <Text
-          maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+          maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight}
           allowFontScaling
           style={styles.barTitle}>
           Bills & invoices
@@ -383,7 +383,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     barTitle: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
     },
     state: {

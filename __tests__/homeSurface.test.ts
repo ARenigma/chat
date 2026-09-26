@@ -697,26 +697,34 @@ describe('every control on Home is a real 48dp box, not slop a parent clips', ()
     const indicatorHeight = Number(
       /const TAB_INDICATOR_HEIGHT = (\d+)/.exec(tabsSource)?.[1],
     );
+    const labelPadBottom = Number(
+      /const TAB_LABEL_PAD_BOTTOM = (\d+)/.exec(tabsSource)?.[1],
+    );
+    // ADR-0033: Bluesky's pager tab (TabBar.tsx:477-492) is paddingTop 10 +
+    // a 20 line + paddingBottom 10 + a 3dp indicator slot. In the kept 48dp box,
+    // bottom-anchored, that leaves 15 above the label: 15 + 20 + 10 + 3 = 48.
+    expect(labelPadBottom).toBe(10);
+    expect(TOKENS.typography.textMdSemiBold.lineHeight).toBe(20);
     const content =
-      TOKENS.typography.titleMediumEmphasized.lineHeight +
-      TOKENS.space['2xs'] +
-      indicatorHeight;
-    const sizelessSlop = Math.ceil(TOKENS.interaction.minTarget / 6);
+      TOKENS.typography.textMdSemiBold.lineHeight + labelPadBottom + indicatorHeight;
     expect(content).toBeLessThan(TOKENS.interaction.minTarget);
-    expect(content + sizelessSlop * 2).toBeLessThan(TOKENS.interaction.minTarget);
+    expect(TOKENS.interaction.minTarget - content).toBe(15);
+    // Content alone is under 48, so the box must state its own height rather
+    // than lean on slop (the original defect).
 
     const tab = tabsSource.slice(tabsSource.indexOf('    tab: {'), tabsSource.indexOf('    tabLabel: {'));
     expect(tab).toContain('minHeight: TOKENS.interaction.minTarget');
     // Bottom edge, where TabLayout draws its own indicator. Centring it would
     // meet the target and still leave the underline floating mid-box.
     expect(tab).toContain("justifyContent: 'flex-end'");
-    // The label sits exactly where the removed per-tab rule left it: the space
-    // that rule and its gap occupied is now padding, so nothing about the
-    // 48dp box or the label's baseline moved when the indicator became one
-    // shared, animated view.
+    // The indicator's slot plus Bluesky's label padding, as padding, so the
+    // shared animated indicator draws in the space below the label.
     expect(tab).toContain(
-      "paddingBottom: TAB_INDICATOR_HEIGHT + TOKENS.space['2xs']",
+      'paddingBottom: TAB_INDICATOR_HEIGHT + TAB_LABEL_PAD_BOTTOM',
     );
+    // The label is Bluesky's text_md SemiBold.
+    const label = tabsSource.slice(tabsSource.indexOf('    tabLabel: {'), tabsSource.indexOf('    tabLabelOn: {'));
+    expect(label).toContain('...TOKENS.typography.textMdSemiBold');
   });
 
   it('gives the button that opens search a 48dp box', () => {
@@ -1081,25 +1089,27 @@ describe('a section header is not a second title', () => {
      * that is never the title's ink (GraySectionCell.java:57-59,
      * HeaderCell.java:94-95) under a 20dp black ActionBar title
      * (ActionBar.java:1455). bold() is weight 500, not 700
-     * (AndroidUtilities.java:263-272), which is what makes this titleSmall.
+     * (AndroidUtilities.java:263-272). ADR-0033 keeps the three-axis step but
+     * takes the roles from Bluesky: ModuleHeader TitleText (text_lg SemiBold)
+     * over SubtitleText (text_sm leading_tight, Regular).
      */
     const picks = home.slice(home.indexOf('picksTitle: {'), home.indexOf('picksBelow: {'));
-    expect(picks).toContain('TOKENS.typography.titleSmall');
+    expect(picks).toContain('TOKENS.typography.textSmTight');
     expect(picks).toContain('t.color.text.section');
     expect(picks).not.toContain('titleMediumEmphasized');
     const explore = home.slice(
       home.indexOf('exploreTitle: {'),
       home.indexOf('featuredCard: {'),
     );
-    expect(explore).toContain('TOKENS.typography.headlineSmallEmphasized');
+    expect(explore).toContain('TOKENS.typography.textLgSemiBold');
     expect(explore).toContain('t.color.text.primary');
     // Read as VALUES, so this cannot be satisfied by any source text at all:
     // the two roles can never collapse onto one weight, size or ink.
-    expect(TOKENS.typography.titleSmall.fontFamily).not.toBe(
-      TOKENS.typography.headlineSmallEmphasized.fontFamily,
+    expect(TOKENS.typography.textSmTight.fontFamily).not.toBe(
+      TOKENS.typography.textLgSemiBold.fontFamily,
     );
-    expect(TOKENS.typography.titleSmall.fontSize).toBeLessThan(
-      TOKENS.typography.headlineSmallEmphasized.fontSize,
+    expect(TOKENS.typography.textSmTight.fontSize).toBeLessThan(
+      TOKENS.typography.textLgSemiBold.fontSize,
     );
     expect(LIGHT.color.text.section).not.toBe(LIGHT.color.text.primary);
     expect(DARK.color.text.section).not.toBe(DARK.color.text.primary);
@@ -1111,6 +1121,38 @@ describe('a section header is not a second title', () => {
     // two cells (GraySectionCell.java:76, HeaderCell.java:107).
     // https://reactnative.dev/docs/accessibility
     expect(home.match(/accessibilityRole="header"/g)?.length).toBe(3);
+  });
+
+  it('sets Chats and Explore as Bluesky section headers, at the tabs\' scale', () => {
+    // ADR-0033 (Amit, 2026-09-26): "Chats"/"Explore" at Bold 24/32 dwarfed the
+    // Listeners/Astrologers tabs above them. Both are ModuleHeader TitleText now,
+    // text_lg SemiBold, a step above the tabs' text_md rather than a display size.
+    const rail = home.slice(home.indexOf('railLabel: {'), home.indexOf('seeAll: {'));
+    expect(rail).toContain('...TOKENS.typography.textLgSemiBold');
+    expect(TOKENS.typography.textLgSemiBold.fontSize).toBeGreaterThan(
+      TOKENS.typography.textMdSemiBold.fontSize,
+    );
+    // ModuleHeader Container spacing: pt_2xl 24 (tabs' marginBottom sm + sm),
+    // pb_md 12, and 24 above Explore.
+    const header = home.slice(home.indexOf('railHeader: {'), home.indexOf('railEmpty: {'));
+    expect(header).toContain('paddingTop: TOKENS.space.sm');
+    expect(header).toContain('paddingBottom: TOKENS.space.sm');
+    const explore = home.slice(home.indexOf('exploreHead: {'), home.indexOf('picksHead: {'));
+    expect(explore).toContain('paddingTop: TOKENS.space.xl');
+  });
+
+  it('gives "See all" a 48dp target that bleeds, so the Chats row height does not depend on it', () => {
+    // "See all" renders only when there are chats. A 48dp box that set the row
+    // height would make Explore sit lower on Listeners than on Astrologers.
+    expect(home).toMatch(
+      /const SEE_ALL_BLEED =\s*\(TOKENS\.interaction\.minTarget - TOKENS\.typography\.textLgSemiBold\.lineHeight\) \/ 2;/,
+    );
+    const seeAll = home.slice(home.indexOf('    seeAll: {'), home.indexOf('seeAllText: {'));
+    expect(seeAll).toContain('minHeight: TOKENS.interaction.minTarget');
+    expect(seeAll).toContain('marginVertical: -SEE_ALL_BLEED');
+    expect((TOKENS.interaction.minTarget - TOKENS.typography.textLgSemiBold.lineHeight) / 2).toBe(13);
+    const seeAllText = home.slice(home.indexOf('seeAllText: {'), home.indexOf('railScroll: {'));
+    expect(seeAllText).toContain('...TOKENS.typography.textSmSemiBold');
   });
 
   it('holds AA for the ink the picks header actually uses, in both modes', () => {

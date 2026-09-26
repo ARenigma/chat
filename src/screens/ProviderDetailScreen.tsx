@@ -340,7 +340,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
           <View style={styles.hairline} />
 
           <Text allowFontScaling style={styles.aboutLabel}>
-            ABOUT
+            About
           </Text>
           <Text allowFontScaling style={styles.aboutBody}>
             {provider.about && provider.about !== ''
@@ -371,7 +371,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               five outlines in two tints here and as four solid stars plus an
               outline on the card the member had just tapped. */}
           <Text allowFontScaling style={[styles.aboutLabel, styles.ratingsLabel]}>
-            RATINGS
+            Ratings
           </Text>
           {/*
             * THE SUMMARY FOLLOWS THE DIRECTORY; THE REVIEWS BELOW STAY REAL.
@@ -1202,11 +1202,14 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
       textAlign: 'center',
     },
+    // Bluesky section header: text_lg font_semi_bold, sentence case, primary
+    // ink, pt_2xl 24 / pb_md 12 (ModuleHeader), ADR-0033. Was an uppercase
+    // 12dp overline in secondary ink.
     aboutLabel: {
-      ...TOKENS.typography.labelMediumEmphasized,
-      color: t.color.text.secondary,
-      paddingTop: TOKENS.space.lg,
-      paddingBottom: TOKENS.space.xs,
+      ...TOKENS.typography.textLgSemiBold,
+      color: t.color.text.primary,
+      paddingTop: TOKENS.space.xl,
+      paddingBottom: TOKENS.space.sm,
     },
     aboutBody: {
       ...TOKENS.typography.bodyLarge,

@@ -127,7 +127,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
       {/* Header: bare-chevron back + title, same anatomy as BlockedUsersScreen */}
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="transactions-back" style={styles.barIcon} />
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.barTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.barTitle}>
           Recharge history
         </Text>
       </View>
@@ -261,7 +261,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     barTitle: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
     },
     center: {

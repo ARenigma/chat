@@ -1152,8 +1152,11 @@ describe('a kind of text reads at one role, screen or sheet', () => {
     );
   };
 
-  /** In-flow section heading over content: bold 16 on primary ink. */
-  const SECTION_HEADING = 'titleMediumEmphasized';
+  /**
+   * In-flow section heading over content: Bluesky's section title, text_lg
+   * font_semi_bold (ModuleHeader TitleText), on primary ink (ADR-0033).
+   */
+  const SECTION_HEADING = 'textLgSemiBold';
 
   /**
    * The token balance — a FIGURE, not money (Amit, 2026-09-07).
@@ -1230,8 +1233,11 @@ describe('a kind of text reads at one role, screen or sheet', () => {
     // other's read as a heading.
     expect(roleInFactory(SHEET_HALF, 'section')).toBe(SECTION_HEADING);
     expect(roleInFactory(PAGE_HALF, 'section')).toBe(SECTION_HEADING);
-    expect(LIGHT.typography[SECTION_HEADING].fontFamily).toBe('Geist-Bold');
-    expect(LIGHT.typography[SECTION_HEADING].fontSize).toBe(
+    // ADR-0033 moved both halves together to Bluesky's section title, 16.9
+    // SemiBold: still a heading FACE against the body line's Regular, and now
+    // a size step above it too.
+    expect(LIGHT.typography[SECTION_HEADING].fontFamily).toBe('Geist-SemiBold');
+    expect(LIGHT.typography[SECTION_HEADING].fontSize).toBeGreaterThan(
       LIGHT.typography[SUPPORTING_LINE].fontSize,
     );
     expect(LIGHT.typography[SUPPORTING_LINE].fontFamily).toBe('Geist-Regular');

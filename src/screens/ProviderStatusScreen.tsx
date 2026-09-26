@@ -106,7 +106,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           style={styles.back}>
           <Icon name="chevronLeft" size={TOKENS.icon.md} />
         </Pressable>
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.headerTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling numberOfLines={1} style={styles.headerTitle}>
           Your Application
         </Text>
         {/* Balances the chevron so the title is centred on the bar rather than on
@@ -223,7 +223,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    ...TOKENS.typography.titleMediumEmphasized,
+    ...TOKENS.typography.textLgSemiBoldTight,
     color: t.color.text.primary,
     flex: 1,
     textAlign: 'center',

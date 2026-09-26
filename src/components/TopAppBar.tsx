@@ -98,7 +98,7 @@ function TopAppBarView({
       <View style={styles.slot}>{leading ?? null}</View>
 
       {/* Title — start-aligned per M3 Small top app bar spec */}
-      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight}
         allowFontScaling
         numberOfLines={1}
         style={styles.title}
@@ -178,7 +178,7 @@ function MediumBar({
       {/* Action row: leading + collapsed title + trailing. */}
       <View style={styles.actionRow}>
         <View style={styles.slot}>{leading ?? null}</View>
-        <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+        <Animated.Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight}
           allowFontScaling
           numberOfLines={1}
           style={[styles.inlineTitle, inlineTitleStyle]}>
@@ -189,7 +189,7 @@ function MediumBar({
 
       {/* Headline row: the large, start-aligned title (+ optional subtitle). */}
       <Animated.View style={[styles.headlineRow, headlineStyle]} pointerEvents="none">
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling numberOfLines={1} style={styles.headline}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling numberOfLines={1} style={styles.headline}>
           {title}
         </Text>
         {subtitle ? (
@@ -223,9 +223,11 @@ const makeStyles = (t: Theme) =>
     trailingSlot: {
       marginLeft: 'auto',
     },
+    // Bluesky screen title: text_lg font_semi_bold leading_tight
+    // (Layout/Header/index.tsx:196-205), ADR-0033.
     title: {
       flex: 1,
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
       // M3 Small: title is start-aligned (not centred).
       textAlign: 'left',
@@ -248,7 +250,7 @@ const makeStyles = (t: Theme) =>
     },
     inlineTitle: {
       flex: 1,
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
       textAlign: 'left',
       paddingHorizontal: TOKENS.space['2xs'],
@@ -261,12 +263,16 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.sm,
     },
+    // Same Bluesky title role as the inline one: Bluesky has no large title,
+    // so the medium bar's expanded headline no longer outsizes it. The bar's
+    // 112/128 geometry is replaced by the 48dp header in the nav step.
     headline: {
-      ...TOKENS.typography.headlineSmallEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
     },
+    // Bluesky header subtitle: text_sm (Layout/Header SubtitleText).
     subtitle: {
-      ...TOKENS.typography.bodyMedium,
+      ...TOKENS.typography.textSm,
       color: t.color.text.secondary,
     },
   });

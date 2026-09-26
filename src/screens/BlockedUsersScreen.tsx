@@ -50,7 +50,7 @@ export function BlockedUsersScreen({ onBack }: Props) {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="blocked-back" style={styles.barIcon} />
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.barTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.barTitle}>
           Blocked
         </Text>
       </View>
@@ -158,7 +158,7 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     barTitle: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
     },
     list: {

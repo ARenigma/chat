@@ -227,7 +227,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="usage-back" style={styles.barIcon} />
         <Text
-          maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+          maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight}
           allowFontScaling
           style={styles.barTitle}>
           {earning ? 'Earnings by session' : 'Usage by session'}
@@ -334,7 +334,7 @@ const makeStyles = (t: Theme) =>
       paddingBottom: TOKENS.space.xs,
     },
     barIcon: { width: 28, height: 40, alignItems: 'center', justifyContent: 'center' },
-    barTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
+    barTitle: { ...TOKENS.typography.textLgSemiBoldTight, color: t.color.text.primary },
     state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: TOKENS.space.xs, paddingHorizontal: TOKENS.space.xl },
     emptyTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
     emptyBody: { ...TOKENS.typography.bodyMedium, color: t.color.text.secondary, textAlign: 'center' },

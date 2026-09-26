@@ -186,7 +186,11 @@ export function TabTopBar({
           exiting={exit}
           style={styles.navRow}>
           <Text
-            maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMedium}
+            maxFontSizeMultiplier={
+              brand
+                ? TOKENS.fontScaleCap.headlineMedium
+                : TOKENS.fontScaleCap.textLgSemiBoldTight
+            }
             allowFontScaling={!brand}
             numberOfLines={1}
             style={brand ? styles.wordmark : styles.title}>
@@ -247,16 +251,16 @@ const makeStyles = (t: Theme) =>
       color: t.color.bg.accent,
     },
     /*
-     * Favourites and Settings: Geist Regular at 24dp (Amit, on device: 28dp
-     * read as odd for a regular-weight title — large text wants bold, so the
-     * regular cut sits better a notch smaller). `headlineSmall` is the token
-     * role for Geist Regular 24/32, matching the tightened 'Explore' heading
-     * scale. The brand face is NOT an option here: Titan One has a single heavy
-     * weight, so "brand font + regular weight" cannot exist — it would be a
-     * mini-wordmark on every tab, the "bold like brand" look already rejected.
+     * Favourites and Settings: Bluesky's screen title, text_lg font_semi_bold
+     * leading_tight (src/components/Layout/Header/index.tsx:196-205), so
+     * 16.9/19 SemiBold (ADR-0033, Amit 2026-09-26: Bluesky sizes and weights for
+     * every header). This supersedes the earlier Regular 24: that "regular not
+     * bold" call was about 24-28dp titles competing with the wordmark, and at
+     * 16.9 a SemiBold title no longer does (nav plan D1, 2026-09-25). The brand
+     * face stays out: Titan One would make a mini-wordmark on every tab.
      */
     title: {
-      ...TOKENS.typography.headlineSmall,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
     },
     navTrailing: {

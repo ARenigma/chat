@@ -1137,7 +1137,7 @@ const makeStyles = (t: Theme) =>
     // word is what a provider glancing at the bar actually reads, and it is the
     // card's own Open/Closed vocabulary rather than a second one.
     headAvailabilityLabel: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.textSmSemiBold,
       color: t.color.text.secondary,
     },
     headWordmark: {
@@ -1250,7 +1250,7 @@ const makeStyles = (t: Theme) =>
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: t.color.border.hairline,
     },
-    channelsLabel: { ...TOKENS.typography.labelMedium, color: t.color.text.secondary },
+    channelsLabel: { ...TOKENS.typography.textSmSemiBold, color: t.color.text.secondary },
     /*
      * The gallery block. Hairline-topped like `channels`; the sheet's own scroll
      * padding insets it, so its label and tiles line up with the settings rows
@@ -1441,12 +1441,15 @@ const makeStyles = (t: Theme) =>
     statValue: { ...TOKENS.typography.titleLargeEmphasized, color: t.color.text.primary },
     statLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
     list: {},
+    // Bluesky section header (ModuleHeader TitleText text_lg font_semi_bold,
+    // Container pt_2xl 24 / pb_md 12) in primary ink, like Home's Chats and
+    // Explore (ADR-0033).
     sectionTitle: {
-      ...TOKENS.typography.labelMediumEmphasized,
-      color: t.color.text.secondary,
+      ...TOKENS.typography.textLgSemiBold,
+      color: t.color.text.primary,
       paddingHorizontal: TOKENS.space.md,
-      paddingTop: TOKENS.space.lg,
-      paddingBottom: TOKENS.space.xs,
+      paddingTop: TOKENS.space.xl,
+      paddingBottom: TOKENS.space.sm,
       backgroundColor: t.color.bg.base,
     },
     row: {

@@ -7351,7 +7351,10 @@ describe('a session is rated when it ends, and the ratings are readable', () => 
       at = next;
     }
     // And it sits BELOW About, which is the section it comments on.
-    expect(detail.indexOf('ABOUT')).toBeLessThan(detail.indexOf('RATINGS'));
+    // Sentence case since ADR-0033 (Bluesky section titles are not overlines).
+    expect(detail.indexOf('About\n')).toBeGreaterThan(-1);
+    expect(detail.indexOf('Ratings\n')).toBeGreaterThan(-1);
+    expect(detail.indexOf('About\n')).toBeLessThan(detail.indexOf('Ratings\n'));
     // The server contract is untouched: distribution is still returned, just
     // not drawn, so nothing else that reads it has to change.
     expect(

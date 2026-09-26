@@ -619,7 +619,7 @@ export function HomeScreen({
         <TourAnchor id="chats">
         <View style={styles.rail}>
           <View style={styles.railHeader}>
-            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling accessibilityRole="header" style={styles.railLabel}>
+            <Text allowFontScaling accessibilityRole="header" style={styles.railLabel}>
               Chats
             </Text>
             {chats.length > 0 ? (
@@ -672,7 +672,7 @@ export function HomeScreen({
               are Home's three headings.
               https://reactnative.dev/docs/accessibility
               https://developer.android.com/guide/topics/ui/accessibility/principles */}
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling accessibilityRole="header" style={styles.exploreTitle}>
+          <Text allowFontScaling accessibilityRole="header" style={styles.exploreTitle}>
             Explore
           </Text>
         </View>
@@ -681,7 +681,6 @@ export function HomeScreen({
           <>
             <View style={styles.picksHead}>
               <Text
-                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleSmall}
                 allowFontScaling
                 accessibilityRole="header"
                 style={styles.picksTitle}>
@@ -1330,6 +1329,20 @@ const RAIL_AVATAR = 56;
 const RAIL_ITEM_HEIGHT =
   RAIL_AVATAR + 2 * (3 + 2) + TOKENS.space['2xs'] + TOKENS.typography.bodySmall.lineHeight;
 
+/**
+ * How far the 48dp "See all" target bleeds past the Chats heading's 22dp line,
+ * top and bottom: (48 - 22) / 2 = 13.
+ *
+ * "See all" renders only when there are chats. If its target set the header
+ * row's height, the row would be 48 on Listeners (seeded chats) and 22 on
+ * Astrologers (none), and Explore would jump between tabs — the viewport shift
+ * `RAIL_ITEM_HEIGHT` above exists to prevent. Bleeding into the header's own
+ * padding keeps the row at the heading's line height either way, and the target
+ * stays a real 48dp box because hitSlop cannot extend past a parent on Android.
+ */
+const SEE_ALL_BLEED =
+  (TOKENS.interaction.minTarget - TOKENS.typography.textLgSemiBold.lineHeight) / 2;
+
 /** How much shorter the hero card is than the 210dp it shipped at. */
 const HERO_HEIGHT_REDUCTION = TOKENS.space['2xl'];
 
@@ -1424,16 +1437,18 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    rail: {
-      paddingTop: TOKENS.space.xs,
-      paddingBottom: TOKENS.space.sm,
-    },
+    // Bluesky's section header (src/screens/Search/components/ModuleHeader.tsx
+    // Container): px_lg 16, pt_2xl 24, pb_md 12 (ADR-0033). The 24 above Chats
+    // is ProviderTypeTabs' own marginBottom (sm) plus this sm, so the rail
+    // itself carries no vertical padding.
+    rail: {},
     railHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: TOKENS.space.md,
-      paddingBottom: TOKENS.space.xs,
+      paddingTop: TOKENS.space.sm,
+      paddingBottom: TOKENS.space.sm,
     },
     // Same height as a populated rail (`RAIL_ITEM_HEIGHT`), the plus centred
     // inside it, rather than its own shorter padding — see the constant's
@@ -1444,18 +1459,22 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
     },
     // Chats is a peer section heading to Explore, not a quiet caption (#14,
-    // Amit: "bold, looks too shallow in front of Explore"). Same display weight
-    // and primary ink so the two read as equals.
+    // Amit: "bold, looks too shallow in front of Explore"). Same role and
+    // primary ink so the two read as equals: Bluesky's section title, text_lg
+    // font_semi_bold (ModuleHeader TitleText), no longer larger than the
+    // Listeners/Astrologers tabs by a whole display step.
     railLabel: {
-      ...TOKENS.typography.headlineSmallEmphasized,
+      ...TOKENS.typography.textLgSemiBold,
       color: t.color.text.primary,
     },
     seeAll: {
       flexDirection: 'row',
       alignItems: 'center',
+      minHeight: TOKENS.interaction.minTarget,
+      marginVertical: -SEE_ALL_BLEED,
     },
     seeAllText: {
-      ...TOKENS.typography.labelMediumEmphasized,
+      ...TOKENS.typography.textSmSemiBold,
       color: t.color.text.secondary,
     },
     railScroll: {
@@ -1516,11 +1535,13 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: TOKENS.space.md,
-      paddingTop: TOKENS.space.xs,
+      // Bluesky ModuleHeader pt_2xl: 24 from the rail above.
+      paddingTop: TOKENS.space.xl,
       // 'Explore' and its caption 'Top profiles this week' are a title + its
       // supporting line, so they read as ONE unit: a 2dp hairline gap (Amit, on
       // device), so glyph-to-glyph the two lines sit as close as the fonts' own
       // line-box leading allows. Was 12dp, which made them two separate things.
+      // Bluesky stacks TitleText and SubtitleText with gap_2xs, the same 2dp.
       // https://m3.material.io/foundations/layout/understanding-layout/spacing
       paddingBottom: TOKENS.space.hair,
     },
@@ -1538,20 +1559,20 @@ const makeStyles = (t: Theme) =>
      * HeaderCell.java:94-95, key_graySectionText) against a 20dp black ActionBar
      * title (ActionBar.java:1455).
      *
-     * `bold()` is NOT weight 700: the field it caches into is literally named
-     * `mediumTypeface` and the SDK-P branch is `Typeface.create(null, 500,
-     * false)` (AndroidUtilities.java:263-272). M3 maps weight 500 to
-     * Geist-SemiBold (ADR-0024 §1), and the M3 role that is 14/20 SemiBold is
-     * `titleSmall` — which is why this is titleSmall and not a label role. The
-     * 0.1 tracking stays M3's; the reference sets none, and 0.1dp at 14dp is
-     * ~1/140 em, not worth forking the scale for.
+     * That reasoning picked the M3 titleSmall 14/20 SemiBold. ADR-0033 moves it
+     * to Bluesky's section subtitle instead (below): same job, one step quieter
+     * on weight, since the title above it is now SemiBold rather than Bold.
      */
+    // Bluesky ModuleHeader pb_md 12 under the title block, and its
+    // SubtitleText role: text_sm leading_tight, 13.1/15 Regular (ADR-0033).
+    // The step down from the title is now size and weight (16.9 SemiBold over
+    // 13.1 Regular) plus the quieter `text.section` ink.
     picksHead: {
       paddingHorizontal: TOKENS.space.md,
-      paddingBottom: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.sm,
     },
     picksTitle: {
-      ...TOKENS.typography.titleSmall,
+      ...TOKENS.typography.textSmTight,
       color: t.color.text.section,
     },
     picksBelow: {
@@ -1564,10 +1585,11 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.sm,
     },
     filterGroup: {
-      gap: TOKENS.space['2xs'],
+      gap: TOKENS.space.xs,
     },
+    // Bluesky text_sm font_semi_bold for a group label (ADR-0033).
     filterLabel: {
-      ...TOKENS.typography.labelMedium,
+      ...TOKENS.typography.textSmSemiBold,
       color: t.color.text.secondary,
     },
     filterChips: {
@@ -1576,7 +1598,7 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space.xs,
     },
     exploreTitle: {
-      ...TOKENS.typography.headlineSmallEmphasized,
+      ...TOKENS.typography.textLgSemiBold,
       color: t.color.text.primary,
     },
     // Card wraps the featured hero; Card owns borderRadius and overflow.

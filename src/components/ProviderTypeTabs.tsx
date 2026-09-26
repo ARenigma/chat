@@ -28,6 +28,20 @@ import { Pressable } from './Pressable';
 
 const TAB_INDICATOR_HEIGHT = 3;
 const TAB_INDICATOR_MIN_WIDTH = 24;
+/**
+ * Space between the label's line box and the indicator slot: Bluesky's pager
+ * tab `itemInner.paddingBottom: 10` (src/view/com/pager/TabBar.tsx:487). With
+ * the 20dp `textMdSemiBold` line and the 3dp indicator that leaves 15 above the
+ * label in the 48dp box: 15 + 20 + 10 + 3 = 48 (ADR-0033).
+ */
+const TAB_LABEL_PAD_BOTTOM = 10;
+/**
+ * Stated deviation from Bluesky, which leaves the tab label uncapped: its
+ * TabBar is a horizontal ScrollView, so a label that grows scrolls. These tabs
+ * are fixed `flex: 1` halves, so at a 200% font scale "Astrologers" would clip
+ * instead. 1.5 is the cap this label carried before the type change.
+ */
+const TAB_LABEL_FONT_SCALE_CAP = 1.5;
 const TAB_COUNT = PROVIDER_CATEGORIES.length;
 
 /**
@@ -168,7 +182,7 @@ export function ProviderTypeTabs({ value, onChange, testID = 'provider-type-tabs
             highlight="ripple"
             style={styles.tab}>
             <Text
-              maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+              maxFontSizeMultiplier={TAB_LABEL_FONT_SCALE_CAP}
               allowFontScaling
               onLayout={e => onTabLabelLayout(index, e.nativeEvent.layout.width)}
               style={[styles.tabLabel, on && styles.tabLabelOn]}>
@@ -193,10 +207,12 @@ const makeStyles = (t: Theme) =>
       minHeight: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'flex-end',
-      paddingBottom: TAB_INDICATOR_HEIGHT + TOKENS.space['2xs'],
+      paddingBottom: TAB_INDICATOR_HEIGHT + TAB_LABEL_PAD_BOTTOM,
     },
+    // Bluesky pager tab label: text_md font_semi_bold on a 20 line
+    // (TabBar.tsx:448, :492).
     tabLabel: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textMdSemiBold,
       color: t.color.text.tertiary,
     },
     // Accent, not `text.primary` — see HomeScreen's original note on this rule

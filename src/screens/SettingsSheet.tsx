@@ -976,11 +976,12 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
       marginTop: TOKENS.space['2xs'],
     },
+    // List section label: Bluesky text_sm font_semi_bold (ADR-0033).
     subheader: {
-      ...TOKENS.typography.labelMediumEmphasized,
+      ...TOKENS.typography.textSmSemiBold,
       color: t.color.text.secondary,
-      paddingTop: TOKENS.space.sm,
-      paddingBottom: TOKENS.space.sm,
+      paddingTop: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.xs,
     },
     // WhatsApp's Settings root is one continuous list on the page surface.
     // Sections are semantic in code but add no card, tile, or divider chrome.

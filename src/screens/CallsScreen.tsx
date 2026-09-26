@@ -21,7 +21,7 @@ export function CallsScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
       <View style={styles.nav}>
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized} allowFontScaling style={styles.title}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.title}>
           Calls
         </Text>
       </View>
@@ -44,14 +44,19 @@ const makeStyles = (t: Theme) =>
       flex: 1,
       backgroundColor: t.color.bg.base,
     },
+    // The same 48dp row TabTopBar's nav row gets from its search button, so a
+    // tab root with no trailing control does not collapse to its 19dp line.
     nav: {
+      minHeight: TOKENS.interaction.minTarget,
+      justifyContent: 'center',
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
     title: {
       // A screen title, not the brand wordmark — dark, like Home's "Explore",
       // not coral (the accent budget reserves coral for states/actions).
-      ...TOKENS.typography.headlineSmallEmphasized,
+      // Bluesky's screen title role (Layout.Header TitleText), ADR-0033.
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
     },
     empty: {

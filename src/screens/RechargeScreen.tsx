@@ -204,7 +204,7 @@ function RechargeSheetForm({
         <RupeeAmount value={balance} allowFontScaling style={styles.balanceValue} />
       </View>
 
-      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
+      <Text allowFontScaling style={styles.section}>
         Choose a pack
       </Text>
       {/* Above the grid, attached to the packs it discounts. Renders nothing for
@@ -409,7 +409,7 @@ export function RechargeWalletPage() {
     <WalletLayer style={[styles.page, { paddingTop: insets.top }]}>
       <View style={styles.bar}>
         <BackButton onPress={closeBack} testID="recharge-wallet-back" style={styles.barIcon} />
-        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.barTitle}>
+        <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.barTitle}>
           Recharge
         </Text>
       </View>
@@ -495,7 +495,7 @@ function RechargeForm({
         <RupeeAmount value={balance} allowFontScaling style={styles.balanceValue} />
       </View>
 
-      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.section}>
+      <Text allowFontScaling style={styles.section}>
         Add money
       </Text>
 
@@ -687,8 +687,9 @@ const makePageStyles = (t: Theme) =>
     barIcon: {
       marginLeft: -TOKENS.space.xs,
     },
+    // Bluesky screen title (Layout.Header TitleText), ADR-0033.
     barTitle: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBoldTight,
       color: t.color.text.primary,
     },
     scroll: {
@@ -773,10 +774,13 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.numeralLarge,
       color: t.color.text.onInverse,
     },
+    // Bluesky section header, text_lg font_semi_bold (ADR-0033). paddingTop sm
+    // plus the column's gap sm is ModuleHeader's pt_2xl 24; the gap below is
+    // its pb_md 12.
     section: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBold,
       color: t.color.text.primary,
-      paddingTop: TOKENS.space.md,
+      paddingTop: TOKENS.space.sm,
     },
     grid: {
       flexDirection: 'row',
@@ -1025,20 +1029,14 @@ const makeCompactStyles = (t: Theme) =>
       ...TOKENS.typography.numeralLarge,
       color: t.color.text.primary,
     },
-    // titleMediumEmphasized, matching the wallet page's `section`. Both were
-    // already 16dp, so this changes the FACE and not the size: bodyLarge is
-    // Geist-Regular, so "Choose a pack" sat at body weight and did not read as a
-    // heading, while "Add money" one host over did. Bold-16-with-primary-ink is
-    // the app's settled in-flow section heading (ProfileSetupScreen `section`);
-    // labelMediumEmphasized on secondary ink is the other, quieter pattern and it
-    // belongs to list-group overlines (SettingsSheet `subheader`,
-    // ProviderHomeScreen `sectionTitle`), which this is not.
-    //
-    // The Text was already wiring fontScaleCap.titleMediumEmphasized while this
-    // style said bodyLarge, which is where the drift showed: the cap names the
-    // role the call site meant.
+    // Was bodyLarge (Geist-Regular), so "Choose a pack" sat at body weight while
+    // "Add money" one host over read as a heading; the pair has shared one
+    // heading role since, now Bluesky's (below). No font-scale cap: alf section
+    // titles are uncapped.
+    // The same section-header role as the page's "Add money" (one role, screen
+    // or sheet); the sheet keeps its own spacing (sheets keep their geometry).
     section: {
-      ...TOKENS.typography.titleMediumEmphasized,
+      ...TOKENS.typography.textLgSemiBold,
       color: t.color.text.primary,
       paddingTop: TOKENS.space.xs,
     },
