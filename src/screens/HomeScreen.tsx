@@ -623,17 +623,19 @@ export function HomeScreen({
               Chats
             </Text>
             {chats.length > 0 ? (
-              <Pressable
-                onPress={onSeeAllChats}
-                testID="chats-see-all"
-                accessibilityLabel="See all chats"
-                press="none"
-                style={styles.seeAll}>
-                <Text allowFontScaling style={styles.seeAllText}>
-                  See all
-                </Text>
-                <Icon name="chevronRight" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
-              </Pressable>
+              <View style={styles.seeAllBleed}>
+                <Pressable
+                  onPress={onSeeAllChats}
+                  testID="chats-see-all"
+                  accessibilityLabel="See all chats"
+                  press="none"
+                  style={styles.seeAll}>
+                  <Text allowFontScaling style={styles.seeAllText}>
+                    See all
+                  </Text>
+                  <Icon name="chevronRight" size={TOKENS.icon.xs} color={theme.color.text.secondary} />
+                </Pressable>
+              </View>
             ) : null}
           </View>
           {chats.length > 0 ? (
@@ -1463,11 +1465,18 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.textLgSemiBold,
       color: t.color.text.primary,
     },
+    // The bleed is on a plain wrapper, not on the Pressable: Pressable moves
+    // box sizing (minHeight) to its touchable root and leaves margins on the
+    // inner view, so a negative margin in `seeAll` shrank only the inside and
+    // the root still claimed 48 in the row. On the S22 that made the Chats row
+    // 48 tall and put "Chats" 40.8dp below the tabs instead of 24 (2026-09-26).
+    seeAllBleed: {
+      marginVertical: -SEE_ALL_BLEED,
+    },
     seeAll: {
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: TOKENS.interaction.minTarget,
-      marginVertical: -SEE_ALL_BLEED,
     },
     seeAllText: {
       ...TOKENS.typography.textSmSemiBold,

@@ -1148,7 +1148,13 @@ describe('a section header is not a second title', () => {
     );
     const seeAll = home.slice(home.indexOf('    seeAll: {'), home.indexOf('seeAllText: {'));
     expect(seeAll).toContain('minHeight: TOKENS.interaction.minTarget');
-    expect(seeAll).toContain('marginVertical: -SEE_ALL_BLEED');
+    // On a wrapper View, never on the Pressable: Pressable keeps margins on
+    // its inner view and moves minHeight to its root, so a bleed there leaves
+    // the row 48 tall (measured on the S22, 2026-09-26).
+    expect(seeAll).not.toMatch(/margin/);
+    const bleed = home.slice(home.indexOf('    seeAllBleed: {'), home.indexOf('    seeAll: {'));
+    expect(bleed).toContain('marginVertical: -SEE_ALL_BLEED');
+    expect(home).toMatch(/<View style=\{styles\.seeAllBleed\}>\s*<Pressable[\s\S]*?testID="chats-see-all"/);
     expect((TOKENS.interaction.minTarget - TOKENS.typography.textLgSemiBold.lineHeight) / 2).toBe(13);
     const seeAllText = home.slice(home.indexOf('seeAllText: {'), home.indexOf('railScroll: {'));
     expect(seeAllText).toContain('...TOKENS.typography.textSmSemiBold');
