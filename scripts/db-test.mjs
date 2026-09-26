@@ -197,6 +197,7 @@ const MIGRATIONS = [
   'supabase/migrations/153_function_grants_closed_by_default.sql',
   'supabase/migrations/154_provider_busy_waits.sql',
   'supabase/migrations/155_provider_presence_last_seen.sql',
+  'supabase/migrations/170_delete_account_ends_every_live_session.sql',
 ];
 
 /**
@@ -955,6 +956,15 @@ const suites = [
     file: join(ROOT, 'supabase/tests/566_story_report_lock_order.sql'),
     label:
       'a story or comment report and an account deletion racing each other both finish, and the report keeps its evidence',
+  },
+  // Commits too, like 566, and cleans up after itself the same way.
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/590_delete_account_ends_a_session_started_mid_lock.sql',
+    ),
+    label:
+      'an account deletion ends a paid session that started while it took its locks, instead of failing on it',
   },
 ];
 
