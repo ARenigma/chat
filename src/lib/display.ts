@@ -40,3 +40,26 @@ export function genderLetter(gender: string | null): string | null {
   }
   return null;
 }
+
+export type ProviderCtaLabel = 'Notify' | 'Call' | 'Chat' | 'Video';
+
+/**
+ * The provider row's one verb (ProviderRow's CTA, #46). Away outranks every
+ * channel; a provider who takes voice calls is called when the row can dial;
+ * otherwise the verb names a channel they actually offer, chat first.
+ */
+export function providerCtaLabel(input: {
+  isAvailable: boolean;
+  audioEnabled: boolean;
+  chatEnabled: boolean;
+  /** The row has a dial action to hand (ProviderRow's `onCall`). */
+  canDial: boolean;
+}): ProviderCtaLabel {
+  if (!input.isAvailable) {
+    return 'Notify';
+  }
+  if (input.audioEnabled && input.canDial) {
+    return 'Call';
+  }
+  return input.chatEnabled ? 'Chat' : input.audioEnabled ? 'Call' : 'Video';
+}

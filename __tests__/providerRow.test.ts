@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { TOKENS } from '../src/theme/tokens';
-import { genderLetter } from '../src/lib/display';
+import { genderLetter, providerCtaLabel } from '../src/lib/display';
 import { ICON_GLYPH } from '../src/theme/icons.generated';
 import { capHeight, cmapOf, glyphBounds, unitsPerEm } from './helpers/ttf';
 
@@ -698,10 +698,7 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
      * so the word names something the provider actually takes.
      */
     expect(body).toContain(
-      "const offeredVerb = provider.chat_enabled\n    ? 'Chat'\n    : provider.audio_enabled\n      ? 'Call'\n      : 'Video'",
-    );
-    expect(body).toContain(
-      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb",
+      "const ctaLabel = providerCtaLabel({\n    isAvailable: provider.is_available,\n    audioEnabled: provider.audio_enabled,\n    chatEnabled: provider.chat_enabled,\n    canDial: onCall !== undefined,\n  });",
     );
     expect(body).toMatch(/canCall && onCall !== undefined \? onCall\(provider\.id\) : onPress\(provider\.id\)/);
   });
@@ -1165,5 +1162,27 @@ describe('the tag line always has something in it', () => {
     // And the constant it is stated in terms of is the same one the row height
     // is derived from, so the two cannot drift.
     expect(read(ROW)).toContain('export const PROVIDER_ROW_LEFT_COLUMN');
+  });
+});
+
+/*
+ * #46: the CTA's verb as a table. The rule lives in `providerCtaLabel`
+ * (src/lib/display.ts) so it can be CALLED here; the pin above asserts the row
+ * uses it. Away outranks every channel; voice is a Call when the row can dial;
+ * otherwise the verb names an offered channel, chat before video.
+ */
+describe('the provider row CTA label (#46)', () => {
+  const on = true;
+  const off = false;
+  it.each([
+    ['availability off', { isAvailable: off, audioEnabled: on, chatEnabled: on, canDial: true }, 'Notify'],
+    ['availability off, video only', { isAvailable: off, audioEnabled: off, chatEnabled: off, canDial: true }, 'Notify'],
+    ['voice on', { isAvailable: on, audioEnabled: on, chatEnabled: on, canDial: true }, 'Call'],
+    ['voice on, chat off', { isAvailable: on, audioEnabled: on, chatEnabled: off, canDial: true }, 'Call'],
+    ['voice off + chat on', { isAvailable: on, audioEnabled: off, chatEnabled: on, canDial: true }, 'Chat'],
+    ['video only', { isAvailable: on, audioEnabled: off, chatEnabled: off, canDial: true }, 'Video'],
+    ['voice on but no dial action, chat on', { isAvailable: on, audioEnabled: on, chatEnabled: on, canDial: false }, 'Chat'],
+  ] as const)('%s -> %s', (_name, input, expected) => {
+    expect(providerCtaLabel(input)).toBe(expected);
   });
 });

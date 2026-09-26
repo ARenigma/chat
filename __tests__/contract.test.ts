@@ -3734,9 +3734,7 @@ describe('iOS list separators are drawn the way iOS draws them', () => {
     // The fallback follows the offered set now, not the literal 'Chat': a
     // provider who takes video only was still being labelled Chat, which is the
     // same false affordance one layer down. See providerRow.test.ts.
-    expect(row).toContain(
-      "const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb",
-    );
+    expect(row).toContain('const ctaLabel = providerCtaLabel({');
     // Still live elsewhere, which is what made it worth adding in the first place.
     const chevronUsers = walk(join(ROOT, 'src'))
       .filter(f => /\.tsx$/.test(f))

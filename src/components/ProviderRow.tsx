@@ -9,7 +9,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
-import { genderLetter, initialOf } from '../lib/display';
+import { genderLetter, initialOf, providerCtaLabel } from '../lib/display';
 import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { DURATION, EASE_OUT_QUINT, fadeSwapOutFast, rowIn } from '../theme/motion';
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
@@ -701,12 +701,12 @@ function ProviderRowView({
    * a dial lands on `onPress`, which is the profile: the one surface that can
    * render the whole offered set.
    */
-  const offeredVerb = provider.chat_enabled
-    ? 'Chat'
-    : provider.audio_enabled
-      ? 'Call'
-      : 'Video';
-  const ctaLabel = away ? 'Notify' : canCall ? 'Call' : offeredVerb;
+  const ctaLabel = providerCtaLabel({
+    isAvailable: provider.is_available,
+    audioEnabled: provider.audio_enabled,
+    chatEnabled: provider.chat_enabled,
+    canDial: onCall !== undefined,
+  });
   const ctaSpoken =
     ctaLabel === 'Call'
       ? `Call ${provider.display_name}`
