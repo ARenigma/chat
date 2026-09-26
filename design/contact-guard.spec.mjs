@@ -683,6 +683,43 @@ const MOBILE = String.raw`(?:91|0)?[6-9][0-9]{9}`;
 /** A separator inside a written number: spaces, dots, slashes, hyphens, brackets, a currency sign. */
 const SEP = String.raw`[ .()/\u20b9$\u20ac\u00a3-]{0,3}`;
 /** A calendar date with a 19xx or 20xx year, in any of . / - or space. */
+/**
+ * Copy guards, each a NECESSARY condition on copy t for any rule on that copy
+ * to fire, so a copy that cannot matter is never built. They are what keeps
+ * an ordinary message inside Postgres's 32-entry compiled-regex cache (past
+ * it, every call recompiles everything). Jest proves on every fixture row
+ * that the guards and the prefilter never change a verdict.
+ */
+const PHONE_GUARD = `[0-9]|(?<!${NL})(?:${alt([
+  ...Object.keys(NUMBER_DICT),
+  'double',
+  'triple',
+])})(?!${NL})`;
+const DIGIT_GUARD = '[0-9]';
+const TEXT_ID_GUARD = String.raw`[@#[({<]|[a-z0-9_][ ]*\.[ ]*[a-z]|(?<!${NL})(?:${alt(
+  [
+    ...APPS,
+    ...MAIL,
+    'dot',
+    'daat',
+    'dott',
+    'point',
+    'underscore',
+    'under score',
+    'at',
+    'attherate',
+    'www',
+    'http',
+    'https',
+    'ftp',
+    'id',
+    'username',
+    'user name',
+    'userid',
+    'handle',
+  ],
+)})(?!${NL})`;
+
 const DATE = String.raw`(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[ ]?[ ./-][ ]?(?:0?[1-9]|1[0-2])[ ]?[ ./-][ ]?(?:19|20)[0-9]{2}(?![0-9])|(?<![0-9])(?:19|20)[0-9]{2}[ ]?[./-][ ]?(?:0?[1-9]|1[0-2])[ ]?[./-][ ]?(?:0?[1-9]|[12][0-9]|3[01])(?![0-9])`;
 
 // ---------------------------------------------------------------------------
@@ -792,10 +829,25 @@ export const COPIES = [
       { op: 'lower' },
       { op: 'strip_marks_after_ascii' },
       { op: 'spaces' },
-      { op: 'replace', re: String.raw`&(?:nbsp|#160|#xa0);`, to: ' ' },
-      { op: 'replace', re: String.raw`&(?:commat|#64|#x40);`, to: '@' },
-      { op: 'replace', re: String.raw`&(?:period|#46|#x2e);`, to: '.' },
-      { op: 'replace', re: String.raw`&amp;`, to: '&' },
+      {
+        op: 'replace',
+        re: String.raw`&(?:nbsp|#160|#xa0);`,
+        to: ' ',
+        ifContains: '&',
+      },
+      {
+        op: 'replace',
+        re: String.raw`&(?:commat|#64|#x40);`,
+        to: '@',
+        ifContains: '&',
+      },
+      {
+        op: 'replace',
+        re: String.raw`&(?:period|#46|#x2e);`,
+        to: '.',
+        ifContains: '&',
+      },
+      { op: 'replace', re: String.raw`&amp;`, to: '&', ifContains: '&' },
     ],
   },
   {
@@ -824,6 +876,7 @@ export const COPIES = [
     // Phone copy: number words become digits; a calendar date with a year is
     // taken out, so "9.8.1962 10.53" is a date and a time, not 9819621053.
     name: 'p',
+    guard: PHONE_GUARD,
     from: 'd',
     steps: [
       {
@@ -850,6 +903,7 @@ export const COPIES = [
   {
     // Read backwards, for "ulta padho".
     name: 'rp',
+    guard: PHONE_GUARD,
     from: 'p',
     steps: [{ op: 'reverse' }],
   },
@@ -859,6 +913,7 @@ export const COPIES = [
     // hard breaks (#). Built from d, not p: number WORDS spread over a sentence
     // ("ek do din") are p's business, not this copy's.
     name: 'pd',
+    guard: DIGIT_GUARD,
     from: 'd',
     steps: [
       ...DIGIT_BREAKS,
@@ -878,6 +933,7 @@ export const COPIES = [
     // commas included: "nau aath, bees, pachpan, chaalis, satattar". Typed
     // digits are not joined across commas here, so a list of marks is not.
     name: 'pw',
+    guard: PHONE_GUARD,
     from: 'd',
     steps: [
       {
@@ -901,10 +957,11 @@ export const COPIES = [
       { op: 'replace', re: String.raw`§`, to: '' },
     ],
   },
-  { name: 'e', from: 't', steps: E_STEPS },
+  { name: 'e', from: 't', guard: TEXT_ID_GUARD, steps: E_STEPS },
   {
     // Letter-spaced text joined back: "p r i y a @ g m a i l . c o m".
     name: 'ec',
+    guard: TEXT_ID_GUARD,
     from: 't',
     steps: [
       {

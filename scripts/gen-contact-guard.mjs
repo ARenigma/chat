@@ -224,13 +224,24 @@ function emitOp(op, ctx) {
         sql: `v := regexp_replace(v, ${sqlLit(`[${SPACES}]`)}, ' ', 'g');`,
         js: `v = v.replace(${ctx.re(`[${SPACES}]`, 'gu')}, ' ');`,
       };
-    case 'replace':
-      return {
-        sql: `v := regexp_replace(v, ${sqlLit(op.re)}, ${sqlLit(
-          toPgReplacement(op.to),
-        )}, 'g');`,
-        js: `v = v.replace(${ctx.re(op.re, 'gu')}, ${JSON.stringify(op.to)});`,
-      };
+    case 'replace': {
+      // `ifContains` skips the regex when a literal it needs is absent, which
+      // keeps rarely-needed steps out of Postgres's 32-entry regex cache.
+      const sql = `v := regexp_replace(v, ${sqlLit(op.re)}, ${sqlLit(
+        toPgReplacement(op.to),
+      )}, 'g');`;
+      const js = `v = v.replace(${ctx.re(op.re, 'gu')}, ${JSON.stringify(
+        op.to,
+      )});`;
+      return op.ifContains === undefined
+        ? { sql, js }
+        : {
+            sql: `if strpos(v, ${sqlLit(
+              op.ifContains,
+            )}) > 0 then ${sql} end if;`,
+            js: `if (v.includes(${JSON.stringify(op.ifContains)})) { ${js} }`,
+          };
+    }
     case 'reverse':
       return {
         sql: 'v := reverse(v);',
@@ -324,6 +335,10 @@ const allPatterns = [
   ['fragment.mobile', spec.FRAGMENT.mobile],
   ['fragment.chatter', spec.FRAGMENT.chatter],
   ['prefilter', spec.PREFILTER.re],
+  ...spec.COPIES.filter(c => c.guard !== undefined).map(c => [
+    `${c.name}.guard`,
+    c.guard,
+  ]),
 ];
 for (const [where, re] of allPatterns) {
   const problems = lintPattern(re);
@@ -425,6 +440,22 @@ const sqlAllCopies = spec.COPIES.map(
   c => `  v_${c.name} := private.cg_copy_${c.name}(${sqlArg(c)});`,
 ).join('\n');
 
+/**
+ * A copy with a `guard` is built only when copy t matches it, and is null
+ * otherwise, so none of its rules can fire (a null never matches). The spec
+ * states each guard as a necessary condition for its rules; Jest proves it on
+ * every fixture row by comparing against the unguarded rules.
+ */
+const sqlGuarded = copy =>
+  copy.guard === undefined
+    ? `  v_${copy.name} := private.cg_copy_${copy.name}(${sqlArg(copy)});`
+    : `  v_${copy.name} := case when v_t ~ ${sqlLit(
+        copy.guard,
+      )} then private.cg_copy_${copy.name}(${sqlArg(copy)}) end;`;
+const sqlGuardedCopies = spec.COPIES.filter(c => c.name !== 't')
+  .map(sqlGuarded)
+  .join('\n');
+
 const sqlBlockedBody = [];
 sqlBlockedBody.push(`  v_t := private.cg_copy_t(p_text);`);
 sqlBlockedBody.push(
@@ -432,9 +463,7 @@ sqlBlockedBody.push(
 );
 for (const copy of spec.COPIES) {
   if (copy.name !== 't') {
-    sqlBlockedBody.push(
-      `  v_${copy.name} := private.cg_copy_${copy.name}(${sqlArg(copy)});`,
-    );
+    sqlBlockedBody.push(sqlGuarded(copy));
   }
   const rules = hardByCopy(copy.name);
   if (rules.length > 0) {
@@ -573,7 +602,7 @@ begin
   if v_t !~ ${sqlLit(spec.PREFILTER.re)} then
     return v_ids;
   end if;
-${sqlAllCopies.split('\n').slice(1).join('\n')}
+${sqlGuardedCopies}
 ${sqlRuleTests}
   return v_ids;
 end;
@@ -593,6 +622,10 @@ declare
   v_ids text[] := '{}';
 begin
   v_t := private.cg_copy_t(p_text);
+  -- One pattern for the common case, a message no signal rule matches.
+  if v_t !~ ${sqlLit(combined(spec.SIGNAL))} then
+    return v_ids;
+  end if;
 ${sqlSignalTests}
   return v_ids;
 end;
@@ -780,22 +813,38 @@ ${body}
 const jsFragmentSteps = spec.FRAGMENT.steps
   .map(step => `  ${emitOp(step, jsCtx).js}`)
   .join('\n');
-const jsBlockedRe = spec.COPIES.map(c => {
-  const rules = hardByCopy(c.name);
-  return rules.length > 0 ? [c.name, jsCtx.re(combined(rules), 'u')] : null;
-}).filter(Boolean);
 const jsPrefilter = jsCtx.re(spec.PREFILTER.re, 'u');
+const jsTest = (re, copy) =>
+  `(c.${copy} !== null && ${jsCtx.re(re, 'u')}.test(c.${copy}))`;
 const jsRuleTests = spec.HARD.map(rule => {
   const cond = rule.requires
-    ? `${jsCtx.re(rule.re, 'u')}.test(c.${rule.copy}) && ${jsCtx.re(
+    ? `${jsTest(rule.re, rule.copy)} && ${jsTest(
         rule.requires.re,
-        'u',
-      )}.test(c.${rule.requires.copy})`
-    : `${jsCtx.re(rule.re, 'u')}.test(c.${rule.copy})`;
+        rule.requires.copy,
+      )}`
+    : jsTest(rule.re, rule.copy);
   return `  if (!ids.includes(${JSON.stringify(
     rule.id,
   )}) && ${cond}) {\n    ids.push(${JSON.stringify(rule.id)});\n  }`;
 }).join('\n');
+const jsGuardedCopies = spec.COPIES.filter(cp => cp.name !== 't')
+  .map(cp => {
+    const parent = cp.from === 'input' ? 't' : cp.from;
+    const conditions = [
+      parent === 't' ? null : `c.${parent} === null`,
+      cp.guard === undefined
+        ? null
+        : `(guarded && !${jsCtx.re(cp.guard, 'u')}.test(c.t))`,
+    ].filter(Boolean);
+    const value =
+      parent === 't'
+        ? `copy_${cp.name}(c.t)`
+        : `copy_${cp.name}(c.${parent} as string)`;
+    return conditions.length === 0
+      ? `  c.${cp.name} = ${value};`
+      : `  c.${cp.name} = ${conditions.join(' || ')} ? null : ${value};`;
+  })
+  .join('\n');
 const jsShape = jsCtx.re(spec.FRAGMENT.shape, 'u');
 const jsMobile = jsCtx.re(spec.FRAGMENT.mobile, 'u');
 const jsChatter = jsCtx.re(spec.FRAGMENT.chatter, 'u');
@@ -942,40 +991,32 @@ ${copyCalls}
   return { ${COPY_NAMES.join(', ')} };
 }
 
+type MaybeCopies = { ${COPY_NAMES.map(
+  n => `${n}: ${n === 't' ? 'string' : 'string | null'}`,
+).join('; ')} };
+
+/**
+ * The working copies the rules read. With \`guarded\`, a copy whose guard copy
+ * t fails is null, as in the SQL, so none of its rules can fire.
+ */
+function copiesOf(text: string, guarded: boolean): MaybeCopies {
+  const c: MaybeCopies = { ${COPY_NAMES.map(n =>
+    n === 't' ? 't: copy_t(text)' : `${n}: null`,
+  ).join(', ')} };
+${jsGuardedCopies}
+  return c;
+}
+
+/** The hard rule ids that fire on these copies, in spec order. */
+function rulesOn(c: MaybeCopies): string[] {
+  const ids: string[] = [];
+${jsRuleTests}
+  return ids;
+}
+
 /** True when any hard rule fires: the server would refuse this in enforce mode. */
 export function isContactBlocked(text: string): boolean {
-  if (!ready()) {
-    return false;
-  }
-  const t = copy_t(text);
-  if (!${jsPrefilter}.test(t)) {
-    return false;
-  }
-  const c: Partial<Copies> = { t };
-${spec.COPIES.filter(cp => cp.name !== 't')
-  .map(
-    cp =>
-      `  c.${cp.name} = copy_${cp.name}(c.${
-        cp.from === 'input' ? 't' : cp.from
-      } as string);`,
-  )
-  .join('\n')}
-${jsBlockedRe
-  .map(
-    ([name, re]) =>
-      `  if (${re}.test(c.${name} as string)) {\n    return true;\n  }`,
-  )
-  .join('\n')}
-${spec.HARD.filter(r => r.requires)
-  .map(
-    r =>
-      `  if (${jsCtx.re(r.re, 'u')}.test(c.${r.copy} as string) && ${jsCtx.re(
-        r.requires.re,
-        'u',
-      )}.test(c.${r.requires.copy} as string)) {\n    return true;\n  }`,
-  )
-  .join('\n')}
-  return false;
+  return contactGuardRules(text).length > 0;
 }
 
 /** The hard rule ids that fire, in spec order. */
@@ -983,7 +1024,7 @@ export function contactGuardRules(text: string): string[] {
   if (!ready() || !${jsPrefilter}.test(copy_t(text))) {
     return [];
   }
-  return contactGuardRulesUnfiltered(text);
+  return rulesOn(copiesOf(text, true));
 }
 
 /** Whether the fast path's prefilter lets the text through to the rules. */
@@ -992,17 +1033,11 @@ export function contactGuardPrefilter(text: string): boolean {
 }
 
 /**
- * Every hard rule, without the prefilter. Tests use it to prove the
- * prefilter never hides a hit; nothing else should.
+ * Every hard rule, with no prefilter and no copy guards. Tests use it to
+ * prove neither ever hides a hit; nothing else should.
  */
 export function contactGuardRulesUnfiltered(text: string): string[] {
-  const ids: string[] = [];
-  if (!ready()) {
-    return ids;
-  }
-  const c = contactGuardCopies(text) as Copies;
-${jsRuleTests}
-  return ids;
+  return ready() ? rulesOn(copiesOf(text, false)) : [];
 }
 
 const CATEGORY_OF: Record<string, ContactCategory> = ${JSON.stringify(

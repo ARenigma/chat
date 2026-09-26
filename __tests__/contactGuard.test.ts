@@ -61,11 +61,15 @@ describe('contact guard mirror', () => {
     expect(differ.map(r => r.text)).toEqual([]);
   });
 
-  it('never lets the prefilter hide a hit', () => {
+  it('never lets the prefilter or a copy guard hide a hit', () => {
     const hidden = rows.filter(
       r => contactGuardRulesUnfiltered(r.text).length > 0 && !contactGuardPrefilter(r.text),
     );
     expect(hidden.map(r => r.text)).toEqual([]);
+    const changed = rows.filter(
+      r => JSON.stringify(contactGuardRulesUnfiltered(r.text)) !== JSON.stringify(contactGuardRules(r.text)),
+    );
+    expect(changed.map(r => r.text)).toEqual([]);
   });
 
   it('answers every recorded window the same way', () => {
