@@ -264,13 +264,16 @@ const PAIRS = [
    * those pairs are registered with the state colours below.
    */
   /*
-   * The coral WASH (step 50 light / 950 dark) and what sits on it.
+   * The coral WASH (step 50 light / 900 dark; dark was 950, 1.005:1 against
+   * the dark page, until 2026-09-27) and what sits on it.
    *
-   * text/accent is NOT registered here and must not be used here: step 500 on
-   * step 50 is 4.4986:1, a fraction under the 4.5 floor for the 12-14sp labels
-   * these pills carry. The wash has its own ink, text/onAccentTint (800 / 300).
-   * The tonal Notify button keeps its 1dp stroke because the wash against the
-   * page is 1.17:1 light / 1.01:1 dark, i.e. no boundary at all on its own.
+   * text/accent is NOT registered here as TEXT and must not be used for a
+   * label here: step 500 on step 50 is 4.46:1, under the 4.5 floor for the
+   * 12-14sp labels these pills carry. The wash has its own ink,
+   * text/onAccentTint (800 / 300). The tonal Notify button keeps its 1dp
+   * stroke because the wash against the page is 1.17:1 light / 1.13:1 dark,
+   * i.e. no boundary on its own. Every dark row below was re-measured when the
+   * dark wash moved from 950 to 900 and still clears its target.
    */
   {
     fg: 'text/onAccentTint',
@@ -294,20 +297,21 @@ const PAIRS = [
     fg: 'text/accent',
     bg: 'bg/accentTint',
     target: 3,
-    what: 'the active nav glyph on its tint indicator (non-text)',
+    what: "the active nav glyph on its tint indicator, and the low-balance bar's live dot (non-text)",
     exempt:
-      'a glyph, not a label: 3:1 is the non-text target. The destination label under it is text, and the indicator pill is a second signal',
+      'a glyph or dot, not a label: 3:1 is the non-text target. The nav label under the glyph is text and the pill a second signal; the dot sits beside the timer that states the balance. The dot was bg/accent, 2.87:1 on the dark wash at 900, so it takes this ink',
   },
   /*
    * The bottom bar's selected glyph on its own pill (src/shell/bottom-bar,
-   * nav-migration step 5). The pill is bg/navIndicator, not the wash, because
-   * the wash's dark step 950 is 1.005:1 against the dark bar; 900 is the step
-   * that separates from the bar as much as the light pill does (1.13 vs 1.16).
-   * The glyph stays text/accent: bg/accent (step 500) on 900 is 2.87:1, under
-   * the 3:1 non-text floor, so dark keeps the 300 ink (6.16:1).
+   * nav-migration step 5). The pill is bg/navIndicator: step 900 in dark, the
+   * step that separates from the bar as much as the light pill does (1.13 vs
+   * 1.16). The wash moved to the same step on 2026-09-27.
+   * The glyph is text/navSelected, its own role (owner, 2026-09-27): step 500
+   * light, 400 dark. bg/accent (step 500) on 900 is 2.87:1, under the 3:1
+   * non-text floor; 400 is the nearest step to the brand that clears it.
    */
   {
-    fg: 'text/accent',
+    fg: 'text/navSelected',
     bg: 'bg/navIndicator',
     target: 3,
     what: 'the selected bottom-bar glyph on its indicator pill (non-text)',
@@ -668,6 +672,167 @@ for (const pair of HERO_TEXT_PAIRS) {
 }
 
 /*
+ * White text on the CORAL FIELD, the no-photo fallback gradient
+ * (bg/accentGradientFrom -> bg/accentGradientTo, ramp 500 -> 700) on Home's
+ * featured card, the provider profile hero and the spotlight sheet.
+ *
+ * A gradient has no single hex, so each line is measured at the colour the
+ * gradient has UNDER that line's lightest point: the CSS linear-gradient
+ * position of the point for the card's angle and box, the two stops mixed in
+ * sRGB there, the copy scrim composited over that where the surface has one,
+ * then the text's own alpha. Hand-maintained geometry, like the hero block
+ * above: the boxes and points are the layouts in HomeScreen.tsx (FeaturedCard),
+ * ProviderDetailScreen.tsx (Hero) and SpotlightCard.tsx, each at its WORST
+ * case, i.e. where the text lands nearest the light end: the shortest name, no
+ * rating pill, the 600dp content column, a landscape phone window. If one of
+ * those layouts or angles changes, this block changes with it.
+ *
+ * Owner decision 2026-09-27: the field is 400 -> 600 unless white text sits on
+ * the 400 end, then 500 -> 700. All three are 500 -> 700 because on 400 -> 600
+ * these same points measure 3.89 (Home age), 3.65 (profile meta, 600dp) and
+ * 4.46 (spotlight name, landscape), under 4.5.
+ */
+const mixHex = (a, b, t) => composite(b, t, a);
+// CSS linear-gradient: the gradient line runs through the box centre at
+// `deg` (0 = to top, clockwise), long enough that the corners land on 0/100%.
+const gradientPosition = (deg, w, h, x, y) => {
+  const rad = (deg * Math.PI) / 180;
+  const dx = Math.sin(rad);
+  const dy = -Math.cos(rad);
+  const half = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
+  return ((x - w / 2) * dx + (y - h / 2) * dy + half) / (2 * half);
+};
+// SpotlightCard `copyScrim`: clear to 38% of the height, then to 0.76 black.
+const spotlightScrim = f => (f < 0.38 ? 0 : ((f - 0.38) / 0.62) * 0.76);
+const noScrim = () => 0;
+
+const FEATURED = { deg: 140, w: 150, h: 200, scrim: noScrim };
+const PROFILE = { deg: 150, w: 568, h: 420, scrim: noScrim };
+// A 780x360 landscape phone: the sheet is 68% of the height, 245dp.
+const SPOTLIGHT = { deg: 150, w: 780, h: 360 * 0.68, scrim: spotlightScrim };
+
+const GRADIENT_TEXT = [
+  {
+    ...FEATURED,
+    what: 'featured card, featuredName (16px Bold, not large)',
+    x: 12,
+    y: 140,
+    alpha: 1,
+    target: 4.5,
+  },
+  {
+    ...FEATURED,
+    what: 'featured card, featuredAge 82% (12px) after a 3-letter name',
+    x: 42,
+    y: 144,
+    alpha: 0.82,
+    target: 4.5,
+  },
+  {
+    ...FEATURED,
+    what: 'featured card, featuredMeta 85% (12px) with no rating pill',
+    x: 12,
+    y: 170,
+    alpha: 0.85,
+    target: 4.5,
+  },
+  {
+    ...PROFILE,
+    what: 'profile hero, heroName (28px Bold, large text)',
+    x: 20,
+    y: 228,
+    alpha: 1,
+    target: 3,
+  },
+  {
+    ...PROFILE,
+    what: 'profile hero, heroAge 82% (12px) after a short name',
+    x: 70,
+    y: 240,
+    alpha: 0.82,
+    target: 4.5,
+  },
+  {
+    ...PROFILE,
+    what: 'profile hero, heroChannels (14px Bold)',
+    x: 20,
+    y: 268,
+    alpha: 1,
+    target: 4.5,
+  },
+  {
+    ...PROFILE,
+    what: 'profile hero, heroTagline 95% (16px)',
+    x: 20,
+    y: 292,
+    alpha: 0.95,
+    target: 4.5,
+  },
+  {
+    ...PROFILE,
+    what: 'profile hero, heroMeta 82% (14px)',
+    x: 20,
+    y: 320,
+    alpha: 0.82,
+    target: 4.5,
+  },
+  {
+    ...SPOTLIGHT,
+    what: 'spotlight, the initial (88px, large text)',
+    x: 360,
+    y: 82,
+    alpha: 1,
+    target: 3,
+  },
+  {
+    ...SPOTLIGHT,
+    what: 'spotlight, greeting (24px, large text)',
+    x: 24,
+    y: 360 * 0.68 - 160,
+    alpha: 1,
+    target: 3,
+  },
+  {
+    ...SPOTLIGHT,
+    what: 'spotlight, name 88% (14px)',
+    x: 24,
+    y: 360 * 0.68 - 120,
+    alpha: 0.88,
+    target: 4.5,
+  },
+];
+
+for (const mode of ['Light', 'Dark']) {
+  const from = T['bg/accentGradientFrom']?.[mode];
+  const to = T['bg/accentGradientTo']?.[mode];
+  if (!from || !to) {
+    console.error('unknown token bg/accentGradientFrom or bg/accentGradientTo');
+    failures += 1;
+    continue;
+  }
+  for (const line of GRADIENT_TEXT) {
+    const t = gradientPosition(line.deg, line.w, line.h, line.x, line.y);
+    const field = composite(
+      '#000000',
+      line.scrim(line.y / line.h),
+      mixHex(from, to, t),
+    );
+    const landed = composite('#ffffff', line.alpha, field);
+    const r = ratio(landed, field);
+    const ok = r >= line.target;
+    if (!ok) {
+      failures += 1;
+    }
+    rows.push(
+      `${ok ? '  ok  ' : '  FAIL'} ${mode.padEnd(5)} ${line.what.padEnd(58)} ` +
+        `${r.toFixed(2).padStart(6)}:1  (needs ${
+          line.target
+        })  on the coral field at ${Math.round(t * 100)}%, ${field}`,
+    );
+  }
+}
+
+/*
  * `bubble/meta` on your own bubble, composited rather than skipped.
  *
  * The clock and the sent tick are translucent white over the step-500 fill,
@@ -725,6 +890,6 @@ if (failures > 0) {
 }
 console.log(
   `\ncontrast OK, ${
-    PAIRS.length * 2 + HERO_TEXT_PAIRS.length + 2
+    PAIRS.length * 2 + HERO_TEXT_PAIRS.length + GRADIENT_TEXT.length * 2 + 2
   } pairs meet WCAG AA targets`,
 );
