@@ -292,12 +292,17 @@ export function springTo(
   to: number,
   name: AnySpringName = 'snap',
   velocity?: number,
-  reduceMotion: ReduceMotion = ReduceMotion.System,
+  reduceMotion?: ReduceMotion,
 ): number {
   'worklet';
+  // The default is resolved HERE, not as `= ReduceMotion.System` in the
+  // parameter list. The worklets plugin captures the identifiers a worklet's
+  // body reads; a default parameter's expression is not part of that, so on
+  // the UI thread `ReduceMotion` was undefined and every spring threw
+  // "Property 'ReduceMotion' doesn't exist" (S22, 2026-09-26).
   const config: WithSpringConfig = {
     ...ALL_SPRINGS[name],
-    reduceMotion,
+    reduceMotion: reduceMotion ?? ReduceMotion.System,
     ...(velocity === undefined ? {} : { velocity }),
   };
   return withSpring(to, config);
@@ -312,9 +317,11 @@ export function springTo(
  * single most noticeable step toward the M3 motion feel (#7). Timing-only —
  * no spring or duration change, so no device rebuild needed.
  */
-export function fadeTo(to: number, ms: number = DURATION.fast): number {
+export function fadeTo(to: number, ms?: number): number {
   'worklet';
-  return withTiming(to, { duration: ms, easing: Easing.bezier(0.05, 0.7, 0.1, 1.0) });
+  // Default resolved in the body for the reason given on springTo: a worklet
+  // default parameter is not captured by the plugin.
+  return withTiming(to, { duration: ms ?? DURATION.fast, easing: Easing.bezier(0.05, 0.7, 0.1, 1.0) });
 }
 
 /**

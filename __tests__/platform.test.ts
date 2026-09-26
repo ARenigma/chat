@@ -2978,3 +2978,34 @@ describe('react-navigation + react-native-screens — step 1 installation (ADR-0
     expect(read(MANIFEST)).not.toMatch(/enableOnBackInvokedCallback\s*=\s*"true"/);
   });
 });
+
+/*
+ * A worklet's default parameter is evaluated on the UI thread, but the
+ * worklets babel plugin captures only the identifiers the BODY reads. So
+ * `springTo(..., reduceMotion = ReduceMotion.System)` crashed every spring on
+ * the S22 with "Property 'ReduceMotion' doesn't exist" (2026-09-26), the same
+ * class as the 1.1.18 worklet crash. A default may be a literal; anything that
+ * names a binding has to be resolved inside the body.
+ */
+describe('worklet default parameters', () => {
+  it('never name a binding, since the plugin does not capture it', () => {
+    // All of src, not the UI surface: motion.ts lives in src/theme.
+    const files = (readdirSync(join(ROOT, 'src'), { recursive: true }) as string[])
+      .filter(f => /\.(ts|tsx)$/.test(f))
+      .map(f => join(ROOT, 'src', f));
+    const offenders: string[] = [];
+    const fn = /function\s+(\w+)\s*\(([^)]*)\)[^{]*\{\s*'worklet'/g;
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(fn)) {
+        for (const param of (m[2] ?? "").split(',')) {
+          const dflt = /[=]\s*(.+)$/.exec(param.trim())?.[1]?.trim();
+          if (dflt === undefined) continue;
+          const literal = /^(['"`].*['"`]|-?\d[\d_.]*|true|false|null|undefined|\{\s*\}|\[\s*\])$/.test(dflt);
+          if (!literal) offenders.push(`${file}: ${m[1]}(${param.trim()})`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
