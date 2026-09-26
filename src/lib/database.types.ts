@@ -505,6 +505,14 @@ export type ProviderSummary = {
    * same array.
    */
   expertise: string[];
+  /**
+   * Busy-with-someone-else, and roughly how long until free (Amit,
+   * 2026-09-27). NOT SERVED YET: a server change will add it to
+   * `provider_directory`, so it is optional here and every current row omits
+   * it. `undefined` = not busy, `null` = busy with no estimate, a number =
+   * minutes. Read it through `readBusy` in lib/busy.ts.
+   */
+  busy_wait_minutes?: number | null;
 };
 
 /**
