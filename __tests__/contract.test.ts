@@ -3488,8 +3488,8 @@ describe('the chat seeds openers one at a time, not all at once', () => {
     // `setPeerTyping(boolean)` became `setPeerActivity(kind | null)` on
     // 2026-09-17, when recording a voice note stopped being reported as
     // "typing". The seeded openers are typed, so this one passes 'typing'.
-    expect(stripped).toContain("setPeerActivity('typing')");
-    expect(stripped).toContain('setPeerActivity(null)');
+    expect(stripped).toContain("setPeerActivity('typing', conversationId)");
+    expect(stripped).toContain('setPeerActivity(null, conversationId)');
     // Bounded, length-aware pacing constants.
     // The beat is a pure function of the text's length, bounded at both ends,
     // and its constants are asserted as VALUES in chatV2Parity.test.ts.

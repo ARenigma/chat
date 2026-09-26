@@ -44,6 +44,19 @@ export interface PlayingVoice {
 /** What a peer is doing in the composer, mirrored from their device. */
 export type PeerActivity = 'typing' | 'recording';
 
+/**
+ * A peer activity and the conversation it was heard in.
+ *
+ * Tagged since navigation step 6 (nav-migration §5): under the navigator two
+ * chats can be mounted at once, one per tab, and an untagged "typing" would
+ * light the header of whichever chat read it. `conversationId` is null only
+ * when a writer does not know its thread yet.
+ */
+export interface PeerActivityState {
+  kind: PeerActivity;
+  conversationId: string | null;
+}
+
 /** A chat request as the ring shows it.
  * @public Also read by the tests.
  */
@@ -81,7 +94,7 @@ interface AppState {
    * reason: this app has voice notes, and "typing" is simply untrue while
    * somebody is holding the mic.
    */
-  peerActivity: PeerActivity | null;
+  peerActivity: PeerActivityState | null;
   refillVisible: boolean;
   /** Full-page Recharge, opened only from the wallet pill. */
   walletVisible: boolean;
@@ -141,7 +154,12 @@ interface AppState {
 
   setBalance: (balance: number | null) => void;
   setSending: (sending: boolean) => void;
-  setPeerActivity: (activity: PeerActivity | null) => void;
+  /**
+   * Sets or clears the peer activity for `conversationId`. A clear that names
+   * a conversation is OWNER-CHECKED: it leaves another conversation's activity
+   * alone. A clear that names none clears whatever is there.
+   */
+  setPeerActivity: (activity: PeerActivity | null, conversationId?: string | null) => void;
   /**
    * Replaces rather than merges. A position update for a note that is no longer
    * the active one is a late callback from the player that has just been stopped,
@@ -173,8 +191,17 @@ interface AppState {
   setUploadProgress: (id: string, fraction: number) => void;
   /** Remove the entry once the upload settles (success or failure). */
   clearUploadProgress: (id: string) => void;
-  /** Leaving a conversation must not leak its presence into the next one. */
-  resetConversation: () => void;
+  /**
+   * Leaving a conversation must not leak its presence into the next one.
+   *
+   * `conversationId` (navigation step 6) makes the peer-activity part
+   * owner-checked, so a chat unmounting in one tab cannot wipe the typing
+   * indicator of a chat still mounted in another. The rest (send state,
+   * notice, playhead, upload progress) is not per-conversation and clears as
+   * before. With no id, everything clears, which is what the old tree's
+   * leave paths still call.
+   */
+  resetConversation: (conversationId?: string) => void;
   /**
    * Mark a call as active. Returns the sequence number for owner-checked
    * `setActiveCallId` and `endActiveCall`. nav-migration §3.
@@ -235,7 +262,13 @@ export const useStore = create<AppState>()(set => ({
 
   setBalance: balance => set({ balance }),
   setSending: sending => set({ sending }),
-  setPeerActivity: peerActivity => set({ peerActivity }),
+  setPeerActivity: (activity, conversationId) =>
+    set(state => {
+      if (activity !== null) {
+        return { peerActivity: { kind: activity, conversationId: conversationId ?? null } };
+      }
+      return ownsPeerActivity(state.peerActivity, conversationId) ? { peerActivity: null } : state;
+    }),
   setPlaying: playing => set({ playing }),
   openRefill: () => set({ refillVisible: true, walletVisible: false }),
   closeRefill: () => set({ refillVisible: false }),
@@ -322,8 +355,16 @@ export const useStore = create<AppState>()(set => ({
     }),
   // `playing` goes with it: audio from the thread you just left should not keep
   // playing over the next one, and the marker has to clear with the sound.
-  resetConversation: () =>
-    set({ sending: false, peerActivity: null, notice: null, playing: null, uploadProgress: {} }),
+  resetConversation: conversationId =>
+    set(state => ({
+      sending: false,
+      peerActivity: ownsPeerActivity(state.peerActivity, conversationId)
+        ? null
+        : state.peerActivity,
+      notice: null,
+      playing: null,
+      uploadProgress: {},
+    })),
 
   beginCall: c => {
     const seq = _nextCallSeq++;
@@ -340,6 +381,21 @@ export const useStore = create<AppState>()(set => ({
     set(state => (state.activeCall?.seq === seq ? { activeCall: null } : state)),
 }));
 
+/**
+ * Whether a clear from `conversationId` may clear `current`. An unnamed clear
+ * always may; a named one only clears its own conversation's activity or an
+ * untagged one.
+ */
+function ownsPeerActivity(
+  current: PeerActivityState | null,
+  conversationId: string | null | undefined,
+): boolean {
+  if (current === null || conversationId === undefined || conversationId === null) {
+    return true;
+  }
+  return current.conversationId === null || current.conversationId === conversationId;
+}
+
 /** Test helper; also used to reset state after account deletion. */
 export function resetStore(): void {
   useStore.setState({ ...INITIAL });
@@ -349,7 +405,21 @@ export function resetStore(): void {
 export const selectBalance = (s: AppState): number | null => s.balance;
 export const selectSending = (s: AppState): boolean => s.sending;
 export const selectPeerActivity = (s: AppState): PeerActivity | null =>
-  s.peerActivity;
+  s.peerActivity?.kind ?? null;
+/**
+ * The activity as one conversation should show it: another conversation's
+ * activity reads as nothing. Readers under the navigator use this, because two
+ * chats can be mounted at once.
+ */
+export const selectPeerActivityIn =
+  (conversationId: string | undefined) =>
+  (s: AppState): PeerActivity | null => {
+    const a = s.peerActivity;
+    if (a === null) {
+      return null;
+    }
+    return a.conversationId === null || a.conversationId === conversationId ? a.kind : null;
+  };
 export const selectIsLow = (s: AppState): boolean => isLowBalance(s.balance);
 export const selectUploadProgress =
   (id: string) =>

@@ -116,7 +116,7 @@ export function useLiveConversation(
           if (payload.new.sender_id !== selfId) {
             // A message is a stronger signal than the typing broadcast: they
             // sent it, so they have stopped typing.
-            setPeerActivity(null);
+            setPeerActivity(null, conversationId);
           }
         },
       )
@@ -141,14 +141,14 @@ export function useLiveConversation(
           return;
         }
         if (payload.kind === 'cancel') {
-          setPeerActivity(null);
+          setPeerActivity(null, conversationId);
           return;
         }
-        setPeerActivity(payload.kind ?? 'typing');
+        setPeerActivity(payload.kind ?? 'typing', conversationId);
         if (typingTimerRef.current !== null) {
           clearTimeout(typingTimerRef.current);
         }
-        typingTimerRef.current = setTimeout(() => setPeerActivity(null), TYPING_TTL_MS);
+        typingTimerRef.current = setTimeout(() => setPeerActivity(null, conversationId), TYPING_TTL_MS);
       });
 
     void (async () => {
@@ -228,7 +228,7 @@ export function useLiveConversation(
         typingTimerRef.current = null;
       }
       channelRef.current = null;
-      setPeerActivity(null);
+      setPeerActivity(null, conversationId);
       void supabase.removeChannel(channel);
     };
   }, [conversationId, selfId, queryClient, setPeerActivity]);

@@ -33,8 +33,13 @@ export function useChatV2Openers(input: {
   providerId: string;
   /** `chatV2OwnsOpeners` — this screen, this side, this thread. */
   enabled: boolean;
+  /**
+   * The thread the simulated typing belongs to, so the indicator is tagged
+   * like a real one and cannot light another mounted chat (nav step 6).
+   */
+  conversationId?: string;
 }): void {
-  const { providerId, enabled } = input;
+  const { providerId, enabled, conversationId } = input;
   const queryClient = useQueryClient();
   const setPeerActivity = useStore(s => s.setPeerActivity);
 
@@ -66,7 +71,7 @@ export function useChatV2Openers(input: {
         if (cancelled) {
           break;
         }
-        setPeerActivity('typing');
+        setPeerActivity('typing', conversationId);
         await wait(chatV2OpenerBeat(upcoming));
         if (cancelled) {
           break;
@@ -74,7 +79,7 @@ export function useChatV2Openers(input: {
         const { data, error } = await supabase.rpc('insert_next_opener', {
           p_provider_id: providerId,
         });
-        setPeerActivity(null);
+        setPeerActivity(null, conversationId);
         if (cancelled || error || data === null) {
           break;
         }
@@ -99,7 +104,7 @@ export function useChatV2Openers(input: {
       }
       // The indicator belongs to this loop. Leaving it set would have the peer
       // typing forever on a screen that has gone.
-      setPeerActivity(null);
+      setPeerActivity(null, conversationId);
     };
-  }, [enabled, providerId, queryClient, setPeerActivity]);
+  }, [enabled, providerId, conversationId, queryClient, setPeerActivity]);
 }

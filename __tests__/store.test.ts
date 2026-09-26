@@ -1,6 +1,12 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { resetStore, selectIsLow, useStore } from '../src/store/useStore';
+import {
+  resetStore,
+  selectIsLow,
+  selectPeerActivity,
+  selectPeerActivityIn,
+  useStore,
+} from '../src/store/useStore';
 import { LOW_BALANCE_THRESHOLD } from '../src/lib/tokenLedger';
 
 describe('useStore', () => {
@@ -26,7 +32,7 @@ describe('useStore', () => {
 
     useStore.getState().setPeerActivity('typing');
     useStore.getState().setSending(false);
-    expect(useStore.getState().peerActivity).toBe('typing');
+    expect(selectPeerActivity(useStore.getState())).toBe('typing');
   });
 
   /*
@@ -37,12 +43,50 @@ describe('useStore', () => {
    */
   it('distinguishes recording from typing, because they are not the same claim', () => {
     useStore.getState().setPeerActivity('recording');
-    expect(useStore.getState().peerActivity).toBe('recording');
+    expect(selectPeerActivity(useStore.getState())).toBe('recording');
 
     useStore.getState().setPeerActivity('typing');
-    expect(useStore.getState().peerActivity).toBe('typing');
+    expect(selectPeerActivity(useStore.getState())).toBe('typing');
 
     useStore.getState().setPeerActivity(null);
+    expect(useStore.getState().peerActivity).toBeNull();
+  });
+
+  /*
+   * Navigation step 6 (nav-migration §5): two chats can be mounted at once
+   * under the navigator, so the activity carries the conversation it was heard
+   * in, readers compare it, and a clear or a leave from one conversation cannot
+   * wipe another's.
+   */
+  it('tags the peer activity with its conversation and reads it per conversation', () => {
+    useStore.getState().setPeerActivity('typing', 'conv-a');
+    expect(useStore.getState().peerActivity).toEqual({ kind: 'typing', conversationId: 'conv-a' });
+    expect(selectPeerActivityIn('conv-a')(useStore.getState())).toBe('typing');
+    expect(selectPeerActivityIn('conv-b')(useStore.getState())).toBeNull();
+    // An untagged writer still reads everywhere, as the old tree expects.
+    useStore.getState().setPeerActivity('recording');
+    expect(selectPeerActivityIn('conv-b')(useStore.getState())).toBe('recording');
+  });
+
+  it('owner-checks a clear that names a conversation', () => {
+    useStore.getState().setPeerActivity('typing', 'conv-a');
+    useStore.getState().setPeerActivity(null, 'conv-b');
+    expect(selectPeerActivity(useStore.getState())).toBe('typing');
+    useStore.getState().setPeerActivity(null, 'conv-a');
+    expect(useStore.getState().peerActivity).toBeNull();
+    useStore.getState().setPeerActivity('typing', 'conv-a');
+    useStore.getState().setPeerActivity(null);
+    expect(useStore.getState().peerActivity).toBeNull();
+  });
+
+  it('keeps another conversation typing when one is left', () => {
+    useStore.getState().setPeerActivity('typing', 'conv-a');
+    useStore.getState().setSending(true);
+    useStore.getState().resetConversation('conv-b');
+    expect(selectPeerActivity(useStore.getState())).toBe('typing');
+    // The rest is not per-conversation and clears as before.
+    expect(useStore.getState().sending).toBe(false);
+    useStore.getState().resetConversation('conv-a');
     expect(useStore.getState().peerActivity).toBeNull();
   });
 

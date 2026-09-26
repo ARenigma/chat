@@ -91,7 +91,7 @@ import { isPending, PENDING_PREFIX } from '../lib/transcript';
 import { useViewingConversation } from '../lib/viewingConversation';
 import type { VoiceDraft, VoicePlayer } from '../lib/voice';
 import {
-  selectPeerActivity,
+  selectPeerActivityIn,
   useStore,
   type PeerActivity,
 } from '../store/useStore';
@@ -515,7 +515,9 @@ export function useChatV2Controller(
         : null
       : provider?.is_available,
   );
-  const peerActivity = useStore(selectPeerActivity);
+  // Read for THIS conversation: two chats can be mounted at once under the
+  // navigator, and the other one's typing is not this peer's (nav §5).
+  const peerActivity = useStore(selectPeerActivityIn(conversationId));
 
   /* ---- the ping confirmation ------------------------------------------- */
   const openAlert = useAnnounceChatOpen(
@@ -557,6 +559,7 @@ export function useChatV2Controller(
    */
   useChatV2Openers({
     providerId,
+    conversationId,
     enabled: chatV2OwnsOpeners({
       isMemberSide,
       benchmarkReadOnly,
