@@ -331,11 +331,7 @@ function SheetView({
               { paddingBottom: sheetBottomPad },
               { maxHeight: sheetMaxHeight },
             ]}>
-            {/* M3 drag handle — 32–40×4dp pill, 48dp min touch via grabberRow padding.
-                https://m3.material.io/components/bottom-sheets/overview */}
-            <View style={styles.grabberRow}>
-              <View style={styles.grabber} />
-            </View>
+            <SheetGrabber />
             {/*
               * The actions sit on their own row ABOVE the title, not beside it.
               *
@@ -511,3 +507,24 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderTopColor: t.color.border.hairline,
   },
 });
+
+/**
+ * The M3 drag handle — a 32–40×4dp pill in a 48dp row, the affordance that
+ * says "drag me" (https://m3.material.io/components/bottom-sheets/overview).
+ * Shared with the native form sheets (`Layout.Screen sheet`): Android's form
+ * sheet draws no grabber of its own, since `sheetGrabberVisible` is iOS-only
+ * (https://reactnavigation.org/docs/native-stack-navigator#sheetgrabbervisible).
+ * Decorative: the sheet's own dismissal (swipe down, back, the scrim) is what
+ * TalkBack users reach, so the handle is hidden from accessibility.
+ */
+export function SheetGrabber() {
+  const styles = useStyles(makeStyles);
+  return (
+    <View
+      style={styles.grabberRow}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden>
+      <View style={styles.grabber} />
+    </View>
+  );
+}
