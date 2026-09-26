@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlashList } from '@shopify/flash-list';
 import { StyleSheet, Text, View } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -11,10 +12,13 @@ import { NAV_BAR_HEIGHT } from '../components/FloatingToolbar';
 import { TabTopBar } from '../components/TabTopBar';
 import { Icon } from '../components/Icon';
 import { SquareProviderCard, SQUARE_CARD_ESTIMATE } from '../components/ProviderCard';
+import { ProviderPager, type ProviderPagerRef } from '../components/ProviderPager';
 import { ProviderTypeTabs } from '../components/ProviderTypeTabs';
+import type { ProviderSummary } from '../lib/database.types';
 import {
   categoryOf,
   DEFAULT_CATEGORY,
+  PROVIDER_CATEGORIES,
   type ProviderCategory,
 } from '../lib/providerFilters';
 
@@ -32,7 +36,6 @@ interface Props {
  */
 export function FavouritesScreen({ onOpenProvider }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const insets = useSafeAreaInsets();
   useProfile();
   const { data: providers } = useProviders();
@@ -60,6 +63,15 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
   const [category, setCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
   const initialCategorySet = useRef(false);
   /*
+   * The same pager Home has (owner decision, Amit 2026-09-26/27): each
+   * category is a page, a swipe moves between them, and the tabs follow
+   * `categoryProgress` on the UI thread. `category` is the SETTLED page, set
+   * once per change — see HomeScreen's note on the two values for why neither
+   * may do the other's job.
+   */
+  const categoryProgress = useSharedValue(PROVIDER_CATEGORIES.indexOf(DEFAULT_CATEGORY));
+  const pagerRef = useRef<ProviderPagerRef>(null);
+  /*
    * The bar's magnifier filters THIS screen, which is what WhatsApp's does on
    * every tab (Amit named it as the reference, 2026-09-08). So the query is
    * local state here rather than a route into Home's people search: a member
@@ -71,13 +83,19 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
    */
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
-  const favourites = useMemo(() => {
-    const inCategory = allFavourites.filter(p => categoryOf(p) === category);
+  // One list per page, each filtered by its own category and the one query.
+  const favouritesByCategory = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return needle === ''
-      ? inCategory
-      : inCategory.filter(p => p.display_name.toLowerCase().includes(needle));
-  }, [allFavourites, category, query]);
+    const byCategory = {} as Record<ProviderCategory, ProviderSummary[]>;
+    for (const c of PROVIDER_CATEGORIES) {
+      const inCategory = allFavourites.filter(p => categoryOf(p) === c);
+      byCategory[c] =
+        needle === ''
+          ? inCategory
+          : inCategory.filter(p => p.display_name.toLowerCase().includes(needle));
+    }
+    return byCategory;
+  }, [allFavourites, query]);
   useEffect(() => {
     if (initialCategorySet.current || providers === undefined) {
       return;
@@ -85,9 +103,27 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
     initialCategorySet.current = true;
     const hasListener = allFavourites.some(p => categoryOf(p) === 'listener');
     if (!hasListener && allFavourites.some(p => categoryOf(p) === 'astrologer')) {
+      /*
+       * The screen's choice, not the member's, so the pager JUMPS rather than
+       * scrolls, and its `onPageSelected` settles `category`. The direct set
+       * covers the frame before the pager has mounted.
+       */
+      const index = PROVIDER_CATEGORIES.indexOf('astrologer');
       setCategory('astrologer');
+      categoryProgress.set(index);
+      pagerRef.current?.jumpTo(index);
     }
-  }, [allFavourites, providers]);
+  }, [allFavourites, providers, categoryProgress]);
+
+  const onPageSelected = useCallback((index: number) => {
+    setCategory(PROVIDER_CATEGORIES[index] ?? DEFAULT_CATEGORY);
+  }, []);
+  // A tap asks the pager to scroll; the scroll moves the indicator and settles
+  // `category`. Favourites always has its pager mounted, so there is no
+  // fallback path here, unlike Home's skeleton.
+  const selectCategory = useCallback((c: ProviderCategory) => {
+    pagerRef.current?.setPage(PROVIDER_CATEGORIES.indexOf(c));
+  }, []);
 
   // Stable callback so ProviderCard.memo holds across re-renders.
   const handleOpenProvider = useCallback(
@@ -98,26 +134,10 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
   // Track which provider ids have already received their entrance animation.
   // FlashList recycles cells on scroll; without this guard the Animated.View
   // would remount on every recycled cell and re-fire the stagger — an
-  // unwanted flash on every scroll-back.
+  // unwanted flash on every scroll-back. Shared by both pages: ids are unique
+  // across categories.
   const seenIds = useRef(new Set<string>());
-
-  const renderFavouriteCard = useCallback(
-    ({ item, index }: { item: (typeof favourites)[number]; index: number }) => {
-      const animate = !seenIds.current.has(item.id);
-      if (animate) {
-        seenIds.current.add(item.id);
-      }
-      return (
-        <SquareProviderCard
-          provider={item}
-          index={index}
-          onPress={handleOpenProvider}
-          animateEntrance={animate}
-        />
-      );
-    },
-    [handleOpenProvider],
-  );
+  const bottomPadding = insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl;
 
   return (
     <View style={styles.root}>
@@ -147,60 +167,138 @@ export function FavouritesScreen({ onOpenProvider }: Props) {
         searchPlaceholder="Search your favourites"
         testID="favourites"
       />
-      <ProviderTypeTabs value={category} onChange={setCategory} testID="favourites-tabs" />
-      {favourites.length > 0 ? (
-        <FlashList
-          data={favourites}
-          keyExtractor={p => p.id}
-          renderItem={renderFavouriteCard}
-          numColumns={2}
-          showsVerticalScrollIndicator={false}
-          {...SCROLL_PHYSICS}
-          contentContainerStyle={{
-            paddingHorizontal: TOKENS.space.md,
-            paddingTop: TOKENS.space.sm,
-            paddingBottom: insets.bottom + NAV_BAR_HEIGHT + TOKENS.space.xl,
-          }}
-          // SQUARE_CARD_ESTIMATE: square card ≈ 165dp + 12dp margin ≈ 178dp.
-          // FlashList self-corrects after first layout; this prevents the initial
-          // blank-frame pass on a long list.
-          overrideItemLayout={layout => {
-            (layout as { span?: number; size?: number }).size = SQUARE_CARD_ESTIMATE;
-          }}
-        />
-      ) : (
-        <View style={styles.empty}>
-          <Icon
-            /* The magnifier, not the heart, when a QUERY is what emptied the
-               grid: the heart's message ("tap the heart to save someone") is
-               advice for a member with no favourites, and reads as if the ones
-               they have were lost. */
-            name={query.trim() === '' ? 'heart' : 'search'}
-            size={TOKENS.icon['2xl']}
-            color={theme.color.text.tertiary}
-          />
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
-            {query.trim() !== ''
-              ? 'No match'
-              : allFavourites.length === 0
-                ? 'No favourites yet'
-                : `No ${category === 'listener' ? 'listeners' : 'astrologers'} favourited`}
-          </Text>
-          <Text allowFontScaling style={styles.emptyBody}>
-            {query.trim() !== ''
-              ? `Nobody in your ${category === 'listener' ? 'listener' : 'astrologer'} favourites matches ${JSON.stringify(query.trim())}.`
-              : allFavourites.length === 0
-                ? "Tap the heart on someone's profile to save them here."
-                : // A real favourite exists, just not in this tab — distinct from
-                  // "you have never favourited anyone", which is what the message
-                  // above this one is for.
-                  `Your ${category === 'listener' ? 'astrologer' : 'listener'} favourites are on the other tab.`}
-          </Text>
-        </View>
-      )}
+      <ProviderTypeTabs
+        value={category}
+        progress={categoryProgress}
+        onSelect={selectCategory}
+        testID="favourites-tabs"
+      />
+      <ProviderPager
+        ref={pagerRef}
+        initialPage={PROVIDER_CATEGORIES.indexOf(category)}
+        dragProgress={categoryProgress}
+        onPageSelected={onPageSelected}
+        testID="favourites-pager">
+        {PROVIDER_CATEGORIES.map(c => (
+          <View key={c} collapsable={false}>
+            <FavouritesPage
+              category={c}
+              focused={c === category}
+              favourites={favouritesByCategory[c]}
+              hasAnyFavourite={allFavourites.length > 0}
+              query={query}
+              seenIds={seenIds}
+              bottomPadding={bottomPadding}
+              onOpenProvider={handleOpenProvider}
+            />
+          </View>
+        ))}
+      </ProviderPager>
     </View>
   );
 }
+
+/**
+ * One category's page of the Favourites pager: the grid, or the empty state
+ * that explains why this page is empty.
+ *
+ * Both pages are mounted at once (ProviderPager keeps the neighbour laid out),
+ * so entrances play on the FOCUSED page only — the page being swiped to should
+ * already be there, not stagger in under a sliding page. Its ids are still
+ * marked seen, so recycling cannot replay an entrance on scroll-back.
+ */
+const FavouritesPage = memo(function ({
+  category,
+  focused,
+  favourites,
+  hasAnyFavourite,
+  query,
+  seenIds,
+  bottomPadding,
+  onOpenProvider,
+}: {
+  category: ProviderCategory;
+  focused: boolean;
+  favourites: ProviderSummary[];
+  hasAnyFavourite: boolean;
+  query: string;
+  seenIds: React.RefObject<Set<string>>;
+  bottomPadding: number;
+  onOpenProvider: (id: string) => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const renderFavouriteCard = useCallback(
+    ({ item, index }: { item: ProviderSummary; index: number }) => {
+      const animate = focused && !seenIds.current.has(item.id);
+      seenIds.current.add(item.id);
+      return (
+        <SquareProviderCard
+          provider={item}
+          index={index}
+          onPress={onOpenProvider}
+          animateEntrance={animate}
+        />
+      );
+    },
+    [focused, seenIds, onOpenProvider],
+  );
+
+  if (favourites.length > 0) {
+    return (
+      <FlashList
+        testID={`favourites-scroll-${category}`}
+        data={favourites}
+        keyExtractor={p => p.id}
+        renderItem={renderFavouriteCard}
+        numColumns={2}
+        showsVerticalScrollIndicator={false}
+        {...SCROLL_PHYSICS}
+        contentContainerStyle={{
+          paddingHorizontal: TOKENS.space.md,
+          paddingTop: TOKENS.space.sm,
+          paddingBottom: bottomPadding,
+        }}
+        // SQUARE_CARD_ESTIMATE: square card ≈ 165dp + 12dp margin ≈ 178dp.
+        // FlashList self-corrects after first layout; this prevents the initial
+        // blank-frame pass on a long list.
+        overrideItemLayout={layout => {
+          (layout as { span?: number; size?: number }).size = SQUARE_CARD_ESTIMATE;
+        }}
+      />
+    );
+  }
+  return (
+    <View style={styles.empty}>
+      <Icon
+        /* The magnifier, not the heart, when a QUERY is what emptied the
+           grid: the heart's message ("tap the heart to save someone") is
+           advice for a member with no favourites, and reads as if the ones
+           they have were lost. */
+        name={query.trim() === '' ? 'heart' : 'search'}
+        size={TOKENS.icon['2xl']}
+        color={theme.color.text.tertiary}
+      />
+      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
+        {query.trim() !== ''
+          ? 'No match'
+          : !hasAnyFavourite
+            ? 'No favourites yet'
+            : `No ${category === 'listener' ? 'listeners' : 'astrologers'} favourited`}
+      </Text>
+      <Text allowFontScaling style={styles.emptyBody}>
+        {query.trim() !== ''
+          ? `Nobody in your ${category === 'listener' ? 'listener' : 'astrologer'} favourites matches ${JSON.stringify(query.trim())}.`
+          : !hasAnyFavourite
+            ? "Tap the heart on someone's profile to save them here."
+            : // A real favourite exists, just not in this tab — distinct from
+              // "you have never favourited anyone", which is what the message
+              // above this one is for.
+              `Your ${category === 'listener' ? 'astrologer' : 'listener'} favourites are on the other tab.`}
+      </Text>
+    </View>
+  );
+});
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
