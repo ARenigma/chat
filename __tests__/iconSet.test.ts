@@ -5,6 +5,7 @@ import {
   ICON_GLYPH,
   ICON_GLYPH_ACTIVE,
 } from '../src/theme/icons.generated';
+import { cmapOf } from './helpers/ttf';
 
 const ROOT = join(__dirname, '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
@@ -56,62 +57,6 @@ function appSources(): string[] {
     out.push(join(ROOT, file));
   }
   return out;
-}
-
-/**
- * The TTF's Unicode cmap, as a codepoint -> glyph index lookup.
- *
- * Format 4 only, because that is what svg2ttf (under fantasticon) writes for a
- * BMP Private-Use font, and failing on anything else is better than a lookup
- * that quietly returns 0 for every codepoint.
- */
-function cmapOf(font: Buffer): (code: number) => number {
-  const tables = font.readUInt16BE(4);
-  let cmap = -1;
-  for (let i = 0; i < tables; i++) {
-    const rec = 12 + i * 16;
-    if (font.toString('ascii', rec, rec + 4) === 'cmap') {
-      cmap = font.readUInt32BE(rec + 8);
-    }
-  }
-  expect(cmap).toBeGreaterThan(0);
-  let sub = -1;
-  const count = font.readUInt16BE(cmap + 2);
-  for (let i = 0; i < count; i++) {
-    const rec = cmap + 4 + i * 8;
-    const platform = font.readUInt16BE(rec);
-    const encoding = font.readUInt16BE(rec + 2);
-    if (platform === 3 && encoding === 1) {
-      sub = cmap + font.readUInt32BE(rec + 4);
-    }
-  }
-  expect(sub).toBeGreaterThan(0);
-  expect(font.readUInt16BE(sub)).toBe(4);
-  // idDelta arithmetic is modulo 65536 by the spec; `%` rather than `& 0xffff`
-  // because the lint config bans bitwise operators.
-  const wrap16 = (n: number): number => ((n % 0x10000) + 0x10000) % 0x10000;
-  const segX2 = font.readUInt16BE(sub + 6);
-  const ends = sub + 14;
-  const starts = ends + segX2 + 2;
-  const deltas = starts + segX2;
-  const ranges = deltas + segX2;
-  return code => {
-    for (let i = 0; i < segX2 / 2; i++) {
-      const end = font.readUInt16BE(ends + i * 2);
-      const start = font.readUInt16BE(starts + i * 2);
-      if (code < start || code > end) {
-        continue;
-      }
-      const delta = font.readInt16BE(deltas + i * 2);
-      const range = font.readUInt16BE(ranges + i * 2);
-      if (range === 0) {
-        return wrap16(code + delta);
-      }
-      const g = font.readUInt16BE(ranges + i * 2 + range + (code - start) * 2);
-      return g === 0 ? 0 : wrap16(g + delta);
-    }
-    return 0;
-  };
 }
 
 describe('the icon set is Phosphor alone', () => {

@@ -262,6 +262,16 @@ const EXEMPT: Record<string, string> = {
   STAR: 'RatingStars: an alias of TOKENS.icon.xs, shared with the clip width',
   CLEAR_GLYPH_SIZE: 'SearchBar: matched to the reference clear mark, 11-12dp',
   /*
+   * Two DERIVED sizes on the explore row (2026-09-26), same class as the
+   * SearchBar glyphs: a different source of truth, not an opinion about the
+   * scale. The seal is sized so its ink equals the name's cap height, read out
+   * of Geist's OS/2 and Phosphor's outline (providerRow.test.ts reads both
+   * fonts); the CTA glyph is sized so its box IS the 17dp label line, because
+   * `icon.sm` renders 19 and would make the 33dp small button 35.
+   */
+  VERIFIED_SEAL_SIZE: "ProviderRow: seal ink = the name's cap height, 11.36dp",
+  CTA_ICON_SIZE: "ProviderRow: glyph box = the small button's 17dp label line",
+  /*
    * Sizes translated from the measured Fuse onboarding source (RULE 3), which
    * `src/lib/onboarding.ts` records as SOURCE_METRICS. The 28pt carousel glyph
    * is the stated departure CLAUDE.md names by example; the others are the

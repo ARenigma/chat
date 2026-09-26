@@ -46,8 +46,15 @@ export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'tab' | 'n
  * Android-only in effect — callers that want a cross-platform response should
  * combine it with a lightweight iOS fallback or accept the platform split.
  * https://reactnative.dev/docs/pressable#android_ripple
+ *
+ * `none` draws NOTHING of its own: no scale, no morph, no state layer. It is for
+ * a caller that paints its own pressed state from `onPressIn`/`onPressOut`, so
+ * the two responses do not stack. ProviderRow's CTA is the first (2026-09-26):
+ * it fills solid coral under the finger, and a 10% state layer or a bg/selected
+ * dim on top of that fill would be a second, muddier answer to the same touch.
+ * `busy` still holds the surface compressed; that is state, not press feedback.
  */
-export type Highlight = 'material' | 'dim' | 'ripple';
+export type Highlight = 'material' | 'dim' | 'ripple' | 'none';
 
 interface Props {
   onPress: () => void;
@@ -117,6 +124,13 @@ interface Props {
   onLongPress?: () => void;
   /** Fires on finger-down, before release. Use for prefetch / head-start work. */
   onPressIn?: () => void;
+  /**
+   * Fires when the finger lifts or slides off, whether or not it became a tap.
+   * The other half of `onPressIn` for a caller drawing its own pressed state
+   * (`highlight="none"`): a state set on press-in has to be undone on every
+   * press-out, including the cancelled ones, or it sticks.
+   */
+  onPressOut?: () => void;
   /**
    * Override the default `button` role. A nav item is a `tab`, so TalkBack says
    * "Home, tab, selected" rather than "Home, button" — the role tells a screen
@@ -202,6 +216,7 @@ function PressableView({
   size,
   onLongPress,
   onPressIn: onPressInProp,
+  onPressOut: onPressOutProp,
   accessibilityRole = 'button',
   selected,
   checked,
@@ -211,6 +226,7 @@ function PressableView({
   const theme = useTheme();
   const dim = highlight === 'dim';
   const ripple = highlight === 'ripple';
+  const bare = highlight === 'none';
   // Resolved in the body, not as a default parameter: the default is a theme
   // value and a hook cannot be called in a parameter list.
   //
@@ -234,13 +250,14 @@ function PressableView({
   const tap = useSharedValue(1);
   // Read out of the token tables once, on the JS thread: indexing them inside a
   // worklet would capture the whole table into the animation closure.
-  const target = press === 'none' || press === 'tab' || dim || ripple ? 1 : PRESS[press];
-  const squashY = press === 'send' && !dim && !ripple ? PRESS.sendSquashY : 1;
+  const target =
+    press === 'none' || press === 'tab' || dim || ripple || bare ? 1 : PRESS[press];
+  const squashY = press === 'send' && !dim && !ripple && !bare ? PRESS.sendSquashY : 1;
   // `morph` is ignored under the iOS and ripple models rather than being an
   // error: a caller can pass one shape to both platforms and the platform decides.
-  const from = dim || ripple ? undefined : morph?.from;
-  const to = dim || ripple ? undefined : morph?.to;
-  const layerOpacity = dim ? 1 : ripple ? 0 : INTERACTION.statePressed;
+  const from = dim || ripple || bare ? undefined : morph?.from;
+  const to = dim || ripple || bare ? undefined : morph?.to;
+  const layerOpacity = dim ? 1 : ripple || bare ? 0 : INTERACTION.statePressed;
 
   /**
    * The held compression, on its own value rather than folded into `p`.
@@ -386,6 +403,7 @@ function PressableView({
         } else {
           p.value = springTo(0, 'snap');
         }
+        onPressOutProp?.();
       }}
       disabled={disabled}
       hitSlop={slop}

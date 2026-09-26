@@ -6935,19 +6935,19 @@ describe('the directory is grouped and filterable: Listeners, Astrologers, ages'
      */
     const row = withoutComments(read('src/components/ProviderRow.tsx'));
     expect(row).not.toContain('showCategory');
-    // Split into `categoryKey` so the tone can be keyed off it: the chip is
-    // FILLED and hue-coded per type now, and passing the KEY (not the label) to
-    // `tone` is what makes a third category fail to compile rather than render
-    // as an outlined chip.
+    // Split into `categoryKey` so the glyph and the ink can be keyed off it.
+    // Not a chip since 2026-09-26 (Amit): a filled glyph and the word in the
+    // category's hue. Keying the ink with a Record<ProviderCategory, ...> and
+    // passing the KEY as the icon name is what makes a third category fail to
+    // compile rather than render uncoloured or glyphless.
     expect(row).toContain('const categoryKey = categoryOf(provider)');
     expect(row).toContain('CATEGORY_BADGE[categoryKey]');
-    expect(row).toContain('tone={categoryKey}');
+    expect(row).toContain('const categoryInk: Record<ProviderCategory, TextStyle>');
+    expect(row).toContain('name={categoryKey}');
     expect(row).toContain('testID="provider-category"');
     // In the price line's slot, not the pill row's.
     const priceLine = row.slice(row.indexOf('<View style={styles.priceLine}>'));
-    expect(priceLine.slice(0, priceLine.indexOf('</View>'))).toContain(
-      'label={category}',
-    );
+    expect(priceLine.slice(0, priceLine.indexOf('</View>'))).toContain('{category}');
   });
 
   it('asks the provider once, at onboarding', () => {

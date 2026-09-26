@@ -102,7 +102,7 @@ const PAIRS = [
     fg: 'text/secondary',
     bg: 'bg/raised',
     target: 4.5,
-    what: 'previews in a card',
+    what: 'previews in a card; the explore row rate on the name line',
   },
   /*
    * NARROWED 2026-09-17, because the words "glanceable metadata" were doing
@@ -152,7 +152,7 @@ const PAIRS = [
     fg: 'text/onAccent',
     bg: 'bg/accent',
     target: 4.5,
-    what: 'a label on the accent fill (spotlight CTA, recharge pill, push gate)',
+    what: 'a label on the accent fill (spotlight CTA, recharge pill, push gate, the explore row CTA while pressed)',
   },
   /*
    * The chat bubbles. Your own bubble is the brand fill, step 500 in both
@@ -215,7 +215,7 @@ const PAIRS = [
     fg: 'text/onInverse',
     bg: 'bg/inverse',
     target: 4.5,
-    what: 'the primary button label',
+    what: "the primary button label; the explore row's away Notify while pressed",
   },
   /*
    * Accent INK. Step 500 light, 300 dark. The decision named 400 for dark and
@@ -338,6 +338,35 @@ const PAIRS = [
     bg: 'bg/astrologer',
     target: 4.5,
     what: 'the Astrologer type tag on a directory card',
+  },
+  /*
+   * The category INK straight on the card, since the explore row's category
+   * stopped being a chip (2026-09-26): a filled glyph and the word, both in the
+   * category's text-safe tone. 4.5 because the word is text under 18sp; the
+   * glyph beside it is non-text and passes the same number with room to spare.
+   */
+  {
+    fg: 'text/onListener',
+    bg: 'bg/raised',
+    target: 4.5,
+    what: 'the Listener category mark and word on a directory card',
+  },
+  {
+    fg: 'text/onAstrologer',
+    bg: 'bg/raised',
+    target: 4.5,
+    what: 'the Astrologer category mark and word on a directory card',
+  },
+  /*
+   * The filled verified seal beside the name, Bluesky's verified blue. A mark,
+   * not text, so the 3:1 non-text floor; and never the only statement of the
+   * fact, which the card's spoken label and the directory's own filter carry.
+   */
+  {
+    fg: 'mark/verified',
+    bg: 'bg/raised',
+    target: 3,
+    what: 'the verified seal beside a provider name on the card (non-text)',
   },
   {
     fg: 'bg/listener',

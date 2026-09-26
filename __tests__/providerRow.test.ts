@@ -2,6 +2,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { TOKENS } from '../src/theme/tokens';
 import { genderLetter } from '../src/lib/display';
+import { ICON_GLYPH } from '../src/theme/icons.generated';
+import { capHeight, cmapOf, glyphBounds, unitsPerEm } from './helpers/ttf';
 
 /*
  * NOTHING IN src/components CAN BE IMPORTED HERE, and that is why every gate in
@@ -217,17 +219,82 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
      */
     expect(code(ROW)).toContain("name=\"badgeCheck\"");
     expect(code(ROW)).not.toContain('styles.verified');
-    expect(read('design/icons.json')).toContain('"badgeCheck": "seal-check"');
+    // FILLED since 2026-09-26 (Amit: "phosphor seal check in blue colour,
+    // filled"), as a `-fill` glyph name rather than an `active` entry, because
+    // the seal has no unselected state.
+    expect(read('design/icons.json')).toContain('"badgeCheck": "seal-check-fill"');
     expect(read('src/theme/icons.generated.ts')).toContain('badgeCheck:');
+    // Bluesky's verified blue, not the coral: the seal is not the call to act.
+    expect(code(ROW)).toContain('color={theme.color.mark.verified}');
     // Out of the accessibility tree: the card's label would otherwise gain a
     // stop that says nothing a member can act on.
-    expect(code(ROW)).toMatch(/testID="provider-verified"[\s\S]{0,60}badgeCheck/);
+    expect(code(ROW)).toMatch(/testID="provider-verified"[\s\S]{0,120}badgeCheck/);
     expect(code(ROW)).toMatch(/accessible=\{false\} testID="provider-verified"/);
     // And the guarantee it rests on is real, checked against the migration
     // rather than trusted from the comment.
     expect(read('supabase/migrations/083_provider_expertise.sql')).toContain(
       'p.identity_verified_at is not null',
     );
+  });
+
+  it('draws the seal exactly as tall as the name\'s capitals, measured from both fonts', () => {
+    /*
+     * Amit, 2026-09-26: "with height equal to the first capital letter of the
+     * name". Both halves of that are read out of the .ttf files here, not out
+     * of the comment in ProviderRow.tsx, so a regenerated icon font (a new
+     * Phosphor pin, a changed EM_WINDOW) or a different name face fails this
+     * rather than leaving the component's arithmetic describing a glyph that
+     * has moved.
+     */
+    const geist = readFileSync(join(ROOT, 'assets/fonts/Geist-Bold.ttf'));
+    expect(TOKENS.typography.titleMediumEmphasized.fontFamily).toBe('Geist-Bold');
+    const capEm = capHeight(geist) / unitsPerEm(geist);
+    expect(capEm).toBeCloseTo(0.71, 5);
+
+    const phosphor = readFileSync(join(ROOT, 'assets/fonts/Phosphor.ttf'));
+    const glyph = cmapOf(phosphor)(ICON_GLYPH.badgeCheck.codePointAt(0) ?? 0);
+    expect(glyph).toBeGreaterThan(0);
+    const box = glyphBounds(phosphor, glyph);
+    const em = unitsPerEm(phosphor);
+    const inkBottom = box.yMin / em;
+    const inkTop = box.yMax / em;
+    expect(inkBottom).toBeCloseTo(0.052, 5);
+    expect(inkTop).toBeCloseTo(0.948, 5);
+
+    // The component's constants are the fonts' numbers, term for term.
+    const src = read(ROW);
+    expect(src).toContain('const GEIST_CAP_HEIGHT = 0.71;');
+    expect(src).toContain('const SEAL_INK_BOTTOM = 0.052;');
+    expect(src).toContain('const SEAL_INK_TOP = 0.948;');
+    expect(src).toContain(
+      'GEIST_CAP_HEIGHT * TOKENS.typography.titleMediumEmphasized.fontSize',
+    );
+    expect(src).toContain(
+      'export const VERIFIED_SEAL_PX = Math.round(NAME_CAP_HEIGHT / (SEAL_INK_TOP - SEAL_INK_BOTTOM))',
+    );
+    expect(src).toContain('export const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE');
+    expect(code(ROW)).toContain('size={VERIFIED_SEAL_SIZE}');
+
+    // The arithmetic: an 11.36dp cap height wants a 12.68dp box, `Icon` rounds
+    // to 13, and 13 draws the seal 11.65dp tall, within a pixel of the caps and
+    // on the overshoot side a round mark beside flat capitals should be.
+    const cap = capEm * TOKENS.typography.titleMediumEmphasized.fontSize;
+    expect(cap).toBeCloseTo(11.36, 2);
+    const px = Math.round(cap / (inkTop - inkBottom));
+    expect(px).toBe(13);
+    // What Icon.tsx renders for the size the row passes it.
+    expect(Math.round((px / 1.2) * 1.2)).toBe(13);
+    const drawn = px * (inkTop - inkBottom);
+    expect(drawn).toBeGreaterThanOrEqual(cap);
+    expect(drawn - cap).toBeLessThan(0.5);
+
+    // Seated on the baseline, not centred on the 24dp line box: the line
+    // aligns on baselines, and the seal's ink is shifted down by the glyph's
+    // own bottom bearing so the INK, not the box, sits on it.
+    expect(style('nameLine')).toContain("alignItems: 'baseline'");
+    expect(style('nameLine')).not.toContain("alignItems: 'center'");
+    expect(src).toContain('const SEAL_BASELINE_SHIFT = SEAL_INK_BOTTOM * VERIFIED_SEAL_PX');
+    expect(style('seal')).toContain('translateY: SEAL_BASELINE_SHIFT');
   });
 
   it('writes the gender as a letter before the age, and omits it when unknown', () => {
@@ -350,55 +417,167 @@ describe('the gesture conflict is removed rather than tuned', () => {
   });
 });
 
-describe('the CTA is 48dp, and the reference is the thing that is wrong', () => {
-  it('draws the CTA at Astrotalk 36dp but keeps the 48dp target', () => {
+describe('the CTA is a 33dp small button inside a 48dp target', () => {
+  it('draws Bluesky\'s small button but keeps the 48dp target', () => {
     /*
-     * Astrotalk's `call_rl` is 36.0×95.3dp on the Redmi. The button is DRAWN at
-     * 36 to match (Amit, on the S22: "make the call cta smaller"), but the 48dp
-     * touch minimum still applies with full force — this really is inside the
-     * row's tappable area. So the target stays 48 two ways: the price ROW it
-     * sits in is ROW_CTA_HEIGHT (48) and the button is centred in it, and the
-     * Pressable's `size={ROW_CTA_VISUAL_HEIGHT}` inflates the focusable area back
-     * to 48 via hitSlop without inflating the visual.
+     * Amit, 2026-09-26: "smaller, from our system's small button". Bluesky's
+     * small button is 12dp across and 8dp down around semibold text_sm (13.1 on
+     * a 17 line): 8 + 17 + 8 = 33, down from Astrotalk's 36. The 48dp touch
+     * minimum still applies with full force, and is kept two ways: the price
+     * ROW stays ROW_CTA_HEIGHT (48) with the button centred in it, and the
+     * Pressable's `size={ROW_CTA_VISUAL_HEIGHT}` turns the 15dp difference into
+     * hitSlop without inflating the drawing.
+     * https://developer.android.com/guide/topics/ui/accessibility/apps
      */
-    expect(read(ROW)).toContain('export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
-    expect(read(ROW)).toContain('export const ROW_CTA_VISUAL_HEIGHT = 36');
+    const src = read(ROW);
+    expect(src).toContain('export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
+    expect(src).toContain(
+      'export const ROW_CTA_VISUAL_HEIGHT =\n  TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight',
+    );
+    const visual = TOKENS.space.xs * 2 + TOKENS.typography.textSmSemiBold.lineHeight;
+    expect(visual).toBe(33);
     expect(code(ROW)).toContain('size={ROW_CTA_VISUAL_HEIGHT}');
     expect(TOKENS.interaction.minTarget).toBe(48);
+    // Pressable's own slop formula, for the size the row passes: 8 each side.
+    const slop = Math.max(8, Math.ceil((TOKENS.interaction.minTarget - visual) / 2));
+    expect(slop).toBe(8);
+    expect(visual + 2 * slop).toBeGreaterThanOrEqual(TOKENS.interaction.minTarget);
+    expect(read('src/components/Pressable.tsx')).toContain(
+      'Math.max(8, Math.ceil((INTERACTION.minTarget - size) / 2))',
+    );
+
     /*
-     * The WIDTH left the reference on 2026-09-08: 136, not Astrotalk's 95.3,
-     * because the button now carries the rate as well as the verb ("move rate
-     * into cta after call text"). A width is safe to change — nothing about it
-     * is a platform minimum — and the room is needed.
+     * The stroke comes OUT of the padding: RN borders take space inside the
+     * box, so 1 + 7 + 17 + 7 + 1 = 33, where a 1dp outline around Bluesky's
+     * 8/12 would draw 35.
      */
-    expect(read(ROW)).toContain('export const ROW_CTA_WIDTH = 136');
-    // The rate is INSIDE the control, and there is no longer a price line.
-    expect(code(ROW)).toContain('styles.ctaRate');
-    expect(code(ROW)).not.toContain('styles.price,');
+    expect(src).toContain('const CTA_STROKE = 1;');
+    expect(src).toContain('const CTA_PAD_Y = TOKENS.space.xs - CTA_STROKE;');
+    expect(src).toContain('const CTA_PAD_X = TOKENS.space.sm - CTA_STROKE;');
+    const stroke = 1;
+    expect(
+      stroke * 2 + (TOKENS.space.xs - stroke) * 2 + TOKENS.typography.textSmSemiBold.lineHeight,
+    ).toBe(visual);
+
+    /*
+     * The glyph's box is the label's line box, so it cannot be the tallest thing
+     * in the button: 17 / ICON_SCALE, which Icon rounds back to 17.
+     * `icon.sm` renders 19 and would set the button to 35.
+     */
+    expect(src).toContain(
+      'const CTA_ICON_SIZE = TOKENS.typography.textSmSemiBold.lineHeight / ICON_SCALE',
+    );
+    const lh = TOKENS.typography.textSmSemiBold.lineHeight;
+    expect(Math.round((lh / 1.2) * 1.2)).toBe(lh);
+    expect(Math.round(TOKENS.icon.sm * 1.2)).toBeGreaterThan(lh);
+
     const cta = style('cta');
-    expect(cta).toContain('height: ROW_CTA_VISUAL_HEIGHT');
-    expect(cta).toContain('width: ROW_CTA_WIDTH');
+    // `minHeight`, so a large font scale grows the button instead of clipping
+    // its label; and NO width: it hugs its glyph and verb.
+    expect(cta).toContain('minHeight: ROW_CTA_VISUAL_HEIGHT');
+    expect(cta).not.toMatch(/\bheight:/);
+    expect(cta).not.toMatch(/\bwidth:/);
+    expect(cta).toContain('paddingHorizontal: CTA_PAD_X');
+    expect(cta).toContain('paddingVertical: CTA_PAD_Y');
+    expect(cta).toContain('borderWidth: CTA_STROKE');
+    expect(src).not.toContain('ROW_CTA_WIDTH');
+    expect(style('ctaLabel')).toContain('...TOKENS.typography.textSmSemiBold');
   });
 
-  it('quotes one price and never a struck-through one', () => {
+  it('fills solid under the finger, on opacity, on the UI thread', () => {
     /*
-     * Astrotalk renders "₹ 24 ₹ 5/min" with the first crossed out. Amit: "no
-     * struck price". We have one rate and it is not discounted, so an anchor
-     * price would be invented — the same class of claim as the false per-message
-     * cost removed in 75ced47.
+     * Amit, 2026-09-26: the CTA "fills up on click", solid while pressed.
+     * animate-expo's gate: tens of presses a day, so near-imperceptible timing
+     * (100-150ms) on its strong ease-out, feedback on press-in, and nothing
+     * stacked on top: no scale, no state layer.
      */
     const body = code(ROW);
-    expect(body).not.toContain('lineThrough');
-    expect(body).not.toContain('textDecorationLine');
+    const cta = between(body, 'testID={`provider-cta-${provider.id}`}', '</Pressable>');
+    const pressable = between(body, 'onPress={() =>\n                  away', 'style={[styles.cta');
+    expect(pressable).toContain('press="none"');
+    expect(pressable).toContain('highlight="none"');
+    expect(pressable).toContain('onPressIn={() => fill.set(withTiming(1, CTA_FILL_IN))}');
+    expect(pressable).toContain('onPressOut={() => fill.set(withTiming(0, CTA_FILL_OUT))}');
+    expect(cta).toContain('<Animated.View');
+    expect(cta).toContain('style={[styles.ctaFill, away && styles.ctaFillAway, fillStyle]}');
+    // One property, and the free one.
+    expect(body).toContain('const fillStyle = useAnimatedStyle(() => ({ opacity: fill.get() }))');
+    expect(body).not.toMatch(/interpolateColor|withSpring/);
+    // The curve and the budget are the tokens, not hand-typed numbers, and
+    // reduced motion snaps rather than tweens.
+    const fillIn = between(read(ROW), 'const CTA_FILL_IN = {', '} as const;');
+    expect(fillIn).toContain('duration: DURATION.pressRamp');
+    expect(fillIn).toContain('easing: EASE_OUT_QUINT');
+    expect(fillIn).toContain('reduceMotion: ReduceMotion.System');
+    const fillOut = between(read(ROW), 'const CTA_FILL_OUT = {', '} as const;');
+    expect(fillOut).toContain('duration: DURATION.pressRamp * 1.5');
+    expect(fillOut).toContain('easing: EASE_OUT_QUINT');
+    expect(fillOut).toContain('reduceMotion: ReduceMotion.System');
+    expect(TOKENS.motion.duration.pressRamp).toBe(100);
+    expect(TOKENS.motion.duration.pressRamp * 1.5).toBeLessThanOrEqual(150);
+
+    // The pressed face is out of flow and out of the accessibility tree.
+    const fill = style('ctaFill');
+    expect(fill).toContain("position: 'absolute'");
+    expect(fill).toContain('backgroundColor: t.color.bg.accent');
+    expect(fill).toContain('borderRadius: TOKENS.radius.xs - CTA_STROKE');
+    expect(style('ctaFillLabel')).toContain('color: t.color.text.onAccent');
+    expect(cta).toContain('pointerEvents="none"');
+    expect(cta).toContain('importantForAccessibility="no-hide-descendants"');
+    // The away variant fills in its own neutral, never the coral.
+    expect(style('ctaFillAway')).toContain('backgroundColor: t.color.bg.inverse');
+    expect(style('ctaFillAwayLabel')).toContain('color: t.color.text.onInverse');
+    // Pressable's `none` highlight really draws nothing of its own.
+    const pressableSrc = code('src/components/Pressable.tsx');
+    expect(pressableSrc).toContain("export type Highlight = 'material' | 'dim' | 'ripple' | 'none'");
+    expect(pressableSrc).toContain('ripple || bare ? 0 : INTERACTION.statePressed');
+    expect(pressableSrc).toContain('onPressOutProp?.()');
+  });
+
+  it('puts the rate on the name line, in the F-29 register, and never struck through today', () => {
+    /*
+     * Amit, 2026-09-26: the rate leaves the CTA for the NAME line, right
+     * aligned, the same size and style as the "F-29" subscript. It takes
+     * `nameAge` whole and overrides one property, the ink: text/tertiary is
+     * 3.30:1 on the dark card, and a price is not glanceable metadata.
+     */
+    const body = code(ROW);
+    const nameLine = between(body, '<View style={styles.nameLine}>', 'styles.tagLine');
+    expect(nameLine).toContain('<RateLabel');
+    expect(nameLine).toContain('rate={ratePerMin}');
+    expect(nameLine).toContain('style={[styles.nameAge, styles.rate]}');
+    const rate = style('rate');
+    expect(rate).toContain('color: t.color.text.secondary');
+    expect(rate).toContain("marginLeft: 'auto'");
+    expect(rate).toContain('flexShrink: 0');
+    // The NAME is what gives way, so a long one ellipsizes before the rate.
+    expect(style('name')).toContain('flexShrink: 1');
+    expect(nameLine).toMatch(/numberOfLines=\{1\}\s+style=\{styles\.name\}/);
+
+    /*
+     * The struck anchor has a SLOT (RateLabel's `original`) and no caller. We
+     * have one undiscounted rate; an anchor price with no discount behind it
+     * would be invented, the same class of claim as the false per-message cost
+     * removed in 75ced47. The day a discount source exists, this is the line
+     * that changes.
+     */
+    expect(body).not.toMatch(/original=\{/);
+    expect(body.match(/textDecorationLine/g)?.length).toBe(1);
+    expect(style('rateOriginal')).toContain("textDecorationLine: 'line-through'");
+    expect(style('rateOriginal')).toContain('color: t.color.text.tertiary');
     /*
      * One rate, through `RupeeAmount` on the card and `formatRupees` in the
-     * spoken label — the ₹ glyph sweep (2026-09-08) moved the visible figure
-     * off a raw `formatRupees(...)` call so the glyph could render in a lighter
-     * weight than the digits, without touching what TalkBack hears.
+     * spoken label, so the ₹ keeps its lighter weight without changing what
+     * TalkBack hears.
      */
-    expect(body).toContain('<RupeeAmount value={ratePerMin}');
+    expect(body).toContain('<RupeeAmount value={rate} />');
     expect(body).toContain('formatRupees(ratePerMin)'); // the spoken label
     expect(body.match(/formatRupees\(/g)?.length).toBe(1);
+    // And it is gone from the button and from the price line.
+    const priceLine = between(body, '<View style={styles.priceLine}>', '</Pressable>');
+    expect(priceLine).not.toContain('RupeeAmount');
+    expect(priceLine).not.toContain('ratePerMin');
+    expect(body).not.toContain('ctaRate');
   });
 
   it('does not offer a Call button to a provider who has switched calls off', () => {
@@ -440,35 +619,53 @@ describe('the CTA is 48dp, and the reference is the thing that is wrong', () => 
     expect(body).toMatch(/canCall && onCall !== undefined \? onCall\(provider\.id\) : onPress\(provider\.id\)/);
   });
 
-  it('drops the glyph in front of the price, except the away bell', () => {
+  it('leads every CTA state with its glyph', () => {
     /*
-     * Amit: "remove call icon before 22/min". It was doing less than it looked
-     * — the phone said "this rate buys a call", which the CTA beside it now
-     * says in a word.
-     *
-     * NARROWED 2026-09-13 for the away state, and the distinction is the reason
-     * the original rule exists rather than an exception to it. The banned phone
-     * glyph was REDUNDANT: it said the same thing as the word "Call" beside it.
-     * The bell is not redundant — it says something the word cannot, that this
-     * row offers a different KIND of action from every other row in the list.
-     * The test asserts that difference rather than just allowing an Icon back:
-     * the only glyph permitted here is the bell, and only in the away branch.
+     * REVERSED 2026-09-26 (Amit's approved mockup). The old rule, from "remove
+     * call icon before 22/min", banned a phone in front of a PRICE, where it
+     * only restated what the price bought. The price has left the button, and a
+     * glyph before a one-word verb is the small-button idiom: phone for Call,
+     * camera for Video, bubble for Chat, bell for Notify, check once notified.
      */
-    const priceLine = between(code(ROW), '<View style={styles.priceLine}>', '</View>');
-    /*
-     * The glyph became an EXPRESSION on 2026-09-17: the bell turns into a check
-     * once the peer has actually been told, which is the visible half of the
-     * Notify state machine. A name="..." only match would find nothing and pass
-     * an empty array, so it matches both forms and the permitted set is still
-     * asserted exactly. Neither branch may be the banned phone glyph.
-     */
+    const body = code(ROW);
+    expect(body).toContain(
+      "const CTA_VERB_ICON = {\n  Call: 'call',\n  Chat: 'chat',\n  Video: 'video',\n  Notify: 'bell',\n}",
+    );
+    expect(body).toContain(
+      "const ctaIcon: IconName = notified ? 'check' : CTA_VERB_ICON[ctaLabel]",
+    );
+    const priceLine = between(body, '<View style={styles.priceLine}>', '</Pressable>');
     const icons = priceLine.match(/<Icon\s+name=(?:"\w+"|\{[^}]+\})/g) ?? [];
-    expect(icons).toEqual([
-      "<Icon\n                    name={notified ? 'check' : 'bell'}",
+    expect(icons.map(i => i.replace(/\s+/g, ' '))).toEqual([
+      '<Icon name={categoryKey}', // the category mark
+      '<Icon name={ctaIcon}', // the resting face
+      '<Icon name={ctaIcon}', // the pressed face, the same glyph
     ]);
-    // ...and it is gated on away, never drawn for a provider who is here.
-    expect(priceLine).toContain('{away ? (');
-    expect(priceLine).toContain('<RupeeAmount value={ratePerMin}');
+    expect(body).toContain('size={CTA_ICON_SIZE}');
+  });
+
+  it('draws the category as coloured text behind a filled glyph, not a chip', () => {
+    /*
+     * Amit, 2026-09-26: "like trophy + Wellness Guide". The glyph names are the
+     * category keys, which design/icons.json maps to FILLED Phosphor glyphs
+     * (headset-fill, moon-stars-fill); the ink is each category's text-safe
+     * tone on the card, registered in scripts/check-contrast.mjs.
+     */
+    const body = code(ROW);
+    expect(body).not.toContain('<MetaChip');
+    expect(read('design/icons.json')).toContain('"listener": "headset-fill"');
+    expect(read('design/icons.json')).toContain('"astrologer": "moon-stars-fill"');
+    const category = between(body, 'testID="provider-category"', '<View style={styles.priceSpacer} />');
+    expect(category).toContain('name={categoryKey}');
+    expect(category).toContain('size={TOKENS.icon.sm}');
+    expect(category).toContain('{category}');
+    expect(style('categoryLabel')).toContain('...TOKENS.typography.textSmSemiBold');
+    expect(style('categoryListener')).toContain('color: t.color.text.onListener');
+    expect(style('categoryAstrologer')).toContain('color: t.color.text.onAstrologer');
+    const contrast = read('scripts/check-contrast.mjs');
+    expect(contrast).toMatch(/fg: 'text\/onListener',\s+bg: 'bg\/raised',\s+target: 4\.5/);
+    expect(contrast).toMatch(/fg: 'text\/onAstrologer',\s+bg: 'bg\/raised',\s+target: 4\.5/);
+    expect(contrast).toMatch(/fg: 'mark\/verified',\s+bg: 'bg\/raised',\s+target: 3/);
   });
 });
 
@@ -499,7 +696,7 @@ describe('every row is still the same height', () => {
 
   it('takes the pill height from the chip rather than repeating 24', () => {
     expect(code(CHIP)).toContain('export const META_CHIP_HEIGHT_SM = 24');
-    expect(code(ROW)).toContain("import { META_CHIP_HEIGHT_SM, MetaChip } from './MetaChip'");
+    expect(code(ROW)).toContain("import { META_CHIP_HEIGHT_SM } from './MetaChip'");
     expect(code(ROW)).toContain('const ROW_TAG_LINE = META_CHIP_HEIGHT_SM');
   });
 

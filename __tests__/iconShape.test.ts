@@ -460,7 +460,11 @@ describe('icon-only Pressables declare their state-layer shape', () => {
     // And the `ripple` carve-out above is only sound while the Reanimated layer
     // is genuinely hidden in that mode. If this ever becomes non-zero, ripple
     // sites start drawing a clipped layer and must declare a shape like the rest.
-    expect(src).toMatch(/layerOpacity\s*=\s*dim\s*\?\s*1\s*:\s*ripple\s*\?\s*0\s*:/);
+    // `none` (2026-09-26, a caller that paints its own pressed state) shares
+    // the zero, for the same reason.
+    expect(src).toMatch(
+      /layerOpacity\s*=\s*dim\s*\?\s*1\s*:\s*ripple\s*\|\|\s*bare\s*\?\s*0\s*:/,
+    );
     expect(src).toMatch(/borderless:\s*true/);
   });
 

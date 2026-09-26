@@ -74,6 +74,7 @@ export const LIGHT = {
       vent: '#C25E00',
       share: '#7A3DE0',
       unwind: '#0F7F62',
+      verified: '#006AFF',
     },
     bubble: {
       mine: '#C2401F',
@@ -749,6 +750,7 @@ export const DARK = {
       vent: '#C25E00',
       share: '#7A3DE0',
       unwind: '#0F7F62',
+      verified: '#4291FF',
     },
     bubble: {
       mine: '#C2401F',

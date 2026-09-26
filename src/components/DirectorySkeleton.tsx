@@ -7,10 +7,20 @@ import {
   PROVIDER_CARD_HEIGHT,
   ROW_AVATAR_RING,
   ROW_CARD_GAP,
-  ROW_CTA_HEIGHT,
-  ROW_CTA_WIDTH,
+  ROW_CTA_VISUAL_HEIGHT,
 } from './ProviderRow';
 import { STARS_WIDTH } from './RatingStars';
+
+/**
+ * The CTA placeholder's width. The real button has no fixed width any more (it
+ * hugs its glyph and verb since 2026-09-26), so there is no constant to import;
+ * this is the drawn width of its commonest state, "Call": 1 + 11 of stroke and
+ * padding each side, a 17dp glyph, an 8dp gap and the word at textSmSemiBold,
+ * about 27dp. An estimate of one state, and it only has to be close: the card
+ * around it is PROVIDER_CARD_HEIGHT whatever the button measures, so nothing
+ * shifts vertically when the data lands.
+ */
+const CTA_PLACEHOLDER_WIDTH = 76;
 
 /**
  * The Explore screen's first paint, held as a skeleton of what is arriving.
@@ -41,7 +51,12 @@ export function DirectorySkeleton({ rows = 5 }: { rows?: number }) {
           </View>
           {/* Right column: name, expertise, languages, experience, price row. */}
           <View style={styles.lines}>
-            <Skeleton width="52%" height={16} radius={TOKENS.radius.xs} />
+            {/* The name, and the rate at the far end of the same line. */}
+            <View style={styles.nameLine}>
+              <Skeleton width="52%" height={16} radius={TOKENS.radius.xs} />
+              <View style={styles.spacer} />
+              <Skeleton width={44} height={12} radius={TOKENS.radius.xs} />
+            </View>
             <Skeleton width="76%" height={20} radius={TOKENS.radius.xs} />
             <Skeleton width="46%" height={12} radius={TOKENS.radius.xs} />
             <Skeleton width="34%" height={12} radius={TOKENS.radius.xs} />
@@ -49,8 +64,8 @@ export function DirectorySkeleton({ rows = 5 }: { rows?: number }) {
               <Skeleton width={62} height={16} radius={TOKENS.radius.xs} />
               <View style={styles.spacer} />
               <Skeleton
-                width={ROW_CTA_WIDTH}
-                height={ROW_CTA_HEIGHT}
+                width={CTA_PLACEHOLDER_WIDTH}
+                height={ROW_CTA_VISUAL_HEIGHT}
                 radius={TOKENS.radius.xs}
               />
             </View>
@@ -94,6 +109,10 @@ const makeStyles = (t: Theme) =>
     lines: {
       flex: 1,
       gap: TOKENS.space['2xs'],
+    },
+    nameLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     priceLine: {
       flexDirection: 'row',

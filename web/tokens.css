@@ -54,6 +54,7 @@
   --mark-vent: #C25E00;
   --mark-share: #7A3DE0;
   --mark-unwind: #0F7F62;
+  --mark-verified: #006AFF;
   --bubble-mine: #C2401F;
   --bubble-theirs: #FFFFFF;
   --bubble-text: #FFFFFF;
@@ -183,6 +184,7 @@
   --mark-vent: #C25E00;
   --mark-share: #7A3DE0;
   --mark-unwind: #0F7F62;
+  --mark-verified: #4291FF;
   --bubble-mine: #C2401F;
   --bubble-theirs: #232E3B;
   --bubble-text: #FFFFFF;
