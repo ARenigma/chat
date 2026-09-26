@@ -174,6 +174,7 @@ $$;
 --   tier     hard    an identifier (single message)
 --            window  a number completed across messages
 --            signal  intent, no identifier
+--            report  a moderator's strike from a report (story media, 159)
 --   outcome  blocked  refused in enforce mode (the only kind that can strike)
 --            shadow   would have been refused; logged and delivered
 --            flagged  a signal, for review; never blocked
@@ -181,12 +182,12 @@ create table if not exists public.contact_guard_events (
   id               uuid        primary key default gen_random_uuid(),
   user_id          uuid        not null references public.profiles(id) on delete cascade,
   surface          text        not null check (surface in
-                     ('chat_send', 'chat_edit', 'story_comment', 'story_caption', 'profile')),
+                     ('chat_send', 'chat_edit', 'story_comment', 'story_caption', 'profile', 'story_media')),
   field            text,
   conversation_id  uuid,
   story_id         uuid,
   row_ref          uuid,
-  tier             text        not null check (tier in ('hard', 'window', 'signal')),
+  tier             text        not null check (tier in ('hard', 'window', 'signal', 'report')),
   outcome          text        not null check (outcome in ('blocked', 'shadow', 'flagged')),
   rules            text[]      not null default '{}',
   category         text,
@@ -327,7 +328,8 @@ create or replace function private.contact_guard_log(
   p_category text,
   p_reason   text,
   p_excerpt  text,
-  p_window   text[] default null
+  p_window   text[] default null,
+  p_force    boolean default false
 )
 returns jsonb
 language plpgsql
@@ -343,7 +345,10 @@ declare
   v_pause    timestamptz;
   v_hidden   timestamptz;
 begin
-  if p_outcome = 'blocked' then
+  if p_outcome = 'blocked' and p_force then
+    -- A moderator's strike (a reported story's media, 159) always counts.
+    v_counts := true;
+  elsif p_outcome = 'blocked' then
     -- One honest mistake retyped three times in a minute is one incident.
     v_counts := not exists (
       select 1 from public.contact_guard_strikes s
@@ -428,7 +433,7 @@ begin
 end;
 $$;
 
-revoke all on function private.contact_guard_log(uuid, text, text, jsonb, text, text, text, text[], text, text, text, text[])
+revoke all on function private.contact_guard_log(uuid, text, text, jsonb, text, text, text, text[], text, text, text, text[], boolean)
   from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------

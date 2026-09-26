@@ -203,6 +203,8 @@ const MIGRATIONS = [
   'supabase/migrations/155_provider_presence_last_seen.sql',
   'supabase/migrations/156_contact_guard_detector.sql',
   'supabase/migrations/157_contact_guard_enforcement.sql',
+  'supabase/migrations/158_contact_guard_directory_hiding.sql',
+  'supabase/migrations/159_contact_guard_review.sql',
   'supabase/migrations/170_delete_account_ends_every_live_session.sql',
 ];
 
@@ -1028,7 +1030,16 @@ const suites = [
     label:
       'the contact guard logs in shadow, blocks and strikes in enforce, pauses at strike 3, blocks only the completing split message, and refuses profile fields at save',
   },
-
+  {
+    file: join(ROOT, 'supabase/tests/572_contact_guard_directory_hiding.sql'),
+    label:
+      'a provider at contact-guard strike 2 is hidden from strangers for 7 days, and still seen by themself and by members already talking to them',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/573_contact_guard_review.sql'),
+    label:
+      'a moderator strikes a reported story once, the ladder fills the removal and human review queues, and clear, suspend and ban resolve them, audited',
+  },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions
    * cannot see an open transaction's fixture). It removes what it wrote, at
