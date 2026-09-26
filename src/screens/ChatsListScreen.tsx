@@ -8,7 +8,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { initialOf } from '../lib/display';
+import { initialOf, providerFirstName } from '../lib/display';
 import { timeOfDay } from '../lib/datetime';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -189,7 +189,9 @@ function ChatListRow({
   // A private custom label (migration 098) overrides the peer name in this
   // person's own inbox. The query is shared/deduped across rows by React Query.
   const { data: labels } = useConversationLabels();
-  const name = labels?.get(c.conversation_id) ?? c.peer_display_name ?? 'Conversation';
+  // Otherwise a member's peer is a provider, shown by first name (display.ts).
+  const peerName = c.i_am_member ? providerFirstName(c.peer_display_name) : c.peer_display_name;
+  const name = labels?.get(c.conversation_id) ?? (peerName || 'Conversation');
   const unreadCount = c.i_am_member
     ? Number(c.unread_count_member)
     : Number(c.unread_count_provider);

@@ -31,6 +31,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { providerFirstName } from '../lib/display';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
 import { formatCount, formatRupees } from '../lib/rates';
@@ -287,7 +288,8 @@ export function UsageLedgerScreen({ onBack }: Props) {
               </View>
               <View style={styles.rowBody}>
                 <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
-                  {row.peer_name}
+                  {/* A member's peer is a provider: first name only (display.ts). */}
+                  {row.i_am_member ? providerFirstName(row.peer_name) || row.peer_name : row.peer_name}
                 </Text>
                 <Text allowFontScaling style={styles.rowMeta}>
                   {`${CHANNEL_LABEL[row.channel]} · ${elapsedLabel(row)}${

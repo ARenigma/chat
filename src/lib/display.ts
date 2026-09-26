@@ -41,6 +41,29 @@ export function genderLetter(gender: string | null): string | null {
   return null;
 }
 
+/**
+ * A provider's name as a member sees it: the first name only (Amit,
+ * 2026-09-27: "always render only first name of provider").
+ *
+ * Trimmed, then the first whitespace-separated token; a single-token name is
+ * kept whole. Null, undefined and blank come back as '' so each caller keeps
+ * its own fallback ('?', 'Your provider'), as it did for a missing name.
+ *
+ * The same rule runs server side in supabase/functions/_shared/names.ts for the
+ * push titles; __tests__/providerFirstName.test.ts holds the two to one table.
+ *
+ * Nothing today needs two same-first-name providers told apart on one surface
+ * (no list shows a disambiguator), so accessibility labels use the first name
+ * too. The day one does, it needs a different fact (a handle), not the surname.
+ */
+export function providerFirstName(displayName: string | null | undefined): string {
+  const trimmed = (displayName ?? '').trim();
+  if (trimmed === '') {
+    return '';
+  }
+  return trimmed.split(/\s+/u)[0] as string;
+}
+
 export type ProviderCtaLabel = 'Notify' | 'Call' | 'Chat' | 'Video';
 
 /**

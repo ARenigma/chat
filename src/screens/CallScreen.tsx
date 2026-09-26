@@ -21,7 +21,7 @@ import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { CallResult, ProviderSummary } from '../lib/database.types';
 import type { CallMedium } from '../lib/database.types';
-import { initialOf } from '../lib/display';
+import { initialOf, providerFirstName } from '../lib/display';
 import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 import { useConversationId, useConversations, useProviders, useSelfId } from '../api/chat';
 import { answerCall, endCall, getVideoSwitchQuote, heartbeatCall, requestVideoSwitch, respondVideoSwitch, startCall, useCallEnded, useVideoSwitch, type VideoSwitchQuote, type VideoSwitchResult } from '../api/calls';
@@ -249,8 +249,17 @@ export function CallScreen({
   const { data: threads } = useConversations();
   const peerThread = threads?.find(t => t.peer_id === providerId);
   const isMemberSide = peerThread?.i_am_member ?? true;
+  /*
+   * On the member side the peer is a provider, named by first name only on
+   * every surface, the call notification included (display.ts). The provider
+   * side names a member, which the rule does not touch.
+   */
+  const shownPeerName = (full: string | null | undefined): string | undefined => {
+    const shown = isMemberSide ? providerFirstName(full) : (full ?? '');
+    return shown === '' ? undefined : shown;
+  };
   const reviewPeerName =
-    peerThread?.peer_display_name ?? provider?.display_name ?? 'Conversation';
+    shownPeerName(peerThread?.peer_display_name ?? provider?.display_name) ?? 'Conversation';
 
   /*
    * Who this call names and pictures — resolved from the summary row FIRST, the
@@ -264,8 +273,7 @@ export function CallScreen({
    * member side used to lean on.
    */
   const peerName =
-    peerThread?.peer_display_name ??
-    provider?.display_name ??
+    shownPeerName(peerThread?.peer_display_name ?? provider?.display_name) ??
     (direction === 'in' ? 'Incoming call' : 'Calling');
   const name = peerName;
   const peerAvatarUrl =

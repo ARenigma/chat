@@ -430,8 +430,8 @@ describe('the gesture conflict is removed rather than tuned', () => {
      * since 2026-09-13 the away state has its own, because "Call <name>" would
      * be a lie on a row whose button no longer calls.
      */
-    expect(body).toMatch(/`Notify \$\{provider\.display_name\} that you want to chat`/);
-    expect(body).toMatch(/`Call \$\{provider\.display_name\}`/);
+    expect(body).toMatch(/`Notify \$\{firstName\} that you want to chat`/);
+    expect(body).toMatch(/`Call \$\{firstName\}`/);
   });
 
   it('keeps the tag pills out of the accessibility tree', () => {

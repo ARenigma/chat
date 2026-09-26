@@ -4,7 +4,7 @@ import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
-import { initialOf } from '../lib/display';
+import { initialOf, providerFirstName } from '../lib/display';
 import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { rowIn } from '../theme/motion';
 import { avatarImageSource } from '../lib/clayAvatars';
@@ -82,6 +82,7 @@ function ProviderCardView({
   const styles = useStyles(makeStyles);
 
   const initial = initialOf(provider.display_name);
+  const firstName = providerFirstName(provider.display_name);
   const latency = replyLatency(provider.median_reply_seconds);
 
   // The dot and its spoken line: the server's `online` or last seen (migration
@@ -129,8 +130,8 @@ function ProviderCardView({
 
   const accessibility = [
     away
-      ? `Notify ${provider.display_name} that you want to chat`
-      : `Message ${provider.display_name}`,
+      ? `Notify ${firstName} that you want to chat`
+      : `Message ${firstName}`,
     presenceForSpeech(presence),
     channelLine,
     provider.rating_count > 0
@@ -162,7 +163,7 @@ function ProviderCardView({
             <Pressable
               onPress={() => (onPressAvatar ?? onPress)(provider.id)}
               testID={`provider-card-avatar-${provider.id}`}
-              accessibilityLabel={`${provider.display_name}'s profile`}
+              accessibilityLabel={`${firstName}'s profile`}
               accessible={false}
               press="none"
               style={styles.avatarTap}>
@@ -175,7 +176,7 @@ function ProviderCardView({
             </Pressable>
             <View style={styles.nameBlock}>
               <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
-                {provider.display_name}
+                {firstName}
                 {provider.age !== null ? (
                   <Text style={styles.nameAge}> {provider.age}</Text>
                 ) : null}
@@ -371,6 +372,7 @@ function SquareProviderCardView({
   const styles = useStyles(makeSquareStyles);
 
   const initial = initialOf(provider.display_name);
+  const firstName = providerFirstName(provider.display_name);
   const coverSource = avatarImageSource(provider.avatar_url, 300, 300, 85);
   const presence = readPresence({
     online: provider.online,
@@ -409,7 +411,7 @@ function SquareProviderCardView({
         <Pressable
           onPress={() => onPress(provider.id)}
           testID={`provider-sq-${provider.id}`}
-          accessibilityLabel={provider.display_name}
+          accessibilityLabel={firstName}
           accessibilityRole="button"
           press="card"
           style={styles.inner}>
@@ -454,7 +456,7 @@ function SquareProviderCardView({
           {/* Footer */}
           <View style={styles.footer}>
             <Text allowFontScaling numberOfLines={1} style={styles.cardName}>
-              {provider.display_name}
+              {firstName}
             </Text>
             {secondaryLine ? (
               <Text allowFontScaling numberOfLines={1} style={styles.cardSub}>

@@ -16,7 +16,7 @@ import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderPhoto, ProviderSummary } from '../lib/database.types';
 import { avatarImageSource } from '../lib/clayAvatars';
-import { genderLetter, initialOf } from '../lib/display';
+import { genderLetter, initialOf, providerFirstName } from '../lib/display';
 import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { tick } from '../lib/haptics';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -287,8 +287,8 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                   onPress={notify.notify}
                   label={
                     notified
-                      ? `${provider.display_name} has been notified`
-                      : `Notify ${provider.display_name} that you want to chat`
+                      ? `${providerFirstName(provider.display_name)} has been notified`
+                      : `Notify ${providerFirstName(provider.display_name)} that you want to chat`
                   }
                 />
               </Animated.View>
@@ -318,7 +318,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                     rate={audioRate}
                     enabled={voiceCallsEnabled}
                     onPress={onAudio}
-                    label={`Call ${provider.display_name}`}
+                    label={`Call ${providerFirstName(provider.display_name)}`}
                   />
                 ) : null}
                 {provider.chat_enabled ? (
@@ -329,7 +329,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                     rate={chatRate}
                     enabled
                     onPress={onChat}
-                    label={`Message ${provider.display_name}`}
+                    label={`Message ${providerFirstName(provider.display_name)}`}
                   />
                 ) : null}
                 {provider.video_enabled ? (
@@ -340,7 +340,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                     rate={videoRate}
                     enabled={videoCallsEnabled}
                     onPress={onVideo}
-                    label={`Video call ${provider.display_name}`}
+                    label={`Video call ${providerFirstName(provider.display_name)}`}
                   />
                 ) : null}
               </>
@@ -652,7 +652,7 @@ function Hero({
                    screen-reader user swiping the strip has to know where they
                    are.
                    https://developer.android.com/guide/topics/ui/accessibility/principles */
-                accessibilityLabel={`${provider.display_name}, photo ${i + 1} of ${gallery.length}`}>
+                accessibilityLabel={`${providerFirstName(provider.display_name)}, photo ${i + 1} of ${gallery.length}`}>
                 <Image
                   source={avatarImageSource(uri, pageW, HERO_HEIGHT) ?? undefined}
                   fadeDuration={220}
@@ -720,7 +720,7 @@ function Hero({
       <View style={styles.heroBody}>
         <View style={styles.heroNameRow}>
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.heroName}>
-            {provider.display_name}
+            {providerFirstName(provider.display_name)}
             <Text style={styles.heroAge}>{age}</Text>
           </Text>
           {presence.here ? <View style={styles.heroDot} /> : null}

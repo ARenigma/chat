@@ -23,6 +23,7 @@
  *     signed-in user trigger it.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { pushName } from '../_shared/names.ts';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -164,8 +165,9 @@ async function send(
   bearer: string,
   projectId: string,
   row: Pending,
+  senderIsProvider: boolean,
 ): Promise<'sent' | 'dead' | 'retry'> {
-  const who = row.sender_display_name ?? 'Someone';
+  const who = pushName(row.sender_display_name, senderIsProvider) ?? 'Someone';
   // The hero photo (#6): the sender's public provider photo, ridden in the data
   // map as `senderAvatar` and rendered by the app as the Person icon. Present
   // only for a provider sender; a public-bucket URL the app downloads itself, so
@@ -360,6 +362,24 @@ Deno.serve(async request => {
     return Response.json({ pending: 0, sent: 0, contacts: 0, dead: 0, retry: 0 });
   }
 
+
+  /*
+   * Which senders are providers, so their push carries the first name only
+   * (_shared/names.ts). From `profiles.role`, not the directory: a provider the
+   * directory hides is still a provider. A failed lookup names nobody a
+   * provider, which sends the name as the view has it, the old behaviour.
+   */
+  const peerIds = [...new Set(pending.map(r => r.peer_id))];
+  const { data: roles, error: roleError } = await db
+    .from('profiles')
+    .select('id')
+    .in('id', peerIds)
+    .eq('role', 'provider');
+  if (roleError) {
+    console.error(`push-failure send-push provider roles ${roleError.message}`);
+  }
+  const providers = new Set(((roles ?? []) as { id: string }[]).map(r => r.id));
+
   const bearer = await accessToken(sa);
 
   // A message can have several rows, one per device the recipient has
@@ -375,7 +395,7 @@ Deno.serve(async request => {
   let contacts = 0;
 
   for (const row of pending) {
-    const result = await send(bearer, sa.project_id, row);
+    const result = await send(bearer, sa.project_id, row, providers.has(row.peer_id));
     if (result === 'sent') {
       sent += 1;
       if (row.kind === 'contact') {

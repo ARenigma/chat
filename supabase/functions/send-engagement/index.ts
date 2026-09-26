@@ -13,6 +13,7 @@
  * push to any member.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { providerFirstName } from '../_shared/names.ts';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -97,7 +98,8 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
 
 /** Send one engagement nudge. Data-only, so the app builds the BigPicture. */
 async function send(bearer: string, projectId: string, row: Candidate): Promise<boolean> {
-  const who = row.provider_display_name ?? 'Someone';
+  // Always a provider (the nudge is about one): first name only (_shared/names.ts).
+  const who = providerFirstName(row.provider_display_name) ?? 'Someone';
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
     {

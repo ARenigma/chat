@@ -76,7 +76,7 @@ import {
 } from '../api/voice';
 import type { ReactionEmoji } from '../lib/database.types';
 import { clearChatDraft } from '../lib/chatDraft';
-import { initialOf } from '../lib/display';
+import { initialOf, providerFirstName } from '../lib/display';
 import { readPresence, type PresenceRead } from '../lib/presence';
 import {
   clockTickMs,
@@ -525,7 +525,19 @@ export function useChatV2Controller(
    * the literal is the genuine dead end (no summary row and no directory row),
    * not the cold-open state.
    */
-  const nameFromData = knownThread?.peer_display_name ?? provider?.display_name;
+  const fullName = knownThread?.peer_display_name ?? provider?.display_name;
+  /*
+   * A member's peer is a provider, and a provider is named by first name only
+   * on every surface a member reads (display.ts): the header, the reply strip,
+   * the notified line and the review sheet all take it from here. The provider
+   * side names a member, which keeps the whole name.
+   */
+  const nameFromData =
+    fullName === null || fullName === undefined
+      ? undefined
+      : isMemberSide
+        ? providerFirstName(fullName) || undefined
+        : fullName;
   const identityLoading = threads === undefined || providers === undefined;
   const peerName = nameFromData ?? (identityLoading ? '' : 'Conversation');
   /*

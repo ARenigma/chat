@@ -12,7 +12,7 @@ import {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary, ProviderSummary } from '../lib/database.types';
-import { initialOf } from '../lib/display';
+import { initialOf, providerFirstName } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated, { useSharedValue } from 'react-native-reanimated';
@@ -975,7 +975,7 @@ export function HomeScreen({
           every other dot. */}
       <SpotlightCard
         visible={potdVisible && featured !== null}
-        name={featured?.display_name ?? 'Someone for you'}
+        name={providerFirstName(featured?.display_name) || 'Someone for you'}
         avatarUri={featured?.avatar_url ?? null}
         online={
           featured !== null &&
@@ -1025,7 +1025,10 @@ const RailItem = memo(function ({
   const styles = useStyles(makeStyles);
   const pinned = useRailPrefs(s => s.pinned.includes(chat.peer_id));
   const hostRef = useRef<View>(null);
-  const name = chat.peer_display_name ?? 'Conversation';
+  // The member's peer is a provider: first name only (display.ts).
+  const name =
+    (chat.i_am_member ? providerFirstName(chat.peer_display_name) : chat.peer_display_name) ||
+    'Conversation';
   const unreadCount = chat.i_am_member
     ? Number(chat.unread_count_member)
     : Number(chat.unread_count_provider);
@@ -1480,7 +1483,7 @@ function FeaturedCard({
    * https://reactnative.dev/docs/accessibility
    */
   const accessibility = [
-    `Featured: ${provider.display_name}`,
+    `Featured: ${providerFirstName(provider.display_name)}`,
     // "away" / "last seen Tuesday" in the same words every other surface
     // speaks, so the pill is not the only place the state exists.
     presenceForSpeech(presence),
@@ -1530,7 +1533,7 @@ function FeaturedCard({
               "F-28"), not the old 24dp headline: at 126dp a 24dp name held
               about seven characters. */}
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.featuredName}>
-            {provider.display_name}
+            {providerFirstName(provider.display_name)}
             <Text style={styles.featuredAge}>{age}</Text>
           </Text>
         </View>

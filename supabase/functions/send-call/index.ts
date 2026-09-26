@@ -12,6 +12,7 @@
  * covers every device the callee has and is safe to retry.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { pushName } from '../_shared/names.ts';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -117,8 +118,9 @@ async function send(
   bearer: string,
   projectId: string,
   row: Pending,
+  callerIsProvider: boolean,
 ): Promise<'sent' | 'dead' | 'retry'> {
-  const who = row.caller_display_name ?? 'Someone';
+  const who = pushName(row.caller_display_name, callerIsProvider) ?? 'Someone';
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
     {
@@ -221,12 +223,30 @@ Deno.serve(async request => {
     return Response.json({ pending: 0, sent: 0 });
   }
 
+
+  /*
+   * Which callers are providers, so their ring carries the first name only
+   * (_shared/names.ts). From `profiles.role`, not the directory: a provider the
+   * directory hides is still a provider. A failed lookup names nobody a
+   * provider, which sends the name as the view has it, the old behaviour.
+   */
+  const peerIds = [...new Set(pending.map(r => r.peer_id))];
+  const { data: roles, error: roleError } = await db
+    .from('profiles')
+    .select('id')
+    .in('id', peerIds)
+    .eq('role', 'provider');
+  if (roleError) {
+    console.error(`push-failure send-call provider roles ${roleError.message}`);
+  }
+  const providers = new Set(((roles ?? []) as { id: string }[]).map(r => r.id));
+
   const bearer = await accessToken(sa);
   const notified = new Set<string>();
   const deadTokens = new Set<string>();
   let sent = 0;
   for (const row of pending) {
-    const result = await send(bearer, sa.project_id, row);
+    const result = await send(bearer, sa.project_id, row, providers.has(row.peer_id));
     if (result === 'sent') {
       sent += 1;
       notified.add(row.call_id);

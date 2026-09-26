@@ -18,6 +18,7 @@
  * pseudonymous handle the rest of the app shows.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { providerFirstName } from '../_shared/names.ts';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -192,7 +193,9 @@ Deno.serve(async request => {
     .select('display_name, avatar_url')
     .eq('id', openerId)
     .maybeSingle();
-  let opener = directory?.display_name ?? null;
+  // A provider is named by first name only (_shared/names.ts); a member's
+  // handle below is sent as it is.
+  let opener = providerFirstName(directory?.display_name);
   if (opener === null) {
     const { data: handle } = await db.rpc('member_handle', { p_id: openerId });
     opener = (handle as string | null) ?? 'Someone';

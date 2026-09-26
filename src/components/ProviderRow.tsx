@@ -9,7 +9,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
-import { genderLetter, initialOf, providerCtaLabel } from '../lib/display';
+import { genderLetter, initialOf, providerCtaLabel, providerFirstName } from '../lib/display';
 import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { DURATION, EASE_OUT_QUINT, fadeSwapOutFast, rowIn } from '../theme/motion';
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
@@ -586,6 +586,8 @@ function ProviderRowView({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
+  // First name only, on every surface a member reads (display.ts).
+  const firstName = providerFirstName(provider.display_name);
 
   /*
    * The expertise line. Category leads when there are no tabs above the list to
@@ -709,10 +711,10 @@ function ProviderRowView({
   });
   const ctaSpoken =
     ctaLabel === 'Call'
-      ? `Call ${provider.display_name}`
+      ? `Call ${firstName}`
       : ctaLabel === 'Video'
-        ? `Video call ${provider.display_name}`
-        : `Message ${provider.display_name}`;
+        ? `Video call ${firstName}`
+        : `Message ${firstName}`;
   /*
    * "Voice calls only" and the rest, in the slot directly under the name.
    *
@@ -824,7 +826,7 @@ function ProviderRowView({
   };
 
   const accessibility = [
-    `${provider.display_name}${provider.age !== null ? `, ${provider.age}` : ''}`,
+    `${firstName}${provider.age !== null ? `, ${provider.age}` : ''}`,
     presenceForSpeech(presence),
     busy !== null ? busyForSpeech(busy) : null,
     channelLine,
@@ -861,7 +863,7 @@ function ProviderRowView({
           <Pressable
             onPress={() => (onPressAvatar ?? onPress)(provider.id)}
             testID={`provider-avatar-${provider.id}`}
-            accessibilityLabel={`${provider.display_name}'s profile`}
+            accessibilityLabel={`${firstName}'s profile`}
             // Folded into the card for TalkBack: the avatar is a sighted-tap
             // shortcut to the profile, not a second focus target overlapping
             // the card. The card's own label already carries who this is.
@@ -898,7 +900,7 @@ function ProviderRowView({
               allowFontScaling
               numberOfLines={1}
               style={styles.name}>
-              {provider.display_name}
+              {firstName}
               {provider.age !== null ? (
                 /* "F-24", Astrotalk's shorthand. The letter is dropped for
                    'other' and for null rather than guessed — see
@@ -1069,11 +1071,11 @@ function ProviderRowView({
                      it has a line of its own under the button. */
                   accessibilityLabel={
                     notified
-                      ? `${provider.display_name} has been notified${
+                      ? `${firstName} has been notified${
                           notifyAgainIn === null ? '' : `, again in ${notifyAgainIn}m`
                         }`
                       : away
-                        ? `Notify ${provider.display_name} that you want to chat`
+                        ? `Notify ${firstName} that you want to chat`
                         : busy !== null
                           ? `${ctaSpoken}, ${busyForSpeech(busy)}`
                           : ctaSpoken
