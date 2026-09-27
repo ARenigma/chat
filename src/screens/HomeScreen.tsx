@@ -2,6 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import { FlashList } from '@shopify/flash-list';
 import {
   Image,
+  Keyboard,
   PixelRatio,
   ScrollView,
   StyleSheet,
@@ -562,6 +563,11 @@ export function HomeScreen({
   }, [allProviders, searchFilter, trimmed]);
 
   const closeSearch = useCallback(() => {
+    // Leaving search takes the IME with it, on every exit (the ✕, hardware
+    // back). The field unmounts with the bar, and an unmounted TextInput does
+    // not always hand the IME back on Android, so it is dismissed explicitly.
+    // https://reactnative.dev/docs/keyboard#dismiss
+    Keyboard.dismiss();
     setSearching(false);
     setQuery('');
     // Filters belong to the search session. Leaving them set would mean the
@@ -1279,7 +1285,7 @@ const DirectoryPage = memo(function ({
                 allowFontScaling
                 accessibilityRole="header"
                 style={styles.picksTitle}>
-                Top profiles this week
+                Top {CATEGORY_LABEL[category].toLowerCase()} this week
               </Text>
             </View>
             {/* PORTRAIT STORY CARDS, start-aligned, about 2.3 across (Amit,
@@ -1328,6 +1334,7 @@ const DirectoryPage = memo(function ({
       </>
     ),
     [
+      category,
       focused,
       chats,
       topPicks,
@@ -1559,7 +1566,7 @@ function FeaturedCard({
               header immediately above the carousel, on all three cards, so it said
               nothing the header had not already said (Amit). With the words gone
               there is no sensible fallback: a solid accent pill asserting nothing,
-              on a card in a "Top profiles this week" strip, is an advert rather than
+              on a card in a "Top listeners this week" strip, is an advert rather than
               a status — so a provider with no ratings gets no pill at all. Same
               glyph and precision as ProviderCard.tsx:168-170 and
               ProviderRow.tsx:226-228; `accessible={false}` folds it into the card,
@@ -1792,7 +1799,7 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       // Bluesky ModuleHeader pt_2xl: 24 from the rail above.
       paddingTop: TOKENS.space.xl,
-      // 'Explore' and its caption 'Top profiles this week' are a title + its
+      // 'Explore' and its caption "Top listeners this week" are a title + its
       // supporting line, so they read as ONE unit: a 2dp hairline gap (Amit, on
       // device), so glyph-to-glyph the two lines sit as close as the fonts' own
       // line-box leading allows. Was 12dp, which made them two separate things.
@@ -1801,7 +1808,7 @@ const makeStyles = (t: Theme) =>
       paddingBottom: TOKENS.space.hair,
     },
     /*
-     * "Top profiles this week" over the hero carousel. A heading, because a row
+     * "Top listeners this week" (or astrologers) over the hero carousel. A heading, because a row
      * of three cards with no label is three unexplained adverts — but a QUIET
      * heading.
      *
@@ -1858,7 +1865,7 @@ const makeStyles = (t: Theme) =>
     },
     /*
      * The picks strip: inset by the page's 16dp so the first card lines up with
-     * "Top profiles this week" above it, and `space.xs` between cards.
+     * "Top listeners this week" above it, and `space.xs` between cards.
      */
     picksStrip: {
       paddingHorizontal: TOKENS.space.md,

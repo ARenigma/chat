@@ -7364,7 +7364,8 @@ describe('search opens the way the reference app opens it, and the week has a ca
     );
     expect(home).toContain('const TOP_PICKS = 3');
     expect(home).toContain('testID="top-picks"');
-    expect(home).toContain('Top profiles this week');
+    // Named by the page's category: "Top listeners this week" (Amit, 09-27).
+    expect(home).toContain('Top {CATEGORY_LABEL[category].toLowerCase()} this week');
     expect(home).toContain('.slice(0, TOP_PICKS)');
     // The picks are lifted out of the list below, so nobody appears twice.
     expect(home).toContain('const shown = new Set(topPicks.map(p => p.id))');
