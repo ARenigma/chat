@@ -137,3 +137,6 @@ play-upload/03-phone-screenshots/screenshot-fresh-chat-debug.png
 # Sentry release/upload config (org, project, auth token) — never commit the token.
 sentry.properties
 android/sentry.properties
+
+# Build output: RN bundling writes here (modules.json, the JS bundle). Never commit.
+android/app/src/main/assets/

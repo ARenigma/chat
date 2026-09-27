@@ -1070,10 +1070,22 @@ if (
   throw new Error('the fold table does not survive run encoding');
 }
 
-/** A dict whose keys match an earlier one's, each value that one's plus a fixed suffix, is derived rather than repeated. */
-const jsDictDerived = jsDicts.map((d, i) => {
+/**
+ * A dict whose keys match an earlier one's, each value that one's plus a fixed
+ * suffix, is derived rather than repeated. Only from a base that is itself
+ * DECLARED: a derived dict emits no const, so deriving from one would reference
+ * an undeclared DICT in the generated file. Built in order for that reason.
+ */
+const jsDictDerived = [];
+for (const [i, d] of jsDicts.entries()) {
+  jsDictDerived.push(deriveFrom(d, i));
+}
+function deriveFrom(d, i) {
   const keys = Object.keys(d);
   for (let j = 0; j < i; j += 1) {
+    if (jsDictDerived[j] !== null) {
+      continue;
+    }
     const base = jsDicts[j];
     const baseKeys = Object.keys(base);
     if (
@@ -1092,7 +1104,7 @@ const jsDictDerived = jsDicts.map((d, i) => {
     }
   }
   return null;
-});
+}
 
 const ts = `/**
  * GENERATED FILE, DO NOT EDIT.

@@ -2897,10 +2897,13 @@ describe('worklet default parameters', () => {
       .filter(f => /\.(ts|tsx)$/.test(f))
       .map(f => join(ROOT, 'src', f));
     const offenders: string[] = [];
+    // Both shapes: `function name(...) { 'worklet'` and
+    // `const name = (...) => { 'worklet'` (with or without `async`/types).
     const fn = /function\s+(\w+)\s*\(([^)]*)\)[^{]*\{\s*'worklet'/g;
+    const arrow = /(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)[^={]*=>\s*\{\s*'worklet'/g;
     for (const file of files) {
       const src = readFileSync(file, 'utf8');
-      for (const m of src.matchAll(fn)) {
+      for (const m of [...src.matchAll(fn), ...src.matchAll(arrow)]) {
         for (const param of (m[2] ?? "").split(',')) {
           const dflt = /[=]\s*(.+)$/.exec(param.trim())?.[1]?.trim();
           if (dflt === undefined) continue;
