@@ -72,7 +72,7 @@ describe('every surface that names a provider to a member uses it', () => {
     ['supabase/functions/send-push/index.ts', /pushName\(row\.sender_display_name, senderIsProvider\)/],
     ['supabase/functions/send-call/index.ts', /pushName\(row\.caller_display_name, callerIsProvider\)/],
     ['supabase/functions/send-engagement/index.ts', /providerFirstName\(row\.provider_display_name\)/],
-    ['supabase/functions/send-open-alert/index.ts', /providerFirstName\(directory\?\.display_name\)/],
+    ['supabase/functions/send-open-alert/index.ts', /providerFirstName\(directory\.display_name\)/],
   ];
 
   it.each(SURFACES)('%s', (file, pattern) => {
