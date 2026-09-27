@@ -63,7 +63,7 @@ interface Props {
  * — and it takes this constant rather than repeating 32, so the scroller and the
  * chip inside it cannot drift apart.
  */
-export const META_CHIP_HEIGHT = 32;
+const META_CHIP_HEIGHT = 32;
 
 /**
  * The 24dp tag pill, and a STATED DEPARTURE from the 32dp spec above.

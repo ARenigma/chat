@@ -97,23 +97,6 @@ export function seededExperienceYears(id: string): number {
   return 1 + (h % 10);
 }
 
-/** "replies in ~4m". Rounded hard, because precision here would be false. */
-export function replyLatency(seconds: number | null): string | null {
-  if (seconds === null) {
-    return null;
-  }
-  if (seconds < 120) {
-    return 'replies in ~1m';
-  }
-  if (seconds < 3600) {
-    return `replies in ~${Math.round(seconds / 60)}m`;
-  }
-  if (seconds < 86_400) {
-    return `replies in ~${Math.round(seconds / 3600)}h`;
-  }
-  return 'replies slowly';
-}
-
 /**
  * The photo itself. Astrotalk's `user_pic` is 72.0dp; ours is 76 because that
  * is what `Avatar`'s deliberately-closed size union carries, and 76 already has
