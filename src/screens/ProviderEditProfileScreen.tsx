@@ -139,14 +139,11 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
   const offeredTopics = expertiseFor(profile?.provider_category ?? 'listener');
   const languageOptions = withChosen(OFFERED_LANGUAGES, draft?.languages ?? []);
   const topicOptions = withChosen(offeredTopics, draft?.expertise ?? []);
-  // Only a field the provider has touched shows its rule, so an empty legacy
-  // about does not open the page in red; Save is disabled either way.
+  // Rules show once the provider has changed something, not on arrival, so
+  // an empty legacy about does not open the page in red; from the first edit
+  // every rule that holds Save back is on screen, next to its field.
   const lineFor = (field: ProfileEditField): string | null =>
-    serverError?.field === field
-      ? serverError.message
-      : dirty && initial !== null && draft !== null && fieldChanged(initial, draft, field)
-        ? errors[field] ?? null
-        : null;
+    serverError?.field === field ? serverError.message : dirty ? errors[field] ?? null : null;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: imeSpace }]} testID="edit-profile">
@@ -274,14 +271,6 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
       </ScrollView>
     </View>
   );
-}
-
-function fieldChanged(initial: ProfileEditDraft, draft: ProfileEditDraft, field: ProfileEditField): boolean {
-  const a = initial[field];
-  const b = draft[field];
-  return typeof a === 'string' || typeof b === 'string'
-    ? a !== b
-    : (a as readonly string[]).join('\u0000') !== (b as readonly string[]).join('\u0000');
 }
 
 const makeStyles = (t: Theme) =>
