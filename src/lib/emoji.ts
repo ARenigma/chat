@@ -83,9 +83,6 @@ export const TONES: readonly string[] = [
   '\u{1F3FF}',
 ];
 
-/** A swatch per tone, for the tone picker itself. */
-export const TONE_SWATCHES: readonly string[] = TONES.map(t => `\u{270B}${t}`);
-
 /**
  * The newest Emoji version this device's system font can draw.
  *

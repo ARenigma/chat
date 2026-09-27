@@ -3,13 +3,6 @@ import { storage } from '../lib/storage';
 import type { RailPrefs } from '../lib/railPrefs';
 
 export type { RailPrefs } from '../lib/railPrefs';
-export {
-  compareConversations,
-  isPinned,
-  visibleOnList,
-  visibleOnRail,
-} from '../lib/railPrefs';
-
 /**
  * Local conversation chrome: pin, hide-from-rail, delete-from-lists.
  *

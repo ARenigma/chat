@@ -67,13 +67,6 @@ export interface ThresholdsConfig {
   unanswered_refund_window_hours: number;
 }
 
-export interface PayoutsConfig {
-  cadence: 'weekly';
-  hold_days: number;
-  minimum_paise: number;
-  cashfree_payouts_enabled: boolean;
-}
-
 export interface KillSwitchesConfig {
   payments_enabled: boolean;
   voice_calls_enabled: boolean;
@@ -135,18 +128,6 @@ export const FALLBACK_RECHARGE: RechargeConfig = {
   play_ucb_enabled: false,
 };
 
-const FALLBACK_WALLET: WalletConfig = {
-  starting_grant_tokens: 0,
-  daily_refill_enabled: false,
-  daily_refill_tokens: 25,
-};
-
-const FALLBACK_THRESHOLDS: ThresholdsConfig = {
-  low_balance_tokens: 22,
-  rate_limit_messages_per_min: 20,
-  unanswered_refund_window_hours: 24,
-};
-
 const FALLBACK_KILL_SWITCHES: KillSwitchesConfig = {
   // Matches PAYMENTS_ENABLED and migration 041 — first-send opens Cashfree.
   // Flip off in admin kill_switches to hard-stop collections without a redeploy.
@@ -176,11 +157,6 @@ export const FALLBACK_REPORT_TAXONOMY: ReportTaxonomyConfig = {
     'illegal_activity',
     'other',
   ],
-};
-
-const FALLBACK_AUTH_UI: AuthUiConfig = {
-  phone_auth_tab_visible: true,
-  google_auth_tab_visible: true,
 };
 
 export const FALLBACK_PERMISSIONS: PermissionsConfig = {
@@ -262,28 +238,6 @@ export function useRechargeConfig() {
   });
 }
 
-/** Wallet credits (starting grant, daily refill). */
-export function useWalletConfig() {
-  return useQuery({
-    queryKey: ['config', 'wallet'],
-    queryFn: () => fetchAuthConfig<WalletConfig>('wallet', FALLBACK_WALLET),
-    staleTime: STALE_TIME,
-    gcTime: GC_TIME,
-    placeholderData: FALLBACK_WALLET,
-  });
-}
-
-/** Operational limits (low balance, rate limits, refund window). */
-export function useThresholdsConfig() {
-  return useQuery({
-    queryKey: ['config', 'thresholds'],
-    queryFn: () => fetchAuthConfig<ThresholdsConfig>('thresholds', FALLBACK_THRESHOLDS),
-    staleTime: STALE_TIME,
-    gcTime: GC_TIME,
-    placeholderData: FALLBACK_THRESHOLDS,
-  });
-}
-
 /**
  * The minimum client this server will talk to.
  *
@@ -335,28 +289,6 @@ export function useReportTaxonomy() {
   });
 }
 
-/** Auth UI visibility — safe to read pre-auth. */
-export function useAuthUiConfig() {
-  return useQuery({
-    queryKey: ['config', 'auth_ui'],
-    queryFn: () => fetchPublicConfig<AuthUiConfig>('auth_ui', FALLBACK_AUTH_UI),
-    staleTime: STALE_TIME,
-    gcTime: GC_TIME,
-    placeholderData: FALLBACK_AUTH_UI,
-  });
-}
-
-/** Device permission policy — safe to read pre-auth. */
-export function usePermissionsConfig() {
-  return useQuery({
-    queryKey: ['config', 'permissions'],
-    queryFn: () =>
-      fetchPublicConfig<PermissionsConfig>('permissions', FALLBACK_PERMISSIONS),
-    staleTime: STALE_TIME,
-    gcTime: GC_TIME,
-    placeholderData: FALLBACK_PERMISSIONS,
-  });
-}
 
 // ─── Human-readable labels for report reasons ────────────────────────────────
 

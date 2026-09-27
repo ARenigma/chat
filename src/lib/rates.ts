@@ -293,22 +293,6 @@ export function gstAddedSpoken(baseInr: number, rateBps: number): string | null 
     : null;
 }
 
-/**
- * Minutes of talk time a balance buys at a given rate, as `m:ss`.
- *
- * Derived, never stored: one balance, N providers, N rates, so storing minutes
- * would desync the instant the balance or a rate changed.
- */
-export function talkTimeLeft(tokens: number | null, ratePerMin: number): string {
-  if (tokens === null || ratePerMin <= 0) {
-    return '0:00';
-  }
-  const totalSeconds = Math.max(0, Math.floor((tokens / ratePerMin) * 60));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
 /** "22/min", the label under each action button and in the rate rows. Tokens, no ₹. */
 export function rateLabel(ratePerMin: number): string {
   return `${ratePerMin}/min`;

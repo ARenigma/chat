@@ -27,10 +27,6 @@ export function setFocusedChat(chat: FocusedChat): () => void {
   };
 }
 
-export function getFocusedChat(): FocusedChat | null {
-  return focused;
-}
-
 /** Runs `proceed` once the focused chat, if any, has agreed to be left. */
 export function requestAwayFromFocusedChat(proceed: () => void): void {
   if (focused === null) {

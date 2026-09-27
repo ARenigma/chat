@@ -78,11 +78,3 @@ export function errorTick(): void {
   Vibration.vibrate([0, 18, 60, 18]);
 }
 
-/** Something succeeded. `CONFIRM` on API 30+, a light tap below it. */
-export function confirmTick(): void {
-  if (HAS_NATIVE_HAPTICS) {
-    native?.confirm();
-    return;
-  }
-  Vibration.vibrate(10);
-}

@@ -11,10 +11,6 @@ export function initialOf(name: string | null | undefined): string {
   return trimmed === '' ? '?' : (trimmed[0] as string).toUpperCase();
 }
 
-export function availabilityLabel(isAvailable: boolean): string {
-  return isAvailable ? 'Available now' : 'Away';
-}
-
 /**
  * Gender as Astrotalk-style shorthand beside the age: F-24, M-30.
  *

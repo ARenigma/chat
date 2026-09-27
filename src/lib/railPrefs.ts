@@ -8,10 +8,6 @@ export interface RailPrefs {
   deleted: readonly string[];
 }
 
-export function isPinned(prefs: RailPrefs, peerId: string): boolean {
-  return prefs.pinned.includes(peerId);
-}
-
 export function visibleOnRail(prefs: RailPrefs, peerId: string): boolean {
   return !prefs.deleted.includes(peerId) && !prefs.hiddenFromRail.includes(peerId);
 }

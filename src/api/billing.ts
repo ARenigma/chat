@@ -26,7 +26,6 @@
  * it has no React Native equivalent that avoids the native bridging for WebCheckout.
  */
 
-import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CFEnvironment,
@@ -49,21 +48,12 @@ import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
 // Play Billing (UCB) native bridge — kept for production path (ADR-0022).
 // ---------------------------------------------------------------------------
 
-const { BillingModule } = NativeModules;
-const billingEmitter =
-  Platform.OS === 'android' && BillingModule
-    ? new NativeEventEmitter(BillingModule)
-    : null;
+
 
 export type BillingEvent =
   | { type: 'purchaseAcknowledged'; purchaseToken: string; productId: string; orderId: string }
   | { type: 'alternativeChosen'; externalTransactionToken: string }
   | { type: 'error'; code: number; message: string };
-
-export function onBillingEvent(listener: (event: BillingEvent) => void): { remove: () => void } {
-  if (!billingEmitter) return { remove: () => {} };
-  return billingEmitter.addListener('billingEvent', listener);
-}
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -427,32 +417,3 @@ export function useCashfreeCheckout() {
 }
 
 // ---------------------------------------------------------------------------
-// Play Billing UCB (production path, ADR-0022)
-// ---------------------------------------------------------------------------
-
-/**
- * Opens the Play UCB recharge sheet for a given product SKU.
- * Only available in production once UCB/KYC enrolment is complete.
- */
-export function useOpenRechargeSheet() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (productId: string) => {
-      if (Platform.OS !== 'android') {
-        throw new Error('Play Billing is Android-only');
-      }
-      if (!BillingModule) {
-        throw new Error('BillingModule not available: check native registration');
-      }
-      const order = await createOrder(productId);
-      track('recharge_sheet_opened');
-      // Opens the Play UCB sheet; result comes via billingEvent listener
-      await BillingModule.openRechargeSheet(productId);
-      return order;
-    },
-    onSuccess: () => {
-      // Balance will update via billingEvent → webhook → Realtime subscription
-      void queryClient.invalidateQueries({ queryKey: ['profile'] });
-    },
-  });
-}

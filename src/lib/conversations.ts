@@ -236,11 +236,6 @@ export function readCallPush(
   };
 }
 
-/** Whether the native module is present. False under jest and in any build without it. */
-export function conversationsAvailable(): boolean {
-  return native !== undefined;
-}
-
 /** Ring an incoming call (CallStyle). Resolves `false` when the module is absent. */
 export async function notifyCall(push: CallPush): Promise<boolean> {
   if (native === undefined) {

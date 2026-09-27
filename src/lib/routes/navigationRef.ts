@@ -15,14 +15,6 @@ import type { AllNavigatorParams } from './types';
 export const navigationRef =
   createNavigationContainerRef<AllNavigatorParams>();
 
-/** Name of the currently focused route, or 'Home' when not yet ready. */
-export function getCurrentRouteName(): string {
-  if (!navigationRef.isReady()) {
-    return 'Home';
-  }
-  return navigationRef.getCurrentRoute()?.name ?? 'Home';
-}
-
 /** Root navigator state, or undefined when not yet ready. */
 export function getRootState():
   | ReturnType<typeof navigationRef.getRootState>

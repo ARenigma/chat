@@ -24,10 +24,6 @@ interface BirthPickerNative {
 
 const native = NativeModules.BirthPicker as BirthPickerNative | undefined;
 
-export function birthPickerAvailable(): boolean {
-  return native !== undefined;
-}
-
 /**
  * Where the date picker opens when nothing is picked yet: 1 Jan, 25 years ago,
  * which puts a typical member a few year-taps away rather than scrolling back

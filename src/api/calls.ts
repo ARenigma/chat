@@ -21,7 +21,6 @@ import {
 } from '../lib/videoSwitch';
 import { supabase } from '../lib/supabase';
 import { reportSwallowed } from '../lib/sentry';
-import { ENV } from '../lib/env';
 import type {
   CallMediaBackend,
   CallMedium,
@@ -30,19 +29,6 @@ import type {
 
 // Defined in src/config.ts — the single home for all feature flags.
 export { CALLS_ENABLED } from '../config';
-
-/**
- * ICE servers. Google's public STUN is always included; a TURN relay is
- * added only when `TURN_URL` is set in the environment so that development
- * runs STUN-only without requiring credentials. TURN credentials are read
- * exclusively from ENV — never hardcoded.
- */
-export const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  ...(ENV.turnUrl
-    ? [{ urls: ENV.turnUrl, username: ENV.turnUsername, credential: ENV.turnCredential }]
-    : []),
-];
 
 /**
  * What a RAISED rpc becomes, so a server fault stops looking like a dead phone.

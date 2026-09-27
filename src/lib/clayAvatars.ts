@@ -49,23 +49,6 @@ export function claySource(uri: string): ImageSourcePropType | null {
 }
 
 /**
- * Resolve avatar_url for `<Image source={…} />`.
- * Clay avatars use bundled PNGs; everything else stays a remote URI.
- */
-export function resolveAvatarSource(
-  uri: string | null | undefined,
-): ImageSourcePropType | { uri: string } | null {
-  if (uri == null || uri === '') {
-    return null;
-  }
-  const local = claySource(uri);
-  if (local !== null) {
-    return local;
-  }
-  return { uri };
-}
-
-/**
  * The one resolver for an `avatar_url` on its way into `<Image source={…} />`.
  *
  * Every surface that reached for `sizedStorageImageUri` directly drew an empty

@@ -87,10 +87,6 @@ import {
  */
 export type SocialProvider = 'google';
 
-export const PROVIDER_LABEL: Record<SocialProvider, string> = {
-  google: 'Continue with Google',
-};
-
 // Defined in src/config.ts — the single home for all feature flags.
 // Imported here so the function bodies in this file can reference it directly,
 // and re-exported so callers that import from auth.ts keep working.

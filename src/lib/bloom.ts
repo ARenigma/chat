@@ -339,8 +339,6 @@ export const BLOOM_PALETTES = {
   providerWhy: { name: 'providerWhy', wash: '#FF9297', glow: '#F85961', core: '#ED121D' },
 } as const satisfies Record<string, BloomPalette>;
 
-export type PaletteName = keyof typeof BLOOM_PALETTES;
-
 /**
  * The icon tint for an onboarding step — its own wash tone, the way Fuse tints
  * each step's symbol with its `gradient.0`. Keyed by the step key (choose /

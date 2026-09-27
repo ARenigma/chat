@@ -2564,7 +2564,7 @@ describe('the busy button does not move', () => {
 
   it('switches every unknown wait to circular progress at the M3 boundary', () => {
     const indicator = read('src/components/LoadingIndicator.tsx');
-    expect(indicator).toContain('export const LONG_WAIT_MS = 5000');
+    expect(indicator).toContain('const LONG_WAIT_MS = 5000');
     expect(indicator).toContain("variant = 'auto'");
     expect(indicator).toContain(
       'setTimeout(() => setLongWait(true), LONG_WAIT_MS)',
@@ -2766,7 +2766,7 @@ describe('the chat restyle is wired, not just drawn', () => {
       api.indexOf('export function usePeerPresence('),
       api.indexOf('export function useConversationId('),
     );
-    expect(api).toContain('export const PEER_PRESENCE_POLL_MS = 15_000;');
+    expect(api).toContain('const PEER_PRESENCE_POLL_MS = 15_000;');
     expect(hook).toContain(".from('conversation_peers')");
     expect(hook).toContain(".select('peer_online, peer_last_seen_at')");
     expect(hook).toContain(".eq('conversation_id', conversationId as string)");
@@ -5571,16 +5571,8 @@ describe('media upload uses M3 determinate progress, not ActivityIndicator', () 
     }
   });
 
-  it('uploads photos with XMLHttpRequest, not fetch, to get progress events', () => {
-    // fetch has no upload progress API; XHR.upload.onprogress does.
-    const attachments = withoutComments(read('src/api/attachments.ts'));
-    expect(attachments).toContain('new XMLHttpRequest()');
-    expect(attachments).toContain('xhr.upload.onprogress');
-    expect(attachments).toContain('e.lengthComputable');
-    // The original fetch must be gone (outside comments).
-    expect(attachments).not.toMatch(/await fetch\(/);
-  });
-
+  // The photo upload went with chat v2's photo picker (dead-code sweep
+  // 2026-09-27); voice notes are the one upload left.
   it('uploads voice notes with XMLHttpRequest, not fetch, to get progress events', () => {
     const voice = withoutComments(read('src/api/voice.ts'));
     expect(voice).toContain('new XMLHttpRequest()');
@@ -6133,7 +6125,7 @@ describe('the photo pipeline downscales, sends in order, and retries what it can
     expect(stallLib).toContain('export function armStallDetector');
     expect(stallLib).toContain("xhr.upload.addEventListener('progress', reset)");
 
-    for (const file of ['src/api/attachments.ts', 'src/api/voice.ts']) {
+    for (const file of ['src/api/voice.ts']) {
       const body = withoutComments(read(file));
       expect({ file, usesStallDetector: body.includes('armStallDetector(xhr,') }).toEqual({
         file,

@@ -62,7 +62,7 @@ describe('native Material wait indicators', () => {
     );
     expect(packageSource).toContain('isIndeterminate = true');
     expect(application).toContain('add(MaterialIndicatorPackage())');
-    expect(component).toContain('export const LONG_WAIT_MS = 5000');
+    expect(component).toContain('const LONG_WAIT_MS = 5000');
   });
 });
 
@@ -2976,7 +2976,7 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     const slot = block(styles, 'slot');
     expect(slot).toContain('height: INTERACTION.minTarget');
     expect(slot).toContain('paddingTop: TOKENS.space.sm');
-    expect(styles).toContain('export const INDICATOR_HEIGHT = 32;');
+    expect(styles).toContain('const INDICATOR_HEIGHT = 32;');
     expect(TOKENS.space.sm + 32 + TOKENS.space['2xs']).toBe(TOKENS.interaction.minTarget);
     expect(bar).toContain('size={INTERACTION.minTarget}');
   });
