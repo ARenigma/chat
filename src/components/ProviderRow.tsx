@@ -390,9 +390,10 @@ export const ROW_CARD_GAP = TOKENS.space.sm;
  *   09-27  uniform 4dp gaps, CTA row at its drawn 33                        = 121  card 155.5
  *   09-27  CTA beside exp + category, category its own line                 = 107  card 150
  *
- * `__tests__/providerRow.test.ts` pins the arithmetic from the tokens, so a
- * change to the type scale fails there rather than silently mis-hinting the
- * list.
+ * `__tests__/providerRow.test.ts` pins the arithmetic from the tokens (it
+ * recomputes it and reads these declarations as source text; nothing imports
+ * them, so they are module-local), and a change to the type scale fails there
+ * rather than silently mis-hinting the list.
  */
 const PROVIDER_ROW_RIGHT_COLUMN =
   TOKENS.typography.textXlSemiBold.lineHeight +
@@ -614,6 +615,10 @@ function ProviderRowView({
    * and the call rings their phone; reading the heartbeat there would put a
    * Notify on somebody who would pick up.
    */
+  // Render-time `now` is enough: `online` is computed by the SERVER, and the
+  // directory refetches every 30 s (useProviders' refetchInterval), so a lapsed
+  // heartbeat arrives as a changed `provider` prop and re-renders this memo
+  // row. `now` only words the "last seen" line.
   const presence = readPresence({
     online: provider.online,
     lastSeenAt: provider.last_seen_at,

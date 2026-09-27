@@ -66,6 +66,11 @@ export type ProviderCtaLabel = 'Notify' | 'Call' | 'Chat' | 'Video';
  * The provider row's one verb (ProviderRow's CTA, #46). Away outranks every
  * channel; a provider who takes voice calls is called when the row can dial;
  * otherwise the verb names a channel they actually offer, chat first.
+ *
+ * So a voice-only provider on a row that cannot dial still reads "Call": the
+ * press then opens the profile (ProviderRow's `onPress` fallback), and the
+ * profile's Call button is the dial. The label names what they offer; it never
+ * names a channel they do not (no "Chat" when chat is off).
  */
 export function providerCtaLabel(input: {
   isAvailable: boolean;

@@ -48,13 +48,20 @@ interface Props {
 function StoryMediaView({ story, playing, muted, onReady, onFailed }: Props) {
   const media = useStoryMedia(story.id);
   const [shown, setShown] = useState(false);
+  // The URL can arrive and the media still fail to load or play: that is a
+  // failure too, and it must replace the spinner rather than leave it up for
+  // good whatever the parent does with `onFailed`.
+  const [broken, setBroken] = useState(false);
   const url = media.data?.url;
 
   const ready = () => {
     setShown(true);
     onReady(story.id);
   };
-  const failed = () => onFailed(story.id);
+  const failed = () => {
+    setBroken(true);
+    onFailed(story.id);
+  };
 
   return (
     <View style={styles.fill}>
@@ -82,7 +89,7 @@ function StoryMediaView({ story, playing, muted, onReady, onFailed }: Props) {
           onError={failed}
         />
       ) : null}
-      {media.isError ? (
+      {media.isError || broken ? (
         <View style={styles.center}>
           <Text allowFontScaling style={styles.error}>
             {STORY_NOTICE.NOT_FOUND}

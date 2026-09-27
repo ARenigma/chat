@@ -134,11 +134,25 @@ export function ProviderPager({
 }: Props) {
   const pagerView = useRef<PagerView>(null);
   const reducedMotion = useReducedMotion();
+  /*
+   * Bluesky's `didInit`: scroll events are ignored until the pager has
+   * confirmed a selection, so a scroll report from before the initial page is
+   * applied cannot drag the indicator to page 0 and back. A shared value rather
+   * than a ref because it is written and read on the UI thread, inside the
+   * worklet. On Android the first `onPageSelected` is guaranteed: ViewPager2
+   * dispatches one when the RecyclerView is first populated ("Contract requires
+   * us to fire onPageSelected as well", ScrollEventAdapter.java `onScrolled`).
+   */
+  const didInit = useSharedValue(false);
 
   useImperativeHandle(
     ref,
     () => ({
       setPage: (index: number) => {
+        // A tap is the member's own move, like a drag: open the gate so the
+        // FIRST tap of a session animates the indicator with the page
+        // instead of jump-cutting (onPageScroll frames are dropped until then).
+        didInit.set(true);
         if (reducedMotion) {
           pagerView.current?.setPageWithoutAnimation(index);
         } else {
@@ -149,7 +163,7 @@ export function ProviderPager({
         pagerView.current?.setPageWithoutAnimation(index);
       },
     }),
-    [reducedMotion],
+    [reducedMotion, didInit],
   );
 
   /*
@@ -164,17 +178,6 @@ export function ProviderPager({
   const notifySelected = useCallback((index: number) => {
     onPageSelectedRef.current(index);
   }, []);
-
-  /*
-   * Bluesky's `didInit`: scroll events are ignored until the pager has
-   * confirmed a selection, so a scroll report from before the initial page is
-   * applied cannot drag the indicator to page 0 and back. A shared value rather
-   * than a ref because it is written and read on the UI thread, inside the
-   * worklet. On Android the first `onPageSelected` is guaranteed: ViewPager2
-   * dispatches one when the RecyclerView is first populated ("Contract requires
-   * us to fire onPageSelected as well", ScrollEventAdapter.java `onScrolled`).
-   */
-  const didInit = useSharedValue(false);
 
   /*
    * Snap back onto a page when a drag ends parked between two.

@@ -63,6 +63,12 @@ const COPY: Record<ApplicationStatus, { title: string; body: string }> = {
   },
 };
 
+/*
+ * No back barrier here any more, deliberately (navigation step 7): hardware
+ * back is the native stack's, which pops this screen. The search guard that
+ * the old barrier fenced off (useSearchBack) is focus-scoped now, so it is not
+ * registered while Home is covered and cannot eat this screen's back press.
+ */
 export function ProviderStatusScreen({ onBack, onEdit }: Props) {
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();

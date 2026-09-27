@@ -118,6 +118,11 @@ export function TabTopBar({
      * versions ago).
      */
     <View
+      // No `collapsable={false}`, deliberately (navigation step 8). It guarded
+      // the OLD hidden tab layer, which mounted a tab at display:none so its
+      // entering animation never ran. react-navigation's lazy tabs mount a tab
+      // when it is first shown, and Layout.Screen's LayoutAnimationConfig
+      // skipEntering handles the first mount (homeSurface.test pins both).
       style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
       {searching ? (
         <Animated.View

@@ -183,7 +183,6 @@ export function flushIntents(): void {
   }
 
   const applier = _applier;
-  const activeCall: ActiveCall | null = useStore.getState().activeCall;
 
   // -------------------------------------------------------------------------
   // Rule 3: drain ALL incomingCall intents first, regardless of queue position.
@@ -196,6 +195,10 @@ export function flushIntents(): void {
 
     const callIntent: IncomingCallIntent = { type: 'incomingCall', peerId: intent.peerId, callId: intent.callId };
 
+    // Read FRESH on every ring: the first ring of this flush sets the active
+    // call below, and a second ring in the same flush must meet the glare
+    // rules against it rather than a snapshot taken before the loop.
+    const activeCall: ActiveCall | null = useStore.getState().activeCall;
     if (activeCall !== null) {
       // An active call is already on screen: apply the glare rules.
       const decision = glareDecision(activeCall, callIntent);

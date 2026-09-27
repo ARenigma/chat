@@ -227,8 +227,10 @@ Deno.serve(async request => {
   /*
    * Which callers are providers, so their ring carries the first name only
    * (_shared/names.ts). From `profiles.role`, not the directory: a provider the
-   * directory hides is still a provider. A failed lookup names nobody a
-   * provider, which sends the name as the view has it, the old behaviour.
+   * directory hides is still a provider. A failed lookup FAILS CLOSED: every
+   * sender is named by first name, so a DB hiccup can never put a provider's
+   * full name on a lock screen (a member's handle is one token, so it is
+   * unchanged by the rule).
    */
   const peerIds = [...new Set(pending.map(r => r.peer_id))];
   const { data: roles, error: roleError } = await db
@@ -240,13 +242,14 @@ Deno.serve(async request => {
     console.error(`push-failure send-call provider roles ${roleError.message}`);
   }
   const providers = new Set(((roles ?? []) as { id: string }[]).map(r => r.id));
+  const isProvider = (id: string): boolean => roleError !== null || providers.has(id);
 
   const bearer = await accessToken(sa);
   const notified = new Set<string>();
   const deadTokens = new Set<string>();
   let sent = 0;
   for (const row of pending) {
-    const result = await send(bearer, sa.project_id, row, providers.has(row.peer_id));
+    const result = await send(bearer, sa.project_id, row, isProvider(row.peer_id));
     if (result === 'sent') {
       sent += 1;
       notified.add(row.call_id);

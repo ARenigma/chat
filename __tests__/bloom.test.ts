@@ -176,7 +176,8 @@ describe('the bloom field', () => {
     // The form must not land while a layer is still moving or fading: the
     // handoff commit is the heaviest of the flow and it used to arrive 50ms
     // after the last layer stopped, on top of a fresh cross-fade.
-    expect(BLOOM_HOLD_MS).toBeGreaterThanOrEqual(BLOOM_FIELD_MS);
+    // BLOOM_FIELD_MS is also the cross-fade length (BLOOM_SWAP_MS was an alias
+    // of it, collapsed 2026-09-27), so this one bound covers both.
     expect(BLOOM_HOLD_MS).toBeGreaterThanOrEqual(BLOOM_FIELD_MS);
   });
 

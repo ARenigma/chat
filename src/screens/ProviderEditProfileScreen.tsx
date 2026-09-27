@@ -99,13 +99,15 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
 
   const update = useCallback(
     (patch: Partial<ProfileEditDraft>) => {
-      if (draft === null) {
+      // Frozen while a save is in flight: its success clears the draft and
+      // leaves, so an edit typed meanwhile would be dropped without a word.
+      if (draft === null || save.isPending) {
         return;
       }
       setServerError(null);
       setEdited({ ...draft, ...patch });
     },
-    [draft],
+    [draft, save.isPending],
   );
 
   const onSave = useCallback(() => {

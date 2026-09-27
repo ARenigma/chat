@@ -1369,6 +1369,12 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
         peerId: request.initiatorId,
         peerName,
         // Local receipt time: avoids device/server clock skew (A8, nav-migration §3).
+        // An ABSOLUTE deadline, on purpose, even for a request that queues
+        // behind another ring: the server request expires at that same moment,
+        // so a queued one is promoted with only the seconds it really has left,
+        // and one that ran out while waiting is skipped (store.test "skips a
+        // queued request that expired while it waited"). A fresh countdown on
+        // promotion would offer an Accept the server has already refused.
         expiresAt: Date.now() + CHAT_RING_SECONDS * 1000,
         createdAt: request.createdAt,
       });

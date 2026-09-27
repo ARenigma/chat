@@ -58,7 +58,21 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
     return () => clearInterval(timer);
   }, [suggestion.provider_id, onDismiss]);
 
-  const busy = false;
+  /*
+   * One answer per prompt. The hook's own guard reads a ref that only turns
+   * over on the next render, so a double tap could answer twice: a duplicate
+   * outcome, a duplicate navigation and a duplicate announce_chat_open push.
+   * Latched locally on the first press, the way ChatRequestScreen disables
+   * on its mutation's pending state.
+   */
+  const [busy, setBusy] = useState(false);
+  const answer = (fn: () => void) => () => {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    fn();
+  };
 
   return (
     <View
@@ -101,7 +115,7 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
           tint={theme.color.text.onState}
           background={theme.color.state.danger}
           disabled={busy}
-          onPress={onDismiss}
+          onPress={answer(onDismiss)}
         />
         <ActionButton
           testID="home-suggestion-accept"
@@ -110,7 +124,7 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
           tint={theme.color.text.onState}
           background={theme.color.state.available}
           disabled={busy}
-          onPress={onAccept}
+          onPress={answer(onAccept)}
         />
       </View>
     </View>

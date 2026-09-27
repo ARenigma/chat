@@ -138,6 +138,10 @@ export function FavouritesScreen({ onOpenProvider, focused = true }: Props) {
        * covers the frame before the pager has mounted.
        */
       const index = PROVIDER_CATEGORIES.indexOf('astrologer');
+      // The astrologer page rendered unfocused until now, which marked its
+      // cards seen. This is the member's FIRST view of them, so forget that
+      // and let them make their entrance, as the default page's cards do.
+      seenIds.current.clear();
       setCategory('astrologer');
       categoryProgress.set(index);
       pagerRef.current?.jumpTo(index);
