@@ -1434,12 +1434,29 @@ describe('phone sign-in stays off until it can deliver', () => {
   const auth = read('src/api/auth.ts');
   // PHONE_AUTH_ENABLED is now defined in src/config.ts; auth.ts re-exports it.
   const featureFlags = read('src/config.ts');
-  const enabled = /export const PHONE_AUTH_ENABLED = (true|false);/.exec(
-    featureFlags,
-  )?.[1];
+  /*
+   * Since 2026-09-27 the flag is the build's, not a literal: debug and
+   * `internal` open it for Supabase TEST numbers on cloud devices, and every
+   * Play build (release, closedTest) compiles it false. So "enabled" below is
+   * what a Play build gets, read from build.gradle.
+   */
+  const gradle = read('android/app/build.gradle');
+  const block = (name: string): string => {
+    const at = gradle.search(new RegExp(`\\n\\s+${name} \\{`));
+    return at === -1 ? '' : gradle.slice(at, gradle.indexOf('\n        }', at));
+  };
+  const playOpens = ['release', 'closedTest'].some(b =>
+    /ALLOW_TEST_PHONE_LOGIN", "true"/.test(block(b)),
+  );
+  const enabled = playOpens ? 'true' : 'false';
 
-  it('declares the flag explicitly', () => {
-    expect(enabled).toBeDefined();
+  it('takes the flag from the build, closed by default and in every Play build', () => {
+    expect(featureFlags).toMatch(/export const PHONE_AUTH_ENABLED: boolean =[\s\S]{0,160}allowTestPhoneLogin === true/);
+    expect(gradle).toMatch(/defaultConfig \{[\s\S]*buildConfigField "boolean", "ALLOW_TEST_PHONE_LOGIN", "false"/);
+    expect(block('release')).not.toBe('');
+    expect(block('closedTest')).not.toBe('');
+    expect(playOpens).toBe(false);
+    expect(block('internal')).toContain('ALLOW_TEST_PHONE_LOGIN", "true"');
   });
 
   /**

@@ -42,6 +42,7 @@ class WindowChromeModule(private val reactContext: ReactApplicationContext) :
     override fun getConstants(): Map<String, Any> =
         mapOf(
             "allowBenchmarkRoutes" to BuildConfig.ALLOW_BENCHMARK_ROUTES,
+            "allowTestPhoneLogin" to BuildConfig.ALLOW_TEST_PHONE_LOGIN,
             "benchmarkReadOnly" to MainActivity.benchmarkReadOnlyLaunch,
         )
 

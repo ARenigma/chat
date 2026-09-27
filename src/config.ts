@@ -8,6 +8,7 @@
  * Flags are re-exported from their original locations (calls.ts, rates.ts,
  * auth.ts) so existing imports across the app do not need to change.
  */
+import { NativeModules } from 'react-native';
 import { APP_ENV } from '@env';
 
 /**
@@ -57,8 +58,16 @@ export const CASHFREE_SANDBOX_CHECKOUT = APP_ENV !== 'production';
  * Both sendPhoneOtp and verifyPhoneOtp return early while this is false, so
  * the guard cannot be bypassed by adding a button. Flip to true only once the
  * WhatsApp secrets are live AND resolve_phone_owner covers GoTrue phone OTP.
+ *
+ * The one exception (2026-09-27): debug and `internal` builds open it, from the
+ * compile-time BuildConfig.ALLOW_TEST_PHONE_LOGIN, so a cloud test device with
+ * no Truecaller and no Google account can sign in with a Supabase TEST number
+ * (fixed code, no message sent). Release and closedTest compile it false, so
+ * no Play build shows the route.
  */
-export const PHONE_AUTH_ENABLED = false;
+export const PHONE_AUTH_ENABLED: boolean =
+  (NativeModules.WindowChrome?.getConstants?.() as { allowTestPhoneLogin?: boolean } | undefined)
+    ?.allowTestPhoneLogin === true;
 
 
 /**

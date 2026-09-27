@@ -271,6 +271,11 @@ android {
         // Internal automation may open isolated, unfinished routes. The default
         // is closed so no shipping variant acquires the capability by accident.
         buildConfigField "boolean", "ALLOW_BENCHMARK_ROUTES", "false"
+        // The phone-code sign-in, for Supabase TEST numbers (fixed code, no SMS)
+        // on devices with no Truecaller or Google account: cloud test devices.
+        // Closed by default; only debug and `internal` open it, never a Play
+        // build (release, closedTest), where phone codes stay off (2026-09-24).
+        buildConfigField "boolean", "ALLOW_TEST_PHONE_LOGIN", "false"
 
         // https://developer.android.com/training/testing/instrumented-tests
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -307,6 +312,7 @@ android {
         debug {
             signingConfig signingConfigs.debug
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
+            buildConfigField "boolean", "ALLOW_TEST_PHONE_LOGIN", "true"
         }
         release {
             // Never the debug key: an APK signed with the shared debug keystore
@@ -399,6 +405,7 @@ android {
              */
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
             buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "true"
+            buildConfigField "boolean", "ALLOW_TEST_PHONE_LOGIN", "true"
             // This variant is the non-debuggable, minified benchmark target.
             // Release inherits false and repeats it explicitly above.
             buildConfigField "boolean", "ALLOW_BENCHMARK_ROUTES", "true"
