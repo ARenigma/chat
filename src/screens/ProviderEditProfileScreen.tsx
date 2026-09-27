@@ -195,7 +195,7 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
           placeholder={'“I listen more than I talk”'}
           maxLength={HEADLINE_MAX}
           editable={draft !== null}
-          supportingText={`${(draft?.headline ?? '').trim().length} / ${HEADLINE_MAX}`}
+          supportingText={`${(draft?.headline ?? '').length} / ${HEADLINE_MAX}`}
           error={lineFor('headline')}
         />
 
@@ -208,7 +208,7 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
           multiline
           maxLength={ABOUT_MAX}
           editable={draft !== null}
-          supportingText={`${(draft?.about ?? '').trim().length} / ${ABOUT_MAX}`}
+          supportingText={`${(draft?.about ?? '').length} / ${ABOUT_MAX}`}
           error={lineFor('about')}
           style={styles.about}
         />

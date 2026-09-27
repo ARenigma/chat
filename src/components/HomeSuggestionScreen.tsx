@@ -14,7 +14,7 @@
  * This is rendered ONLY when HOME_SUGGESTIONS_ENABLED = true. The flag is
  * compile-time so R8 dead-strips the entire component in disabled builds.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { HomeSuggestion } from '../api/homeSuggestions';
@@ -41,8 +41,17 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [secondsLeft, setSecondsLeft] = useState(PROMPT_DURATION_S);
+  /*
+   * One answer per prompt, from a tap OR the countdown. A ref, not state,
+   * because the timer's closure and a double tap both need to see it at once:
+   * a Start tapped at 29 s must not be followed by the timer's dismiss.
+   */
+  const answered = useRef(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    answered.current = false;
+    setBusy(false);
     setSecondsLeft(PROMPT_DURATION_S);
     const started = Date.now();
     const timer = setInterval(() => {
@@ -50,7 +59,10 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
       const remaining = PROMPT_DURATION_S - elapsed;
       if (remaining <= 0) {
         clearInterval(timer);
-        onDismiss();
+        if (!answered.current) {
+          answered.current = true;
+          onDismiss();
+        }
         return;
       }
       setSecondsLeft(remaining);
@@ -58,18 +70,14 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
     return () => clearInterval(timer);
   }, [suggestion.provider_id, onDismiss]);
 
-  /*
-   * One answer per prompt. The hook's own guard reads a ref that only turns
-   * over on the next render, so a double tap could answer twice: a duplicate
-   * outcome, a duplicate navigation and a duplicate announce_chat_open push.
-   * Latched locally on the first press, the way ChatRequestScreen disables
-   * on its mutation's pending state.
-   */
-  const [busy, setBusy] = useState(false);
+  // The hook's own guard reads a ref that only turns over on the next render,
+  // so without this a double tap answered twice: a duplicate outcome, a
+  // duplicate navigation and a duplicate announce_chat_open push.
   const answer = (fn: () => void) => () => {
-    if (busy) {
+    if (answered.current) {
       return;
     }
+    answered.current = true;
     setBusy(true);
     fn();
   };

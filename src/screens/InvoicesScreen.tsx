@@ -87,6 +87,8 @@ export interface BillingList {
  * it encodes — settled status decides, not kind, not the presence of an invoice
  * row — is the one that would silently regress.
  */
+// Module-local on purpose (dead-code sweep 2026-09-27): nothing imports it,
+// the screen below is its one caller.
 function billingList(rows: readonly BillingRow[] | undefined): BillingList {
   const all = rows ?? [];
   return {

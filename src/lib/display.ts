@@ -94,5 +94,8 @@ export function providerCtaLabel(input: {
   if (input.audioEnabled && input.canDial) {
     return 'Call';
   }
+  // Video last needs no flag of its own: a provider always offers at least
+  // one channel (profiles_at_least_one_channel), so with voice and chat off,
+  // video is the one left.
   return input.chatEnabled ? 'Chat' : input.audioEnabled ? 'Call' : 'Video';
 }

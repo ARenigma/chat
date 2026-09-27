@@ -70,6 +70,9 @@ function StoryProgressView({ count, index, durationMs, running, storyKey, onDone
         }
       }),
     );
+    // Leaving mid-segment (back, a new story, pause) stops the clock, so a
+    // timing still in flight cannot finish and call a stale onDone.
+    return () => cancelAnimation(progress);
   }, [running, durationMs, storyKey, progress, onDone]);
 
   const fillStyle = useAnimatedStyle(() => {

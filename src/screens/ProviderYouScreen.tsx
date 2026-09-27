@@ -135,6 +135,13 @@ export function ProviderYouScreen({
    */
   const toggleChannel = useCallback(
     (key: ChannelKey, next: boolean) => {
+      // One channel write at a time: `enabledCount` comes from the cached
+      // profile, so a second fast tap would read the count from BEFORE the
+      // first write and could ask for all three off, which the
+      // profiles_at_least_one_channel constraint refuses with a raw error.
+      if (setChannels.isPending) {
+        return;
+      }
       if (!next && enabledCount === 1) {
         toggle(false);
         return;

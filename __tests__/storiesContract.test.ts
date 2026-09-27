@@ -63,7 +63,7 @@ describe('a provider cannot reply (147)', () => {
   });
 
   it('gives the provider a heart per comment, and members the "liked by creator" mark', () => {
-    expect(sheet).toMatch(/\{own \? \(\s*<Pressable\s+onPress=\{\(\) => heart\.mutate/);
+    expect(sheet).toMatch(/\{own && storiesOn \? \(\s*<Pressable\s+onPress=\{\(\) => heart\.mutate/);
     expect(sheet).toMatch(/!own && c\.creator_reaction !== null/);
     expect(sheet).toContain('Liked by creator');
   });

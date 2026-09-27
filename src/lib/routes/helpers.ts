@@ -23,6 +23,9 @@ export function getCurrentRoute(
 ): { name: string; params?: unknown } {
   if (!state) {
     // No state during init — assume root so guards behave conservatively.
+    // 'Home' on the provider tree too, knowingly: the one caller that passes
+    // state reads it as a telemetry label (Navigation.tsx screenKind), and a
+    // pre-hydration frame labelled Home is harmless there.
     return { name: 'Home', params: undefined };
   }
 

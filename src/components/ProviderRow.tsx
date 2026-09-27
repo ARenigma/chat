@@ -1020,6 +1020,12 @@ function ProviderRowView({
                 key={notify.state.kind}
                 exiting={fadeSwapOutFast}
                 accessibilityLiveRegion={notify.state.kind === 'idle' ? 'none' : 'polite'}>
+                {/* Busy is shown, not enforced, deliberately: busy is a hint
+                    from a 30 s-old poll, and the server is the judge. A call to
+                    a provider still in session is refused there with BUSY and
+                    the call screen says so (CallScreen START_NOTICE); blocking
+                    here would also block the member the moment that session
+                    ends, before the next poll. */}
                 <Pressable
                   onPress={() =>
                     away

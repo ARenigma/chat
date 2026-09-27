@@ -289,7 +289,8 @@ function StoryReplySheetView({ visible, story, selfId, onClose }: Props) {
                 </View>
               ) : null}
             </View>
-            {own ? (
+            {/* Behind the same kill switch as the reactions and the composer. */}
+            {own && storiesOn ? (
               <Pressable
                 onPress={() => heart.mutate({ commentId: c.id, emoji: '❤️' })}
                 accessibilityLabel={c.creator_reaction !== null ? 'Unlike comment' : 'Like comment'}

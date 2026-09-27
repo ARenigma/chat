@@ -117,6 +117,8 @@ interface SettingsRowSpec {
  */
 function openNotificationSettings(): void {
   Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+    // The applicationId (android/app/build.gradle), the same on every variant:
+    // there is deliberately no applicationIdSuffix (see the note there).
     { key: 'android.provider.extra.APP_PACKAGE', value: 'com.companionchat' },
   ]).catch(() => {
     Linking.openSettings().catch(() => undefined);
@@ -287,7 +289,9 @@ export function SettingsSheet({
     setSearching(false);
   }, []);
   useSearchBack(searching, closeSearch);
-  // Pressing You leaves search, as pressing Home does (2026-09-27).
+  // Pressing You leaves search, as pressing Home does (2026-09-27). 'You' is
+  // the bar's name for this tab on BOTH trees (BottomBar MEMBER_TABS and
+  // PROVIDER_TABS), so one name covers the member and the provider.
   useTabPress('You', closeSearch);
   const needle = query.trim().toLowerCase();
   const shows = (rowTitle: string) =>
