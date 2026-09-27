@@ -202,7 +202,8 @@ export function lintPattern(re) {
     }
 
     let i = 0;
-    outer: while (i < re.length) {
+    let nested = false;
+    while (i < re.length && !nested) {
       if (re[i] === '\\') {
         i += 2;
         continue;
@@ -251,7 +252,8 @@ export function lintPattern(re) {
               problems.push(
                 'a quantified group containing an unbounded inner quantifier (nested-quantifier backtracking risk)',
               );
-              break outer;
+              nested = true;
+              continue;
             }
           }
         }
