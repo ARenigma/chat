@@ -274,6 +274,9 @@ describe('chat media offers no way to save it (a standing ban, not change covera
       'testID="chat-v2-record-discard"',
       'testID="chat-v2-record-elapsed"',
       'testID="chat-v2-record-wave"',
+      // The birth-details card's entry, astrologer chats only (Amit,
+      // 2026-09-25). Text, not media: it opens a form and sends one line.
+      'testID="chat-v2-birth-details"',
       // The field, and the one trailing control that swaps between them.
       'testID="chat-v2-input"',
       'testID="chat-v2-send"',

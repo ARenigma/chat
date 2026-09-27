@@ -14322,6 +14322,84 @@
         "rules": ["phone_run10"],
         "signals": []
       }
+    },
+    {
+      "text": "Birth details: 14 Aug 1994, 6:40 am, Pune",
+      "label": "allow",
+      "category": null,
+      "surface": "chat",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "card, 12-hour",
+      "expect": {
+        "rules": [],
+        "signals": []
+      }
+    },
+    {
+      "text": "Birth details: 31 Dec 2001, 11:59 pm, Navi Mumbai",
+      "label": "allow",
+      "category": null,
+      "surface": "chat",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "card, most digits a card can hold",
+      "expect": {
+        "rules": [],
+        "signals": []
+      }
+    },
+    {
+      "text": "Birth details: 9 Jun 1987, time unknown, Varanasi",
+      "label": "allow",
+      "category": null,
+      "surface": "chat",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "card, time unknown",
+      "expect": {
+        "rules": [],
+        "signals": []
+      }
+    },
+    {
+      "text": "Birth details: 28 Feb 1999, 12:05 am, नई दिल्ली",
+      "label": "allow",
+      "category": null,
+      "surface": "chat",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "card, Devanagari place",
+      "expect": {
+        "rules": [],
+        "signals": []
+      }
+    },
+    {
+      "text": "Birth details: 7 Jul 1977, 9:08 pm, Sri Ganganagar",
+      "label": "allow",
+      "category": null,
+      "surface": "chat",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "card, single-digit day and hour",
+      "expect": {
+        "rules": [],
+        "signals": []
+      }
+    },
+    {
+      "text": "Birth details: 23 Oct 1996, 10:45 am, Thiruvananthapuram",
+      "label": "allow",
+      "category": null,
+      "surface": "chat",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "card, 10 digits, leads with 2",
+      "expect": {
+        "rules": [],
+        "signals": []
+      }
     }
   ],
   "sequences": [
@@ -15546,6 +15624,33 @@
       "note": "DOB labelled parts",
       "expect": {
         "windows": [null, null, null, null]
+      }
+    },
+    {
+      "messages": [
+        "98765",
+        "Birth details: 14 Aug 1994, 6:40 am, Pune",
+        "43210"
+      ],
+      "label": "benign",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "a card breaks the window",
+      "expect": {
+        "windows": [null, null, null]
+      }
+    },
+    {
+      "messages": [
+        "Birth details: 9 Jun 1987, time unknown, Varanasi",
+        "aur mere bhai ka 3 Mar 1990"
+      ],
+      "label": "benign",
+      "set": "birth_card",
+      "blind": "no",
+      "note": "card, then a second date in words",
+      "expect": {
+        "windows": [null, null]
       }
     }
   ],

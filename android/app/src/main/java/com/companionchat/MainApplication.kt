@@ -30,6 +30,8 @@ class MainApplication : Application(), ReactApplication {
           // Recent photos for the attach panel, under Android 14 PARTIAL access
           // only — never the Play-restricted READ_MEDIA_IMAGES. See the module.
           add(RecentMediaPackage())
+          // Platform date and time pickers for the birth-details card.
+          add(BirthPickerPackage())
         },
     )
   }

@@ -29,6 +29,12 @@ import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { ProgressBar } from '../components/ProgressBar';
 import { VoiceNote } from '../components/VoiceNote';
+import {
+  formatBirthDate,
+  formatBirthTime,
+  parseBirthDetails,
+  type BirthDetails,
+} from '../lib/birthDetails';
 import type { ReactionEmoji } from '../lib/database.types';
 import { longPress as longPressHaptic, tick } from '../lib/haptics';
 import type { ReactionTally } from '../lib/reactions';
@@ -269,6 +275,93 @@ function TextBody({
           mine={mine}
         />
       </View>
+    </View>
+  );
+}
+
+/**
+ * A birth-details message, drawn as a small card on both sides.
+ *
+ * The body is plain text in one exact shape (src/lib/birthDetails.ts), so the
+ * card is a READING of the text, not a separate kind of row: a card that fails
+ * to parse is simply the line, which says the same thing. Laid out like the
+ * quote block, a rule then a title and three label and value pairs, in the
+ * bubble's own ink so the contrast pairs are the ones check-contrast already
+ * holds. No entrance: a transcript row never animates in (animate-expo).
+ */
+function BirthCardBody({
+  details,
+  text,
+  textStyle,
+  stamp,
+  edited,
+  receipt,
+  failed,
+  mine,
+}: {
+  details: BirthDetails;
+  text: string;
+  textStyle: StyleProp<TextStyle>;
+  stamp: string;
+  edited: boolean;
+  receipt: 'sent' | 'read' | undefined;
+  failed: boolean;
+  mine: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  const ink = mine ? styles.quoteInkMine : styles.quoteInkPeer;
+  const rows: ReadonlyArray<readonly [string, string]> = [
+    ['Date of birth', formatBirthDate(details.date)],
+    [
+      'Time of birth',
+      details.time === null ? 'Not known' : formatBirthTime(details.time),
+    ],
+    ['Place of birth', details.place],
+  ];
+  return (
+    <View
+      testID="chat-v2-birth-card"
+      accessible
+      // The line itself reads well aloud, and is exactly what was sent.
+      accessibilityLabel={text}
+      style={styles.birthCard}
+    >
+      <View
+        style={[
+          styles.quote,
+          mine ? styles.quoteMine : styles.quotePeer,
+          styles.birthRule,
+        ]}
+      >
+        <View style={styles.birthTitleRow}>
+          <Icon
+            name="astrologer"
+            size={TOKENS.icon.xs}
+            color={mine ? theme.color.bubble.text : theme.color.text.primary}
+          />
+          <Text allowFontScaling style={[styles.birthTitle, ink]}>
+            Birth details
+          </Text>
+        </View>
+        {rows.map(([label, value]) => (
+          <View key={label} style={styles.birthRow}>
+            <Text allowFontScaling style={[styles.birthLabel, ink]}>
+              {label}
+            </Text>
+            <Text allowFontScaling style={[textStyle, styles.birthValue]}>
+              {value}
+            </Text>
+          </View>
+        ))}
+      </View>
+      <MetaRow
+        stamp={stamp}
+        edited={edited}
+        receipt={receipt}
+        failed={failed}
+        mine={mine}
+      />
     </View>
   );
 }
@@ -620,6 +713,8 @@ function ChatMessageCellV2View(props: ChatV2MessageCellProps) {
   });
 
   const textStyle = mine ? styles.textMine : styles.textPeer;
+  // A birth-details line draws as its card (BirthCardBody); anything else is text.
+  const birth = useMemo(() => parseBirthDetails(text), [text]);
   const hasTallies = tallies !== undefined && tallies.length > 0;
 
   return (
@@ -780,18 +875,31 @@ function ChatMessageCellV2View(props: ChatV2MessageCellProps) {
                     mine={mine}
                   />
                 ) : null}
-                <TextBody
-                  text={text}
-                  textStyle={textStyle}
-                  testID={
-                    mine ? 'chat-v2-message-mine' : 'chat-v2-message-peer'
-                  }
-                  stamp={stamp}
-                  edited={edited}
-                  receipt={receipt}
-                  failed={failed}
-                  mine={mine}
-                />
+                {birth !== null ? (
+                  <BirthCardBody
+                    details={birth}
+                    text={text}
+                    textStyle={textStyle}
+                    stamp={stamp}
+                    edited={edited}
+                    receipt={receipt}
+                    failed={failed}
+                    mine={mine}
+                  />
+                ) : (
+                  <TextBody
+                    text={text}
+                    textStyle={textStyle}
+                    testID={
+                      mine ? 'chat-v2-message-mine' : 'chat-v2-message-peer'
+                    }
+                    stamp={stamp}
+                    edited={edited}
+                    receipt={receipt}
+                    failed={failed}
+                    mine={mine}
+                  />
+                )}
               </>
             )}
           </Animated.View>
@@ -1072,6 +1180,33 @@ const makeStyles = (t: Theme) =>
     },
     quoteAuthor: {
       ...TOKENS.typography.labelMediumEmphasized,
+    },
+    birthCard: {
+      minWidth: 180,
+      flexShrink: 1,
+    },
+    birthRule: {
+      gap: TOKENS.space['2xs'],
+      marginBottom: TOKENS.space['2xs'],
+    },
+    birthTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space['2xs'],
+    },
+    // Bluesky's roles: the title at textSmSemiBold, the labels at textXs, the
+    // values at the message's own bodyLarge (passed in as textStyle).
+    birthTitle: {
+      ...TOKENS.typography.textSmSemiBold,
+    },
+    birthRow: {
+      gap: 0,
+    },
+    birthLabel: {
+      ...TOKENS.typography.textXs,
+    },
+    birthValue: {
+      flexShrink: 1,
     },
     quoteBody: {
       ...TOKENS.typography.bodySmall,

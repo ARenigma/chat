@@ -49,6 +49,7 @@ import { useStore } from '../store/useStore';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { chatV2PageDownBottom, type ChatV2CallPermissions } from './cells';
 import { ChatActionsV2, type ChatV2ActionRequest } from './ChatActionsV2';
+import { BirthDetailsSheet } from './BirthDetailsSheet';
 import { ChatComposerV2 } from './ChatComposerV2';
 import { ChatHeaderV2 } from './ChatHeaderV2';
 import { ChatListV2 } from './ChatListV2';
@@ -362,6 +363,16 @@ export function ChatScreenV2({
     },
     [guardMode, replyTo, sendText, setNotice],
   );
+  /*
+   * The birth-details card, astrologer chats only. It sends through `onSend`,
+   * so the precheck and the reply strip treat it exactly as typed text.
+   */
+  const [birthVisible, setBirthVisible] = useState(false);
+  const openBirthDetails = useCallback(() => setBirthVisible(true), []);
+  const closeBirthDetails = useCallback(() => setBirthVisible(false), []);
+  const onBirthDetails =
+    chat.peerIsAstrologer && !benchmarkReadOnly ? openBirthDetails : undefined;
+
   const onSendVoice = useCallback(
     (draft: VoiceDraft) => {
       const parent = replyTo;
@@ -906,6 +917,7 @@ export function ChatScreenV2({
               disabled={chat.composerDisabled}
               placeholder={chat.composerPlaceholder}
               onSend={onSend}
+              onBirthDetails={onBirthDetails}
               onSendVoice={onSendVoice}
               onTyping={chat.notifyTyping}
               onRecording={chat.notifyRecording}
@@ -947,6 +959,12 @@ export function ChatScreenV2({
         peerName={chat.peerName}
         peerAvatarUrl={chat.peerAvatarUrl}
         onClose={() => setMemberProfileVisible(false)}
+      />
+
+      <BirthDetailsSheet
+        visible={birthVisible}
+        onClose={closeBirthDetails}
+        onSend={onSend}
       />
 
       {/*

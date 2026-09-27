@@ -58,6 +58,11 @@ interface Props {
    * nobody is on) and the text draft is saved. Defaults to true.
    */
   focused?: boolean;
+  /**
+   * Opens the birth-details card. Set only in a member's chat with an
+   * astrologer; absent everywhere else, and then no control is drawn.
+   */
+  onBirthDetails?: () => void;
 }
 
 export function ChatComposerV2({
@@ -72,6 +77,7 @@ export function ChatComposerV2({
   onRecording,
   onRecordingEnded,
   focused = true,
+  onBirthDetails,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -382,7 +388,38 @@ export function ChatComposerV2({
       entering={fadeSwapFast}
       style={[styles.root, { paddingBottom: bottomInset + TOKENS.space.xs }]}
     >
-      <View style={styles.field}>
+      <View
+        style={[
+          styles.field,
+          onBirthDetails !== undefined ? styles.fieldWithLeading : null,
+        ]}
+      >
+        {onBirthDetails !== undefined ? (
+          /*
+           * The leading slot, which v2 had emptied (no photo picker): in an
+           * astrologer chat it holds the one structured thing worth sending.
+           * The category's own glyph, because the icon set has no calendar and
+           * this is the astrologer's card. No motion: a composer control, pressed
+           * tens of times a day at most, like the mic beside it.
+           */
+          <Pressable
+            testID="chat-v2-birth-details"
+            accessibilityRole="button"
+            accessibilityLabel="Send birth details"
+            disabled={disabled || readOnly}
+            hitSlop={TOKENS.space.xs}
+            style={styles.trailingControl}
+            onPress={onBirthDetails}
+          >
+            <Icon
+              name="astrologer"
+              size={TOKENS.icon.md}
+              color={
+                disabled ? theme.color.text.muted : theme.color.text.secondary
+              }
+            />
+          </Pressable>
+        ) : null}
         <TextField
           multiline
           nativeID="chat-v2-input"
@@ -460,6 +497,11 @@ const makeStyles = (t: Theme) =>
       paddingLeft: TOKENS.space.md,
       paddingRight: TOKENS.space['2xs'],
       paddingVertical: TOKENS.space['2xs'],
+    },
+    // The leading control takes the left inset, as the trailing one does the right.
+    fieldWithLeading: {
+      paddingLeft: TOKENS.space['2xs'],
+      gap: TOKENS.space.xs,
     },
     input: {
       ...TOKENS.typography.bodyMedium,

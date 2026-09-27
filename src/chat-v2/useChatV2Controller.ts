@@ -150,6 +150,11 @@ export interface ChatV2Controller {
   customLabel: string | undefined;
   peerInitial: string;
   peerAvatarUrl: string | null;
+  /**
+   * A member's chat with an astrologer (`provider_category`, 065): the one
+   * chat that offers the birth-details card.
+   */
+  peerIsAstrologer: boolean;
   presence: PresenceRead;
   /** The peer is typing or holding the mic, from the realtime channel. */
   peerActivity: PeerActivity | null;
@@ -1114,6 +1119,8 @@ export function useChatV2Controller(
     displayName,
     customLabel,
     peerInitial: initialOf(displayName),
+    peerIsAstrologer:
+      isMemberSide && provider?.provider_category === 'astrologer',
     peerAvatarUrl,
     presence,
     peerActivity,
