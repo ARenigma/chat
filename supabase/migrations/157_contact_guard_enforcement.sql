@@ -666,10 +666,12 @@ as $$
 declare
   v_refusal jsonb;
 begin
-  -- Chat images are refused while the guard is on: nothing reads the text in
-  -- a photo, and the v2 chat has no picker. Voice notes carry no text to
-  -- check but are paused with text by the ladder.
-  if p_attachment_path is not null and private.contact_guard_mode() <> 'off' then
+  -- Chat images are refused in enforce mode: nothing reads the text in a photo,
+  -- and the v2 chat has no picker. The check is enforce-only because shadow must
+  -- never block (spec: "in shadow every would-be block is logged … and nobody is
+  -- blocked or struck"). Voice notes carry no text to check but are paused with
+  -- text by the ladder.
+  if p_attachment_path is not null and private.contact_guard_mode() = 'enforce' then
     return json_build_object('success', false, 'error', 'IMAGES_DISABLED');
   end if;
 

@@ -1608,8 +1608,12 @@ export const FRAGMENT = {
     },
     { op: 'replace', re: String.raw`[.!?]+[ ]*$`, to: '' },
     { op: 'replace', re: String.raw`[^0-9a-z:/%.\u20b9$-]`, to: ' ' },
+    // Collapse multiple spaces to one so the shape check below does not need
+    // (?:[ ]+…)* (a nested quantifier that risks O(n²) in Postgres's NFA).
+    { op: 'replace', re: String.raw`[ ][ ]+`, to: ' ' },
   ],
-  shape: String.raw`^[ ]*[0-9]{1,10}(?:[ ]+[0-9]{1,10})*[ ]*$`,
+  // Single space between digit groups after the collapse step above.
+  shape: String.raw`^[ ]?[0-9]{1,10}(?:[ ][0-9]{1,10})*[ ]?$`,
   /** A message with no run of this many digits is chatter the window steps over. */
   chatter: String.raw`^[^0-9]*(?:[0-9][^0-9]+)*[0-9]?[^0-9]*$`,
   /** Fewest payload digits a message needs to count; a lone digit is a count. */

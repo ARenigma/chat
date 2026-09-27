@@ -151,6 +151,117 @@ export function lintPattern(re) {
       problems.push(what);
     }
   }
+
+  // Nested-quantifier check: a (?:BODY)+ or (?:BODY)* where BODY itself
+  // contains an unbounded quantifier (+/*) on the FIRST atom risks O(n²)
+  // or worse work in Postgres's NFA at 4,000 chars. The danger is that the
+  // first atom can "give back" characters to the outer repetition, letting
+  // the engine try exponentially many splits. When the first atom in BODY has
+  // NO quantifier (it is a mandatory anchor — literal char, escape, or class),
+  // each outer repetition is pinned to that leading atom and no split ambiguity
+  // exists: (?:\.[a-z0-9-]+)* and (?:[0-9][^0-9]+)* are both safe because \.
+  // and [0-9] anchor every outer iteration before any inner quantifier fires.
+  {
+    /**
+     * Returns the length of the first atom in `s` (not counting its quantifier),
+     * and whether that atom is immediately followed by an unbounded quantifier.
+     * "First atom" = one escape, one char class, one literal char, or one group.
+     */
+    function firstAtomInfo(s) {
+      let k = 0;
+      if (s[k] === '\\') {
+        k += 2;
+      } else if (s[k] === '[') {
+        k++;
+        while (k < s.length && s[k] !== ']') {
+          if (s[k] === '\\') k++;
+          k++;
+        }
+        k++;
+      } else if (s[k] === '(') {
+        let d = 1;
+        k++;
+        while (k < s.length && d > 0) {
+          if (s[k] === '\\') {
+            k += 2;
+            continue;
+          }
+          if (s[k] === '(') d++;
+          else if (s[k] === ')') d--;
+          k++;
+        }
+      } else {
+        k++; // literal char
+      }
+      const q = s[k];
+      const unbounded =
+        q === '+' ||
+        q === '*' ||
+        (q === '{' && /^\{[0-9]+,\}/.test(s.slice(k)));
+      return { end: k, unbounded };
+    }
+
+    let i = 0;
+    outer: while (i < re.length) {
+      if (re[i] === '\\') {
+        i += 2;
+        continue;
+      }
+      if (re[i] === '[') {
+        i++;
+        while (i < re.length && re[i] !== ']') {
+          if (re[i] === '\\') i++;
+          i++;
+        }
+        i++;
+        continue;
+      }
+      if (re[i] === '(' && re[i + 1] === '?' && re[i + 2] === ':') {
+        let depth = 1,
+          j = i + 3;
+        while (j < re.length && depth > 0) {
+          if (re[j] === '\\') {
+            j += 2;
+            continue;
+          }
+          if (re[j] === '[') {
+            while (j < re.length && re[j] !== ']') {
+              if (re[j] === '\\') j++;
+              j++;
+            }
+            j++;
+            continue;
+          }
+          if (re[j] === '(') depth++;
+          else if (re[j] === ')') depth--;
+          j++;
+        }
+        const body = re.slice(i + 3, j - 1);
+        const outerQ = re[j];
+        if (outerQ === '+' || outerQ === '*') {
+          // Check for any unbounded quantifier anywhere in the body.
+          const flat = body
+            .replace(/\[[^\]]*\]/g, '[]')
+            .replace(/\([^()]*\)/g, '()');
+          if (/[+*]/.test(flat)) {
+            // Safe if the first atom in BODY has no unbounded quantifier — it
+            // then serves as a mandatory anchor pinning each outer repetition.
+            const { unbounded: firstIsQuantified } = firstAtomInfo(body);
+            if (firstIsQuantified) {
+              problems.push(
+                'a quantified group containing an unbounded inner quantifier (nested-quantifier backtracking risk)',
+              );
+              break outer;
+            }
+          }
+        }
+        i = j + 1;
+        continue;
+      }
+      i++;
+    }
+  }
+
   return problems;
 }
 

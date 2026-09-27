@@ -194,9 +194,16 @@ Deno.serve(async request => {
     .eq('id', openerId)
     .maybeSingle();
   // A provider is named by first name only (_shared/names.ts); a member's
-  // handle below is sent as it is.
-  let opener = providerFirstName(directory?.display_name);
-  if (opener === null) {
+  // handle is sent as-is. providerFirstName returns null for both a missing
+  // directory row (the opener is a member) and a blank display_name (a provider
+  // who hasn't set one yet). Branch on whether a directory row exists so a
+  // blank-named provider doesn't fall through to the member_handle path.
+  let opener: string;
+  if (directory !== null) {
+    // Opener is a provider. Use first name, or 'Someone' if display_name is blank.
+    opener = providerFirstName(directory.display_name) ?? 'Someone';
+  } else {
+    // Opener is a member — pseudonymous by design.
     const { data: handle } = await db.rpc('member_handle', { p_id: openerId });
     opener = (handle as string | null) ?? 'Someone';
   }

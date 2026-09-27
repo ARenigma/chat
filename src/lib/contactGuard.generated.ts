@@ -13,7 +13,7 @@
  */
 
 
-export const CONTACT_GUARD_SPEC = "b574c4c1a7d7a8d58e08745732b011b0b02e911979efda9a2a6c214c3134b41d";
+export const CONTACT_GUARD_SPEC = "ac38fff8f98f756c5e2390e3c1a15af11c872acde7eeda491e1e94ff777c7e1f";
 
 export type ContactCategory = "phone" | "payment" | "email" | "link" | "handle";
 
@@ -101,6 +101,7 @@ const SOURCES: ReadonlyArray<readonly [string, string]> = [
   ["(?<![a-z])(?:remaining|continue|vodafone|contact|airtel|bhejta|bhejti|doosra|likhta|likhti|mobile|number|purana|second|teesra|baaki|bacha|dekho|dusra|first|hissa|likho|madam|pehla|pehle|phone|shuru|start|third|aage|abhi|baki|bhai|bhej|bsnl|cont|dekh|didi|haan|hain|half|hoon|idea|karo|last|likh|mera|mere|meri|naya|next|nmbr|note|okay|part|phir|plus|raha|rahi|rest|ruko|save|suno|then|wala|wali|and|aur|bas|end|fir|hai|han|hmm|hun|jio|kar|mam|nbr|new|num|sim|sir|sun|the|yeh|ab|he|hu|is|ji|ka|ki|le|lo|my|no|of|ok|ph|se|vi|ye|h)(?![a-z])", "gu"],
   ["[.!?]+[ ]*$", "gu"],
   ["[^0-9a-z:/%.\\u20b9$-]", "gu"],
+  ["[ ][ ]+", "gu"],
   ["[0-9@.:#/=-]|(?<![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:at the rate|under score|\u0907\u0902\u0938\u094d\u091f\u093e\u0917\u094d\u0930\u093e\u092e|chauhattar|chhihattar|chhiyasath|googlemail|pachhattar|protonmail|rediffmail|underscore|attherate|chauranve|chauvalis|chhiyalis|chhiyanve|clubhouse|instagram|paintalis|pinterest|saintalis|sathattar|sattattar|seventeen|sharechat|taintalis|\u091f\u0947\u0932\u0940\u0917\u094d\u0930\u093e\u092e|\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a|\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u0910\u092a|athattar|atthavan|bahattar|chauntis|chaurasi|chausath|chawalis|chhabbis|chhappan|chhattis|chhiyasi|eighteen|facebook|fourteen|ikhattar|linkedin|nineteen|ninyanve|pachanve|pachchis|painsath|satattar|sattanve|sattavan|sattawan|snapchat|tele\\u0067ram|thirteen|tihattar|unhattar|username|whatsapp|\u0938\u094d\u0928\u0948\u092a\u091a\u0948\u091f|adtalis|arattai|artalis|at sign|athanve|atharah|athawan|atthais|bayalis|chaalis|chabbis|chappan|chattis|chaubis|chaudah|chautis|chauvan|chauwan|discord|enimidi|fifteen|hotmail|iktalis|ikyanve|ikyavan|ikyawan|jiochat|moondru|naalugu|ombattu|onbadhu|onbathu|outlook|pachaas|pachasi|pachpan|paintis|pandrah|poojyam|sadsath|saintis|sataees|sattais|sattasi|seventy|shoonya|sixteen|taintis|tetalis|threads|tiranve|tirsath|tommidi|twitter|untalis|watsapp|whatsap|youtube|\u0935\u0949\u091f\u094d\u0938\u0910\u092a|adsath|ainthu|arsath|athais|athara|athasi|baanve|baawan|basath|battis|bayasi|byalis|chalis|chauda|chobis|double|eighty|eleven|fourty|gyarah|handle|icloud|ikkees|iksath|ikyasi|irandu|naalku|naangu|nabbey|navasi|nawasi|ninety|paanch|pachas|pachis|pandra|proton|pujyam|reddit|rediff|satrah|sattar|shunno|shunya|shunyo|signal|thirty|tiktok|tirasi|tirpan|trepan|triple|twelve|twenty|unchas|unsath|watsap|wechat|\u0907\u0902\u0938\u094d\u091f\u093e|\u092b\u0947\u0938\u092c\u0941\u0915|adtis|artis|baees|banve|barah|bavan|botim|chaar|chhah|chhai|chheh|chhoy|eight|eradu|fifty|forty|gmail|gyara|ikkis|iktis|insta|moodu|moonu|mooru|naalu|nabbe|okati|ondru|paach|panch|point|rendu|satra|seven|sifar|sixty|skype|solah|sonne|sunna|sunya|terah|tetis|theen|three|unasi|unees|unnis|untis|yahoo|ymail|\u091c\u093c\u0940\u0930\u094b|\u0936\u0941\u0928\u094d\u092f|\u0936\u0942\u0928\u094d\u092f|\u0938\u093f\u0915\u094d\u0938|\u0938\u0941\u0928\u094d\u092f|\u09b6\u09c2\u09a8\u09cd\u09af|aaru|aath|aidu|anju|assi|atth|bais|bara|bees|chah|char|cheh|chha|chhe|daat|dott|entu|ettu|ezhu|five|four|hike|http|josh|live|nine|ondu|onnu|panj|saat|saha|satt|snap|sola|teen|tees|teis|tele|tera|tinn|tran|wtsp|zero|zoho|\u091c\u0940\u0930\u094b|\u0925\u094d\u0930\u0940|\u0928\u093e\u0907\u0928|\u092a\u093e\u0901\u091a|\u092a\u093e\u0902\u091a|\u092b\u093e\u0907\u0935|\u0938\u0947\u0935\u0928|\u09aa\u09be\u0981\u099a|aat|aol|das|don|doo|dot|dui|edu|ekk|elu|ikk|imo|kik|koo|moj|nau|nav|noy|one|six|ten|tin|two|www|\u091a\u093e\u0930|\u0924\u0940\u0928|\u0926\u094b\u0928|\u092a\u093e\u091a|\u092b\u094b\u0930|\u0938\u0939\u093e|\u0938\u093e\u0924|\u099a\u09be\u09b0|\u099b\u09af\u09bc|\u09a4\u09bf\u09a8|\u09a6\u09c1\u0987|\u09a8\u09af\u09bc|\u09b8\u09be\u09a4|do|ek|fb|id|ig|sc|tg|yt|\u0906\u0920|\u090f\u0915|\u090f\u091f|\u091b\u0903|\u091b\u0939|\u091b\u0947|\u091f\u0942|\u0926\u094b|\u0928\u090a|\u0928\u094c|\u0935\u0928|\u0986\u099f|\u098f\u0995)(?![a-z\\u0900-\\u097f\\u0980-\\u09ff])|[[({<]", "u"],
   ["(?<![0-9])(?:(?:\\+|00)[ ]*91[ .-]*|91[ .-]+|0[ .-]*)?[6-9](?:[ .()/\\u20b9$\\u20ac\\u00a3-]{0,3}[0-9]){9}(?![0-9])", "u"],
   ["[0-9]{10}", "u"],
@@ -131,7 +132,7 @@ const SOURCES: ReadonlyArray<readonly [string, string]> = [
   ["(?<![a-z])live[ ]*:[ ]*[a-z][a-z0-9]*[._0-9][a-z0-9._-]*", "u"],
   ["[0-9]|(?<![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:chauhattar|chhihattar|chhiyasath|pachhattar|chauranve|chauvalis|chhiyalis|chhiyanve|paintalis|saintalis|sathattar|sattattar|seventeen|taintalis|athattar|atthavan|bahattar|chauntis|chaurasi|chausath|chawalis|chhabbis|chhappan|chhattis|chhiyasi|eighteen|fourteen|ikhattar|nineteen|ninyanve|pachanve|pachchis|painsath|satattar|sattanve|sattavan|sattawan|thirteen|tihattar|unhattar|adtalis|artalis|athanve|atharah|athawan|atthais|bayalis|chaalis|chabbis|chappan|chattis|chaubis|chaudah|chautis|chauvan|chauwan|enimidi|fifteen|iktalis|ikyanve|ikyavan|ikyawan|moondru|naalugu|ombattu|onbadhu|onbathu|pachaas|pachasi|pachpan|paintis|pandrah|poojyam|sadsath|saintis|sataees|sattais|sattasi|seventy|shoonya|sixteen|taintis|tetalis|tiranve|tirsath|tommidi|untalis|adsath|ainthu|arsath|athais|athara|athasi|baanve|baawan|basath|battis|bayasi|byalis|chalis|chauda|chobis|double|eighty|eleven|fourty|gyarah|ikkees|iksath|ikyasi|irandu|naalku|naangu|nabbey|navasi|nawasi|ninety|paanch|pachas|pachis|pandra|pujyam|satrah|sattar|shunno|shunya|shunyo|thirty|tirasi|tirpan|trepan|triple|twelve|twenty|unchas|unsath|adtis|artis|baees|banve|barah|bavan|chaar|chhah|chhai|chheh|chhoy|eight|eradu|fifty|forty|gyara|ikkis|iktis|moodu|moonu|mooru|naalu|nabbe|okati|ondru|paach|panch|rendu|satra|seven|sifar|sixty|solah|sonne|sunna|sunya|terah|tetis|theen|three|unasi|unees|unnis|untis|\u091c\u093c\u0940\u0930\u094b|\u0936\u0941\u0928\u094d\u092f|\u0936\u0942\u0928\u094d\u092f|\u0938\u093f\u0915\u094d\u0938|\u0938\u0941\u0928\u094d\u092f|\u09b6\u09c2\u09a8\u09cd\u09af|aaru|aath|aidu|anju|assi|atth|bais|bara|bees|chah|char|cheh|chha|chhe|entu|ettu|ezhu|five|four|nine|ondu|onnu|panj|saat|saha|satt|sola|teen|tees|teis|tera|tinn|tran|zero|\u091c\u0940\u0930\u094b|\u0925\u094d\u0930\u0940|\u0928\u093e\u0907\u0928|\u092a\u093e\u0901\u091a|\u092a\u093e\u0902\u091a|\u092b\u093e\u0907\u0935|\u0938\u0947\u0935\u0928|\u09aa\u09be\u0981\u099a|aat|das|don|doo|dui|edu|ekk|elu|ikk|nau|nav|noy|one|six|ten|tin|two|\u091a\u093e\u0930|\u0924\u0940\u0928|\u0926\u094b\u0928|\u092a\u093e\u091a|\u092b\u094b\u0930|\u0938\u0939\u093e|\u0938\u093e\u0924|\u099a\u09be\u09b0|\u099b\u09af\u09bc|\u09a4\u09bf\u09a8|\u09a6\u09c1\u0987|\u09a8\u09af\u09bc|\u09b8\u09be\u09a4|do|ek|\u0906\u0920|\u090f\u0915|\u090f\u091f|\u091b\u0903|\u091b\u0939|\u091b\u0947|\u091f\u0942|\u0926\u094b|\u0928\u090a|\u0928\u094c|\u0935\u0928|\u0986\u099f|\u098f\u0995)(?![a-z\\u0900-\\u097f\\u0980-\\u09ff])", "u"],
   ["[@#[({<]|[a-z0-9_][ ]*\\.[ ]*[a-z]|(?<![a-z\\u0900-\\u097f\\u0980-\\u09ff])(?:under score|\u0907\u0902\u0938\u094d\u091f\u093e\u0917\u094d\u0930\u093e\u092e|googlemail|protonmail|rediffmail|underscore|attherate|clubhouse|instagram|pinterest|sharechat|user name|\u091f\u0947\u0932\u0940\u0917\u094d\u0930\u093e\u092e|\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a|\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u0910\u092a|facebook|linkedin|snapchat|tele\\u0067ram|username|whatsapp|\u0938\u094d\u0928\u0948\u092a\u091a\u0948\u091f|arattai|discord|hotmail|jiochat|outlook|threads|twitter|watsapp|whatsap|youtube|\u0935\u0949\u091f\u094d\u0938\u0910\u092a|handle|icloud|proton|reddit|rediff|signal|tiktok|userid|watsap|wechat|\u0907\u0902\u0938\u094d\u091f\u093e|\u092b\u0947\u0938\u092c\u0941\u0915|botim|gmail|https|insta|point|skype|yahoo|ymail|daat|dott|hike|http|josh|live|snap|tele|wtsp|zoho|aol|dot|ftp|imo|kik|koo|moj|www|at|fb|id|ig|sc|tg|yt)(?![a-z\\u0900-\\u097f\\u0980-\\u09ff])", "u"],
-  ["^[ ]*[0-9]{1,10}(?:[ ]+[0-9]{1,10})*[ ]*$", "u"],
+  ["^[ ]?[0-9]{1,10}(?:[ ][0-9]{1,10})*[ ]?$", "u"],
   ["^(?:91|0)?[6-9][0-9]{9}$", "u"],
   ["^[^0-9]*(?:[0-9][^0-9]+)*[0-9]?[^0-9]*$", "u"],
   ["[^0-9]", "gu"],
@@ -368,103 +369,103 @@ type MaybeCopies = { t: string; d: string | null; p: string | null; rp: string |
 function copiesOf(text: string, guarded: boolean): MaybeCopies {
   const c: MaybeCopies = { t: copy_t(text), d: null, p: null, rp: null, pd: null, pw: null, e: null, ec: null };
   c.d = copy_d(c.t);
-  c.p = c.d === null || (guarded && !re(77).test(c.t)) ? null : copy_p(c.d as string);
-  c.rp = c.p === null || (guarded && !re(77).test(c.t)) ? null : copy_rp(c.p as string);
+  c.p = c.d === null || (guarded && !re(78).test(c.t)) ? null : copy_p(c.d as string);
+  c.rp = c.p === null || (guarded && !re(78).test(c.t)) ? null : copy_rp(c.p as string);
   c.pd = c.d === null || (guarded && !re(9).test(c.t)) ? null : copy_pd(c.d as string);
-  c.pw = c.d === null || (guarded && !re(77).test(c.t)) ? null : copy_pw(c.d as string);
-  c.e = (guarded && !re(78).test(c.t)) ? null : copy_e(c.t);
-  c.ec = (guarded && !re(78).test(c.t)) ? null : copy_ec(c.t);
+  c.pw = c.d === null || (guarded && !re(78).test(c.t)) ? null : copy_pw(c.d as string);
+  c.e = (guarded && !re(79).test(c.t)) ? null : copy_e(c.t);
+  c.ec = (guarded && !re(79).test(c.t)) ? null : copy_ec(c.t);
   return c;
 }
 
 /** The hard rule ids that fire on these copies, in spec order. */
 function rulesOn(c: MaybeCopies): string[] {
   const ids: string[] = [];
-  if (!ids.includes("phone_mobile") && (c.p !== null && re(50).test(c.p))) {
+  if (!ids.includes("phone_mobile") && (c.p !== null && re(51).test(c.p))) {
     ids.push("phone_mobile");
   }
-  if (!ids.includes("phone_run10") && (c.p !== null && re(51).test(c.p))) {
+  if (!ids.includes("phone_run10") && (c.p !== null && re(52).test(c.p))) {
     ids.push("phone_run10");
   }
-  if (!ids.includes("phone_intl") && (c.p !== null && re(52).test(c.p))) {
+  if (!ids.includes("phone_intl") && (c.p !== null && re(53).test(c.p))) {
     ids.push("phone_intl");
   }
-  if (!ids.includes("phone_landline") && (c.p !== null && re(53).test(c.p))) {
+  if (!ids.includes("phone_landline") && (c.p !== null && re(54).test(c.p))) {
     ids.push("phone_landline");
   }
-  if (!ids.includes("phone_digits") && (c.pd !== null && re(54).test(c.pd))) {
+  if (!ids.includes("phone_digits") && (c.pd !== null && re(55).test(c.pd))) {
     ids.push("phone_digits");
   }
-  if (!ids.includes("phone_spread") && (c.pd !== null && re(55).test(c.pd))) {
+  if (!ids.includes("phone_spread") && (c.pd !== null && re(56).test(c.pd))) {
     ids.push("phone_spread");
   }
-  if (!ids.includes("phone_symbols") && (c.pd !== null && re(56).test(c.pd))) {
+  if (!ids.includes("phone_symbols") && (c.pd !== null && re(57).test(c.pd))) {
     ids.push("phone_symbols");
   }
-  if (!ids.includes("phone_words") && (c.pw !== null && re(57).test(c.pw))) {
+  if (!ids.includes("phone_words") && (c.pw !== null && re(58).test(c.pw))) {
     ids.push("phone_words");
   }
-  if (!ids.includes("phone_reversed") && (c.rp !== null && re(58).test(c.rp)) && (c.t !== null && re(59).test(c.t))) {
+  if (!ids.includes("phone_reversed") && (c.rp !== null && re(59).test(c.rp)) && (c.t !== null && re(60).test(c.t))) {
     ids.push("phone_reversed");
   }
-  if (!ids.includes("vpa") && (c.e !== null && re(60).test(c.e))) {
+  if (!ids.includes("vpa") && (c.e !== null && re(61).test(c.e))) {
     ids.push("vpa");
   }
-  if (!ids.includes("vpa") && (c.ec !== null && re(60).test(c.ec))) {
+  if (!ids.includes("vpa") && (c.ec !== null && re(61).test(c.ec))) {
     ids.push("vpa");
   }
-  if (!ids.includes("ifsc") && (c.t !== null && re(61).test(c.t))) {
+  if (!ids.includes("ifsc") && (c.t !== null && re(62).test(c.t))) {
     ids.push("ifsc");
   }
-  if (!ids.includes("bank_account") && (c.p !== null && re(62).test(c.p))) {
+  if (!ids.includes("bank_account") && (c.p !== null && re(63).test(c.p))) {
     ids.push("bank_account");
   }
-  if (!ids.includes("at_id") && (c.e !== null && re(63).test(c.e))) {
+  if (!ids.includes("at_id") && (c.e !== null && re(64).test(c.e))) {
     ids.push("at_id");
   }
-  if (!ids.includes("email") && (c.e !== null && re(64).test(c.e))) {
+  if (!ids.includes("email") && (c.e !== null && re(65).test(c.e))) {
     ids.push("email");
   }
-  if (!ids.includes("email") && (c.ec !== null && re(64).test(c.ec))) {
+  if (!ids.includes("email") && (c.ec !== null && re(65).test(c.ec))) {
     ids.push("email");
   }
-  if (!ids.includes("email_no_tld") && (c.e !== null && re(65).test(c.e))) {
+  if (!ids.includes("email_no_tld") && (c.e !== null && re(66).test(c.e))) {
     ids.push("email_no_tld");
-  }
-  if (!ids.includes("mail_local_near") && (c.e !== null && re(66).test(c.e))) {
-    ids.push("mail_local_near");
   }
   if (!ids.includes("mail_local_near") && (c.e !== null && re(67).test(c.e))) {
     ids.push("mail_local_near");
   }
-  if (!ids.includes("url_scheme") && (c.e !== null && re(68).test(c.e))) {
+  if (!ids.includes("mail_local_near") && (c.e !== null && re(68).test(c.e))) {
+    ids.push("mail_local_near");
+  }
+  if (!ids.includes("url_scheme") && (c.e !== null && re(69).test(c.e))) {
     ids.push("url_scheme");
   }
-  if (!ids.includes("url_known") && (c.e !== null && re(69).test(c.e))) {
+  if (!ids.includes("url_known") && (c.e !== null && re(70).test(c.e))) {
     ids.push("url_known");
   }
-  if (!ids.includes("url_known") && (c.ec !== null && re(69).test(c.ec))) {
+  if (!ids.includes("url_known") && (c.ec !== null && re(70).test(c.ec))) {
     ids.push("url_known");
   }
-  if (!ids.includes("url_tld") && (c.e !== null && re(70).test(c.e))) {
+  if (!ids.includes("url_tld") && (c.e !== null && re(71).test(c.e))) {
     ids.push("url_tld");
   }
-  if (!ids.includes("handle") && (c.e !== null && re(71).test(c.e))) {
+  if (!ids.includes("handle") && (c.e !== null && re(72).test(c.e))) {
     ids.push("handle");
   }
-  if (!ids.includes("app_handle") && (c.e !== null && re(72).test(c.e))) {
+  if (!ids.includes("app_handle") && (c.e !== null && re(73).test(c.e))) {
     ids.push("app_handle");
   }
-  if (!ids.includes("id_colon_handle") && (c.e !== null && re(73).test(c.e))) {
+  if (!ids.includes("id_colon_handle") && (c.e !== null && re(74).test(c.e))) {
     ids.push("id_colon_handle");
   }
-  if (!ids.includes("handle_on_app") && (c.e !== null && re(74).test(c.e))) {
+  if (!ids.includes("handle_on_app") && (c.e !== null && re(75).test(c.e))) {
     ids.push("handle_on_app");
   }
-  if (!ids.includes("discord_tag") && (c.e !== null && re(75).test(c.e))) {
+  if (!ids.includes("discord_tag") && (c.e !== null && re(76).test(c.e))) {
     ids.push("discord_tag");
   }
-  if (!ids.includes("skype_live") && (c.e !== null && re(76).test(c.e))) {
+  if (!ids.includes("skype_live") && (c.e !== null && re(77).test(c.e))) {
     ids.push("skype_live");
   }
   return ids;
@@ -477,7 +478,7 @@ export function isContactBlocked(text: string): boolean {
 
 /** The hard rule ids that fire, in spec order. */
 export function contactGuardRules(text: string): string[] {
-  if (!ready() || !re(49).test(copy_t(text))) {
+  if (!ready() || !re(50).test(copy_t(text))) {
     return [];
   }
   return rulesOn(copiesOf(text, true));
@@ -485,7 +486,7 @@ export function contactGuardRules(text: string): string[] {
 
 /** Whether the fast path's prefilter lets the text through to the rules. */
 export function contactGuardPrefilter(text: string): boolean {
-  return ready() && re(49).test(copy_t(text));
+  return ready() && re(50).test(copy_t(text));
 }
 
 /**
@@ -538,10 +539,11 @@ export function contactFragment(text: string): string {
   v = v.replace(re(46), " ");
   v = v.replace(re(47), "");
   v = v.replace(re(48), " ");
-  if (!re(79).test(v)) {
+  v = v.replace(re(49), " ");
+  if (!re(80).test(v)) {
     return '';
   }
-  v = v.replace(re(82), '');
+  v = v.replace(re(83), '');
   return v.length < 2 ? '' : v;
 }
 
@@ -554,7 +556,7 @@ export function contactChatter(text: string): boolean {
   v = copy_t(text);
   v = copy_d(v);
   v = copy_p(v);
-  return re(81).test(v);
+  return re(82).test(v);
 }
 
 /**
@@ -585,10 +587,10 @@ export function contactWindow(texts: readonly string[]): string | null {
     if (fwd.length > 13) {
       break;
     }
-    if (re(80).test(fwd)) {
+    if (re(81).test(fwd)) {
       return fwd;
     }
-    if (re(80).test(rev)) {
+    if (re(81).test(rev)) {
       return rev;
     }
   }
