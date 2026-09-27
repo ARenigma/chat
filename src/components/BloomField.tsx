@@ -9,8 +9,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { EASE_CONSTANT, EASE_OUT } from '../theme/motion';
 import {
+  BLOOM_FIELD_MS,
   BLOOM_LAYERS,
-  BLOOM_SWAP_MS,
   bloomExitGradient,
   bloomLayerBox,
   bloomRadiusScale,
@@ -176,7 +176,7 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
      */
     arrivingSV.value = withTiming(
       1,
-      { duration: BLOOM_SWAP_MS, easing: EASE_CONSTANT },
+      { duration: BLOOM_FIELD_MS, easing: EASE_CONSTANT },
       finished => {
         if (finished) {
           baseSV.value = 0;
@@ -185,7 +185,7 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
     );
     const done = setTimeout(() => {
       inFlight.current = false;
-    }, BLOOM_SWAP_MS);
+    }, BLOOM_FIELD_MS);
     return () => clearTimeout(done);
   }, [slots.arriving, opA, opB]);
 
@@ -231,7 +231,7 @@ function BloomFieldView({ elapsed, stage, hidden = false }: Props) {
      * place rather than accelerating out of it.
      */
     hide.value = withTiming(hidden ? -heightRef.current : 0, {
-      duration: BLOOM_SWAP_MS / 2,
+      duration: BLOOM_FIELD_MS / 2,
       easing: EASE_OUT,
     });
   }, [hidden, hide]);
@@ -306,10 +306,10 @@ function BloomLayerView({ name, elapsed, opA, opB, slots, width, height }: Layer
    * or exactly 1, so the same expression serves base and arriving alike.
    */
   const fadeA = useAnimatedStyle(() => ({
-    opacity: layerProgress(opA.value * BLOOM_SWAP_MS, delayMs),
+    opacity: layerProgress(opA.value * BLOOM_FIELD_MS, delayMs),
   }));
   const fadeB = useAnimatedStyle(() => ({
-    opacity: layerProgress(opB.value * BLOOM_SWAP_MS, delayMs),
+    opacity: layerProgress(opB.value * BLOOM_FIELD_MS, delayMs),
   }));
 
   // Slot objects are replaced only when a slot's stage changes, so identity is

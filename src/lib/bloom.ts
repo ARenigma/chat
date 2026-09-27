@@ -356,15 +356,6 @@ export function stepTint(key: string): string {
     : BLOOM_PALETTES.welcome.glow;
 }
 
-/**
- * How long a colour swap takes.
- *
- * The source reuses each layer's own `.smooth.delay(...)`, so a colour change is
- * staggered exactly like the exit is. Reusing `BLOOM_FIELD_MS` here rather than
- * picking a new number keeps that property: whatever the field does, it does at
- * one speed.
- */
-export const BLOOM_SWAP_MS = BLOOM_FIELD_MS;
 
 /**
  * How far a layer's centre travels, in points.

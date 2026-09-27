@@ -7,7 +7,6 @@ import {
   BLOOM_HOLD_MS,
   BLOOM_LAYERS,
   BLOOM_LAYER_MS,
-  BLOOM_SWAP_MS,
   FUSE_REFERENCE_LONG_EDGE,
   bloomExitGradient,
   bloomLayerBox,
@@ -178,7 +177,7 @@ describe('the bloom field', () => {
     // handoff commit is the heaviest of the flow and it used to arrive 50ms
     // after the last layer stopped, on top of a fresh cross-fade.
     expect(BLOOM_HOLD_MS).toBeGreaterThanOrEqual(BLOOM_FIELD_MS);
-    expect(BLOOM_HOLD_MS).toBeGreaterThanOrEqual(BLOOM_SWAP_MS);
+    expect(BLOOM_HOLD_MS).toBeGreaterThanOrEqual(BLOOM_FIELD_MS);
   });
 
   it('staggers the layers so the exit is not a wipe', () => {
