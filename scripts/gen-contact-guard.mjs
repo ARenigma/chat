@@ -859,6 +859,241 @@ const jsFragmentCopies = phoneCopyPath
   .map(c => `  v = copy_${c.name}(${c.from === 'input' ? 'text' : 'v'});`)
   .join('\n');
 
+// --- TypeScript compaction ----------------------------------------------------
+// The mirror ships inside the app's JS bundle, so its data is encoded compactly
+// and rebuilt once at runtime. Each encoding is decoded back here and compared
+// with the plain value before anything is written: a lossy encoding fails the
+// generator, never the device.
+
+/** Run lists as base-36 "gap,span" pairs: gap after the previous run's end, then end - start. */
+const encodeRuns = rs => {
+  let end = -1;
+  const out = [];
+  for (const [a, b] of rs) {
+    out.push((a - end - 1).toString(36), (b - a).toString(36));
+    end = b;
+  }
+  return out.join(',');
+};
+/** The generator's copy of the emitted runs(); both must agree. */
+const decodeRuns = s => {
+  const n = s.split(',').map(x => parseInt(x, 36));
+  const out = [];
+  let end = -1;
+  for (let i = 0; i + 1 < n.length; i += 2) {
+    const a = end + 1 + n[i];
+    end = a + n[i + 1];
+    out.push([a, end]);
+  }
+  return out;
+};
+const jsEsc = cp =>
+  cp <= 0xffff ? `\\u${hex4(cp)}` : `\\u{${cp.toString(16)}}`;
+const decodeClass = s =>
+  decodeRuns(s)
+    .map(([a, b]) => (a === b ? jsEsc(a) : `${jsEsc(a)}-${jsEsc(b)}`))
+    .join('');
+/** A class body made only of code point escapes, as ascending runs; null otherwise. */
+function classRuns(body) {
+  const item = /\\u(?:\{([0-9a-f]+)\}|([0-9a-f]{4}))/y;
+  const rs = [];
+  let i = 0;
+  const next = () => {
+    item.lastIndex = i;
+    const m = item.exec(body);
+    if (m === null) {
+      return null;
+    }
+    i = item.lastIndex;
+    return parseInt(m[1] ?? m[2], 16);
+  };
+  while (i < body.length) {
+    const a = next();
+    if (a === null) {
+      return null;
+    }
+    let b = a;
+    if (body[i] === '-') {
+      i += 1;
+      b = next();
+      if (b === null) {
+        return null;
+      }
+    }
+    const prev = rs[rs.length - 1];
+    if (b < a || (prev !== undefined && a <= prev[1] + 1)) {
+      return null;
+    }
+    rs.push([a, b]);
+  }
+  const encoded = encodeRuns(rs);
+  return decodeClass(encoded) === body ? encoded : null;
+}
+
+/** Class bodies and (?:...) groups of a pattern, the units worth sharing. */
+function fragmentsOf(source) {
+  const out = [];
+  const open = [];
+  let inClass = -1;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '\\') {
+      i += 1;
+    } else if (inClass >= 0) {
+      if (ch === ']') {
+        const body = source.slice(inClass + 1, i);
+        if (!body.startsWith('^')) {
+          out.push(body);
+        }
+        inClass = -1;
+      }
+    } else if (ch === '[') {
+      inClass = i;
+    } else if (ch === '(') {
+      open.push(i);
+    } else if (ch === ')') {
+      const start = open.pop();
+      if (start !== undefined && source.startsWith('(?:', start)) {
+        out.push(source.slice(start, i + 1));
+      }
+    }
+  }
+  return out;
+}
+
+const HOLE = '\u0000';
+const MIN_FRAGMENT = 64;
+const MIN_CLASS = 256;
+const countIn = (hay, needle) => hay.split(needle).length - 1;
+
+/** Hoists every fragment that repeats, or is a long class, into F<n>. */
+function hoistFragments(sources) {
+  const work = sources.map(s => {
+    if (s.includes(HOLE)) {
+      throw new Error('a pattern contains the hoisting placeholder');
+    }
+    return s;
+  });
+  const fragments = [];
+  for (;;) {
+    let best = null;
+    const seen = new Set();
+    for (const s of work) {
+      for (const f of fragmentsOf(s)) {
+        if (f.length < MIN_FRAGMENT || f.includes(HOLE) || seen.has(f)) {
+          continue;
+        }
+        seen.add(f);
+        const count = work.reduce((n, w) => n + countIn(w, f), 0);
+        const runs = f.length >= MIN_CLASS ? classRuns(f) : null;
+        const saving =
+          runs !== null
+            ? f.length * count - runs.length
+            : f.length * (count - 1);
+        if (
+          (count > 1 || runs !== null) &&
+          (best === null || saving > best.saving)
+        ) {
+          best = { f, runs, saving };
+        }
+      }
+    }
+    if (best === null) {
+      break;
+    }
+    const token = `${HOLE}${fragments.length}${HOLE}`;
+    fragments.push({ value: best.f, runs: best.runs });
+    for (let i = 0; i < work.length; i += 1) {
+      work[i] = work[i].split(best.f).join(token);
+    }
+  }
+  const parts = work.map(w =>
+    w
+      .split(HOLE)
+      .map((p, i) => (i % 2 === 1 ? Number(p) : p))
+      .filter(p => p !== ''),
+  );
+  parts.forEach((ps, i) => {
+    const rebuilt = ps
+      .map(p =>
+        typeof p === 'number'
+          ? fragments[p].runs !== null
+            ? decodeClass(fragments[p].runs)
+            : fragments[p].value
+          : p,
+      )
+      .join('');
+    if (rebuilt !== sources[i]) {
+      throw new Error(`pattern ${i} does not survive fragment hoisting`);
+    }
+  });
+  return { fragments, parts };
+}
+
+const hoisted = hoistFragments(jsRegexes.map(r => r.source));
+const jsFragments = hoisted.fragments
+  .map(
+    (f, i) =>
+      `const F${i} = ${
+        f.runs !== null ? `cls(${jsStr(f.runs)})` : jsStr(f.value)
+      };`,
+  )
+  .join('\n');
+const jsSources = jsRegexes
+  .map((r, i) => {
+    const expr = hoisted.parts[i]
+      .map(p => (typeof p === 'number' ? `F${p}` : jsStr(p)))
+      .join(' + ');
+    return `  [${expr === '' ? '""' : expr}, ${JSON.stringify(r.flags)}],`;
+  })
+  .join('\n');
+
+const foldCps = Array.from(tables.fold.from, ch => ch.codePointAt(0));
+const foldRuns = [];
+for (const cp of foldCps) {
+  const last = foldRuns[foldRuns.length - 1];
+  if (last !== undefined && cp === last[1] + 1) {
+    last[1] = cp;
+  } else {
+    foldRuns.push([cp, cp]);
+  }
+}
+const FOLD_RUNS = encodeRuns(foldRuns);
+if (
+  decodeRuns(FOLD_RUNS)
+    .flatMap(([a, b]) =>
+      Array.from({ length: b - a + 1 }, (_, k) => String.fromCodePoint(a + k)),
+    )
+    .join('') !== tables.fold.from ||
+  Array.from(tables.fold.to).length !== foldCps.length
+) {
+  throw new Error('the fold table does not survive run encoding');
+}
+
+/** A dict whose keys match an earlier one's, each value that one's plus a fixed suffix, is derived rather than repeated. */
+const jsDictDerived = jsDicts.map((d, i) => {
+  const keys = Object.keys(d);
+  for (let j = 0; j < i; j += 1) {
+    const base = jsDicts[j];
+    const baseKeys = Object.keys(base);
+    if (
+      baseKeys.length !== keys.length ||
+      baseKeys.some((k, n) => k !== keys[n])
+    ) {
+      continue;
+    }
+    const first = keys[0];
+    if (first === undefined || !d[first].startsWith(base[first])) {
+      continue;
+    }
+    const suffix = d[first].slice(base[first].length);
+    if (suffix !== '' && keys.every(k => d[k] === base[k] + suffix)) {
+      return { base: j, suffix };
+    }
+  }
+  return null;
+});
+
 const ts = `/**
  * GENERATED FILE, DO NOT EDIT.
  *
@@ -883,10 +1118,36 @@ export type ContactCategory = ${spec.CATEGORY_ORDER.map(c =>
   JSON.stringify(c),
 ).join(' | ')};
 
+/** Decodes a run list: base-36 pairs of (gap after the previous run's end, end - start). */
+function runs(s: string): Array<readonly [number, number]> {
+  const n = s.split(',').map(x => parseInt(x, 36));
+  const out: Array<readonly [number, number]> = [];
+  let end = -1;
+  for (let i = 0; i + 1 < n.length; i += 2) {
+    const a = end + 1 + (n[i] as number);
+    end = a + (n[i + 1] as number);
+    out.push([a, end]);
+  }
+  return out;
+}
+
+function esc(cp: number): string {
+  return cp <= 0xffff
+    ? \`\\\\u\${cp.toString(16).padStart(4, '0')}\`
+    : \`\\\\u{\${cp.toString(16)}}\`;
+}
+
+/** A character class body from a run list. */
+function cls(s: string): string {
+  return runs(s)
+    .map(([a, b]) => (a === b ? esc(a) : \`\${esc(a)}-\${esc(b)}\`))
+    .join('');
+}
+
+${jsFragments}
+
 const SOURCES: ReadonlyArray<readonly [string, string]> = [
-${jsRegexes
-  .map(r => `  [${jsStr(r.source)}, ${JSON.stringify(r.flags)}],`)
-  .join('\n')}
+${jsSources}
 ];
 
 /** Whether any code unit is outside ASCII; the SQL asks v ~ '[^\\u0001-\\u007f]'. */
@@ -920,13 +1181,19 @@ function re(i: number): RegExp {
   return R[i] as RegExp;
 }
 
-const FOLD_FROM = ${jsStr(tables.fold.from)};
+/** The fold table's source characters as runs of code points; FOLD_TO is aligned with them. */
+const FOLD_RUNS = ${jsStr(FOLD_RUNS)};
 const FOLD_TO = ${jsStr(tables.fold.to)};
 
 let fold: Map<string, string> | undefined;
 function foldMap(): Map<string, string> {
   if (fold === undefined) {
-    const from = Array.from(FOLD_FROM);
+    const from: string[] = [];
+    for (const [a, b] of runs(FOLD_RUNS)) {
+      for (let cp = a; cp <= b; cp += 1) {
+        from.push(String.fromCodePoint(cp));
+      }
+    }
     const to = Array.from(FOLD_TO);
     fold = new Map(from.map((ch, i) => [ch, to[i] ?? ch]));
   }
@@ -948,16 +1215,26 @@ function tmap${i}(): Map<string, string> {
   .join('\n\n')}
 
 ${jsDicts
-  .map(
-    (d, i) => `const DICT${i}: Record<string, string> = ${jsStr(d)};
-let d${i}: Map<string, string> | undefined;
+  .map((d, i) => {
+    const derived = jsDictDerived[i];
+    const decl =
+      derived === null
+        ? `const DICT${i}: Record<string, string> = ${jsStr(d)};\n`
+        : '';
+    const build =
+      derived === null
+        ? `new Map(Object.entries(DICT${i}))`
+        : `new Map(Object.entries(DICT${
+            derived.base
+          }).map(([k, w]) => [k, w + ${jsStr(derived.suffix)}]))`;
+    return `${decl}let d${i}: Map<string, string> | undefined;
 function dict${i}(): Map<string, string> {
   if (d${i} === undefined) {
-    d${i} = new Map(Object.entries(DICT${i}));
+    d${i} = ${build};
   }
   return d${i};
-}`,
-  )
+}`;
+  })
   .join('\n\n')}
 
 /** Postgres translate(): each character of \`map\`'s keys becomes its value. */
