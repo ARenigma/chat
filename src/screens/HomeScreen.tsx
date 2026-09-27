@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import {
   Image,
   Keyboard,
@@ -16,7 +16,8 @@ import type { ConversationSummary, ProviderSummary } from '../lib/database.types
 import { initialOf, providerFirstName } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import Animated, { useSharedValue } from 'react-native-reanimated';
+import Animated, { useReducedMotion, useSharedValue } from 'react-native-reanimated';
+import { useSoftReset } from '../lib/routes/useSoftReset';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { avatarImageSource } from '../lib/clayAvatars';
@@ -194,7 +195,11 @@ export function HomeScreen({
   // and not just the balance sync it used to be here for.
   const { data: profile } = useProfile();
   const { data: conversations, isPending: convosPending } = useConversations();
-  const { data: directoryRows, isPending: providersPending } = useProviders();
+  const {
+    data: directoryRows,
+    isPending: providersPending,
+    refetch: refetchProviders,
+  } = useProviders();
   // Busy providers carry `busy_wait_minutes` (migration 154): merged in HERE,
   // at the one place this screen reads the directory, so every page, row and
   // pick downstream sees the same answer. The hook polls every 30s while the
@@ -589,6 +594,21 @@ export function HomeScreen({
    */
   useSearchBack(searching, closeSearch);
 
+  /*
+   * Re-tapping Home at its root (step 9, nav-migration §6). Searching, the
+   * results go back to the top; otherwise the directory refetches, and the
+   * settled page scrolls itself up (DirectoryPage's own listener).
+   */
+  const reducedMotion = useReducedMotion();
+  const searchListRef = useRef<FlashListRef<ProviderSummary> | null>(null);
+  useSoftReset(() => {
+    if (searching) {
+      searchListRef.current?.scrollToOffset({ offset: 0, animated: !reducedMotion });
+    } else {
+      void refetchProviders();
+    }
+  });
+
   const loading = convosPending || providersPending;
   const firstUser = balance === 0;
   const tourComplete = tourSeen || !firstUser;
@@ -912,6 +932,7 @@ export function HomeScreen({
             entering={searchResultsIn}
             exiting={searchResultsOut}>
             <FlashList
+              ref={searchListRef}
               data={results}
               keyExtractor={p => p.id}
               renderItem={renderSearchRow}
@@ -1153,6 +1174,22 @@ const DirectoryPage = memo(function ({
   onSeeAllChats: () => void;
 }) {
   const styles = useStyles(makeStyles);
+
+  /*
+   * Re-tapping Home scrolls the SETTLED page back to its top, rail and picks
+   * included (step 9). Gated on `focused` so the page off to the side keeps
+   * where the member left it.
+   */
+  const reducedMotion = useReducedMotion();
+  const listRef = useRef<FlashListRef<ProviderSummary> | null>(null);
+  const railRef = useRef<ScrollView | null>(null);
+  const picksRef = useRef<ScrollView | null>(null);
+  useSoftReset(() => {
+    const animated = !reducedMotion;
+    listRef.current?.scrollToOffset({ offset: 0, animated });
+    railRef.current?.scrollTo({ x: 0, animated });
+    picksRef.current?.scrollTo({ x: 0, animated });
+  }, focused);
   const theme = useTheme();
 
   /*
@@ -1242,6 +1279,7 @@ const DirectoryPage = memo(function ({
           </View>
           {chats.length > 0 ? (
             <ScrollView
+              ref={railRef}
               horizontal
               showsHorizontalScrollIndicator={false}
               {...SCROLL_PHYSICS}
@@ -1304,6 +1342,7 @@ const DirectoryPage = memo(function ({
                 HeroCarousel keeps its centred, endless geometry for the profile
                 photo pager. */}
             <ScrollView
+              ref={picksRef}
               horizontal
               showsHorizontalScrollIndicator={false}
               snapToInterval={HERO_CARD_WIDTH + HERO_CARD_GAP}
@@ -1350,6 +1389,7 @@ const DirectoryPage = memo(function ({
 
   return (
     <FlashList
+      ref={listRef}
       testID={`home-scroll-${category}`}
       data={rows}
       keyExtractor={p => p.id}

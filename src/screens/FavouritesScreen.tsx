@@ -1,7 +1,8 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { StyleSheet, Text, View } from 'react-native';
-import { useSharedValue } from 'react-native-reanimated';
+import { useReducedMotion, useSharedValue } from 'react-native-reanimated';
+import { useSoftReset } from '../lib/routes/useSoftReset';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -243,6 +244,10 @@ const FavouritesPage = memo(function ({
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
+  const listRef = useRef<FlashListRef<ProviderSummary> | null>(null);
+  // Re-tap Favourites (the settled page only; search filters it in place) at its root: back to the top (step 9, nav-migration §6).
+  useSoftReset(() => listRef.current?.scrollToOffset({ offset: 0, animated: !reducedMotion }), focused);
   const renderFavouriteCard = useCallback(
     ({ item, index }: { item: ProviderSummary; index: number }) => {
       const animate = focused && !seenIds.current.has(item.id);
@@ -262,6 +267,7 @@ const FavouritesPage = memo(function ({
   if (favourites.length > 0) {
     return (
       <FlashList
+        ref={listRef}
         testID={`favourites-scroll-${category}`}
         data={favourites}
         keyExtractor={p => p.id}

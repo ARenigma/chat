@@ -1,6 +1,8 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useReducedMotion } from 'react-native-reanimated';
+import { useSoftReset } from '../lib/routes/useSoftReset';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -78,6 +80,11 @@ function threadLabel(thread: ConversationSummary): string {
  */
 export function ProviderChatsScreen({ onOpenConversation }: Props) {
   const styles = useStyles(makeStyles);
+  const reducedMotion = useReducedMotion();
+  const listRef = useRef<FlashListRef<ProviderRow> | null>(null);
+  // Re-tap Chats at its root: back to the top (step 9, nav-migration §6).
+  useSoftReset(() => listRef.current?.scrollToOffset({ offset: 0, animated: !reducedMotion }));
+
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data: profile } = useProfile();
@@ -292,6 +299,7 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
         </View>
       ) : (
         <FlashList
+          ref={listRef}
           {...SCROLL_PHYSICS}
           data={rows as ProviderRow[]}
           keyExtractor={r => (typeof r === 'string' ? r : r.conversation_id)}

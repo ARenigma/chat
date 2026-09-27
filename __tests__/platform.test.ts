@@ -3193,3 +3193,42 @@ describe('step 7: the navigator follows the platform', () => {
     expect(read('android/app/src/main/AndroidManifest.xml')).not.toContain('enableOnBackInvokedCallback');
   });
 });
+
+describe('re-selecting a tab scrolls its root to the top (nav step 9)', () => {
+  /*
+   * M3 navigation bar: re-selecting the current destination scrolls it to the
+   * top (https://m3.material.io/components/navigation-bar/guidelines).
+   * BottomBar emits the soft reset; every tab root with a scroller listens.
+   * Calls has no scroller and is deliberately absent.
+   */
+  const ROOTS = [
+    'src/screens/HomeScreen.tsx',
+    'src/screens/FavouritesScreen.tsx',
+    'src/screens/SettingsSheet.tsx',
+    'src/screens/ProviderChatsScreen.tsx',
+    'src/screens/ProviderSavedScreen.tsx',
+  ];
+
+  it.each(ROOTS)('%s listens for the soft reset', file => {
+    const src = read(file);
+    expect(src).toContain('useSoftReset(');
+    // Every scroll it triggers honours reduced motion.
+    expect(src).toMatch(/animated: !reducedMotion/);
+    expect(src).not.toMatch(/animated: true/);
+  });
+
+  it('listens only while the screen is focused', () => {
+    const hook = read('src/lib/routes/useSoftReset.ts');
+    expect(hook).toContain('useIsFocused()');
+    expect(hook).toContain('if (!focused || !enabled)');
+  });
+
+  it('the bar emits it only at the tab root, and the selected category re-tap emits it too', () => {
+    expect(read('src/shell/bottom-bar/BottomBar.tsx')).toMatch(
+      /TabState\.InsideAtRoot\) \{\s*emitSoftReset\(\);/,
+    );
+    expect(read('src/components/ProviderTypeTabs.tsx')).toContain(
+      'onPress={() => (c === value ? emitSoftReset() : onSelect(c))}',
+    );
+  });
+});

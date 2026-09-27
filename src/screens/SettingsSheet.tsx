@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Image,
   Linking,
@@ -7,7 +7,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
+import { useSoftReset } from '../lib/routes/useSoftReset';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 import { useSearchBack } from '../hooks/useSearchBack';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -269,6 +270,11 @@ export function SettingsSheet({
    * push the one matching row off the top of a short list.
    */
   const [searching, setSearching] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const scrollRef = useRef<Animated.ScrollView | null>(null);
+  // Re-tap You at its root: back to the top, search results or not, since
+  // search filters this list in place (step 9, nav-migration §6).
+  useSoftReset(() => scrollRef.current?.scrollTo({ y: 0, animated: !reducedMotion }));
   const [query, setQuery] = useState('');
   const barOffset = useBottomBarOffset(TOKENS.space.md);
   // Hardware back leaves search first, as on Home (`useSearchBack`, nav §4).
@@ -538,6 +544,7 @@ export function SettingsSheet({
         testID="settings"
       />
       <Animated.ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         {...SCROLL_PHYSICS}
         contentContainerStyle={[

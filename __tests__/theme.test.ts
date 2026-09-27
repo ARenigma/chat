@@ -1504,7 +1504,9 @@ describe('motion lives in one module', () => {
       }
       const body = read(join('src/screens', name));
       const scrollers =
-        body.match(/<(ScrollView|FlatList|SectionList|FlashList)\b/g) ?? [];
+        // JSX opening tags only (own line), so a `useRef<ScrollView>` type is
+        // not counted as a scroller.
+        body.match(/^\s*<(ScrollView|FlatList|SectionList|FlashList)\b/gm) ?? [];
       if (scrollers.length === 0) {
         continue;
       }

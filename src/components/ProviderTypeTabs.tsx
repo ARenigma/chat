@@ -15,6 +15,7 @@ import {
   type ProviderCategory,
 } from '../lib/providerFilters';
 import { Pressable } from './Pressable';
+import { emitSoftReset } from '../lib/events';
 
 /**
  * The Listener / Astrologer type strip, shared by Home and Favourites
@@ -196,7 +197,9 @@ export function ProviderTypeTabs({
       {PROVIDER_CATEGORIES.map((c, index) => (
         <Pressable
           key={c}
-          onPress={() => onSelect(c)}
+          // The selected category, tapped again, is a re-tap of the screen:
+          // back to the top (Bluesky Home.tsx onPressSelected, step 9).
+          onPress={() => (c === value ? emitSoftReset() : onSelect(c))}
           testID={`${testID}-${c}`}
           accessibilityRole="tab"
           checked={c === value}

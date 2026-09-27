@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useReducedMotion } from 'react-native-reanimated';
+import { useSoftReset } from '../lib/routes/useSoftReset';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary } from '../lib/database.types';
@@ -33,6 +35,10 @@ export function ProviderSavedScreen({
 }: {
   onOpenConversation: (peerId: string) => void;
 }) {
+  const reducedMotion = useReducedMotion();
+  const listRef = useRef<FlashListRef<ConversationSummary> | null>(null);
+  // Re-tap Saved at its root: back to the top (step 9, nav-migration §6).
+  useSoftReset(() => listRef.current?.scrollToOffset({ offset: 0, animated: !reducedMotion }));
   const { data: allThreads } = useConversations();
   const { data: conversationLabels } = useConversationLabels();
   const threads = allThreads ?? [];
@@ -56,6 +62,7 @@ export function ProviderSavedScreen({
 
   return (
     <FlashList
+      ref={listRef}
       testID="provider-favourites-list"
       data={saved as ConversationSummary[]}
       keyExtractor={t => t.conversation_id}
