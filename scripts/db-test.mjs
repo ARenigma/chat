@@ -206,6 +206,7 @@ const MIGRATIONS = [
   'supabase/migrations/158_contact_guard_directory_hiding.sql',
   'supabase/migrations/159_contact_guard_review.sql',
   'supabase/migrations/170_delete_account_ends_every_live_session.sql',
+  'supabase/migrations/180_provider_edits_own_profile.sql',
 ];
 
 /**
@@ -1039,6 +1040,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/573_contact_guard_review.sql'),
     label:
       'a moderator strikes a reported story once, the ladder fills the removal and human review queues, and clear, suspend and ban resolve them, audited',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/600_provider_edits_own_profile.sql'),
+    label:
+      "a live provider edits their own headline, about and languages through one RPC, inside the columns' rules and the contact guard, and a member cannot",
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

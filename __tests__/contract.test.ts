@@ -7887,7 +7887,8 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
 
   it('is reachable from Settings on BOTH trees', () => {
     const settings = withoutComments(read('src/screens/SettingsSheet.tsx'));
-    expect(settings).toContain('testID="settings-usage"');
+    // A row spec since the sectioned list (provider IA, Option A).
+    expect(settings).toContain("testID: 'settings-usage'");
     // The title takes the caller's own side of the row.
     expect(settings).toContain(
       "isProvider ? 'Earnings by session' : 'Usage by session'",
@@ -9143,9 +9144,13 @@ describe('navigation step 6: provider split', () => {
   });
 
   it('keeps the photo-remove confirmation with the only thing that opens it', () => {
+    // The gallery moved to its own page in the provider IA (Option A), and
+    // the confirmation went with it.
+    const photos = withoutComments(read('src/screens/ProviderPhotosScreen.tsx'));
+    expect(photos).toContain('testID="photo-remove-confirm"');
+    expect(photos).toContain('setPendingDelete(p)');
     const you = withoutComments(read('src/screens/ProviderYouScreen.tsx'));
-    expect(you).toContain('testID="photo-remove-confirm"');
-    expect(you).toContain('setPendingDelete(p)');
+    expect(you).not.toContain('photo-remove-confirm');
     // You passes the settings scroll its foot offset; the mode flags are gone.
     expect(you).toMatch(/<SettingsSheet\s+bottomOffset=\{bottomOffset\}/);
   });
@@ -9348,6 +9353,8 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'Call',
       'ChatRequest',
       'Payout',
+      'ProviderPhotos',
+      'EditProfile',
       'Blocked',
       'Usage',
     ]);
@@ -9419,6 +9426,8 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'ProviderSavedScreen',
       'ProviderYouScreen',
       'ProviderBankScreen',
+      'ProviderPhotosScreen',
+      'ProviderEditProfileScreen',
       'ChatRequestScreen',
       'HomeSuggestionScreen',
       'ChatScreenV2',

@@ -113,7 +113,9 @@ import {
 import {
   ChatRequestRoute,
   ChatsRoute,
+  EditProfileRoute,
   PayoutRoute,
+  ProviderPhotosRoute,
   ProviderYouRoute,
   SavedRoute,
 } from './screens/routes/ProviderRoutes';
@@ -217,6 +219,8 @@ function providerScreens(Stack: typeof ChatsStack) {
       <Stack.Screen name="Call" getComponent={() => CallRoute} options={CALL_OPTIONS} />
       <Stack.Screen name="ChatRequest" getComponent={() => ChatRequestRoute} />
       <Stack.Screen name="Payout" getComponent={() => PayoutRoute} />
+      <Stack.Screen name="ProviderPhotos" getComponent={() => ProviderPhotosRoute} />
+      <Stack.Screen name="EditProfile" getComponent={() => EditProfileRoute} />
       <Stack.Screen name="Blocked" getComponent={() => BlockedRoute} />
       <Stack.Screen name="Usage" getComponent={() => UsageRoute} />
     </>

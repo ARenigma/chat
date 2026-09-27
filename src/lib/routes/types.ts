@@ -49,6 +49,10 @@ export type MemberScreenParams = CommonParams & {
 export type ProviderScreenParams = CommonParams & {
   ChatRequest: { requestId: string };
   Payout: undefined;
+  /** The provider's gallery, its own page since the provider IA (Option A). */
+  ProviderPhotos: undefined;
+  /** Headline, about, languages and expertise, for a live provider. */
+  EditProfile: undefined;
 };
 
 export type MemberTabParams = {

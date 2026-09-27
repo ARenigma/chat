@@ -207,6 +207,12 @@ export type Profile = {
    * two are what `sortByLanguageMatch` compares.
    */
   preferred_languages: string[];
+  /**
+   * The provider's topic tags (migration 083), written only through
+   * `set_provider_expertise`. `not null default '{}'`; empty for members.
+   * Read by the provider's Edit profile screen to seed its chips.
+   */
+  expertise: string[];
   created_at: string;
   last_refill_at: string | null;
 };
@@ -1830,6 +1836,16 @@ export type Database = {
       set_provider_expertise: {
         Args: { p_expertise: string[] };
         Returns: string[];
+      };
+      /**
+       * 180: a live provider replaces their own headline, about and languages
+       * in one statement. The only client path to headline (012 closed the
+       * PATCH). Refuses a non-provider with 42501, a field outside its CHECK
+       * with 22023 and a sentence, and contact details with P0011.
+       */
+      update_provider_profile: {
+        Args: { p_headline: string; p_about: string; p_languages: string[] };
+        Returns: undefined;
       };
       /** 082: has the member declined a paid session in this conversation? */
       get_chat_consent: {

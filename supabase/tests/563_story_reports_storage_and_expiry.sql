@@ -1329,7 +1329,8 @@ select is(
        'story_text_trim', 'story_viewers', 'submit_provider_application',
        'submit_report', 'submit_review', 'submit_session_review', 'toggle_favorite',
        'toggle_reaction', 'toggle_story_reaction',
-       'unblock_by_handle', 'unregister_push_token', 'upsert_my_payout_account'])),
+       'unblock_by_handle', 'unregister_push_token', 'update_provider_profile',
+       'upsert_my_payout_account'])),
   null,
   '39t. every function revoked from PUBLIC that a signed-in client can call is a client RPC'
 );

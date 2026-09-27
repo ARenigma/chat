@@ -1004,7 +1004,6 @@ describe('a kind of text reads at one role, screen or sheet', () => {
       [PAYMENT, 'centreLabel'],
       [PAYMENT, 'successBalance'],
       ['src/screens/SafetySheet.tsx', 'reasonLabel'],
-      ['src/screens/SettingsSheet.tsx', 'rowTitle'],
       ['src/components/SessionFeedbackSheet.tsx', 'word'],
       // The screen half of the pair — a centred "Loading…" and an empty-state
       // body on a full page, the same job centreLabel does inside the sheet.
@@ -1025,9 +1024,15 @@ describe('a kind of text reads at one role, screen or sheet', () => {
     // settings row (rowDetail) state it, all at the same DISCLOSURE role.
     expect(roleOf(RECHARGE, 'cardGst')).toBe(DISCLOSURE);
     expect(roleOf(PAYMENT, 'totalGst')).toBe(DISCLOSURE);
-    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe(
-      DISCLOSURE,
-    );
+  });
+
+  it('sets the settings list in the Bluesky roles (ADR-0033, provider IA)', () => {
+    // The sectioned list (owner, 2026-09-25, "Option A approved") takes
+    // Bluesky's SettingsList typography: text_md titles, text_sm detail and
+    // text_sm semibold section labels, where it was bodyLarge / bodySmall.
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowTitle')).toBe('textMd');
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe('textSm');
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'subheader')).toBe('textSmSemiBold');
   });
 
   it('sets every text button in the bold label face', () => {
@@ -2176,6 +2181,14 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'ProviderChatsScreen.tsx',
       'ProviderDetailScreen.tsx',
+      /*
+       * Provider IA (Option A, 2026-09-25). Edit profile: the header Save is
+       * the page's one action, in accent ink. Your photos: the main photo's
+       * ring and check badge, a selection state, moved here from the You tab
+       * unchanged.
+       */
+      'ProviderEditProfileScreen.tsx',
+      'ProviderPhotosScreen.tsx',
       'ProviderPushGate.tsx',
       /*
        * The explore row, which JOINED this list on 2026-09-08 when it grew a

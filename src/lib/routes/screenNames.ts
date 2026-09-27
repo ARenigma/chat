@@ -51,6 +51,8 @@ export const LEGACY_KIND: Record<string, LegacyKind> = {
   // Provider-only pushed screens
   ChatRequest: 'chatRequest',
   Payout: 'payout',
+  ProviderPhotos: 'providerPhotos',
+  EditProfile: 'editProfile',
 
   // Tab keys (bottom-tabs reports these as the focused route while at root)
   HomeTab: 'home',

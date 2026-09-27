@@ -373,6 +373,86 @@ export function useSetProviderExpertise() {
   });
 }
 
+/** What the Edit profile screen saves, and which of the two writes it needs. */
+export interface ProviderProfileEdit {
+  headline: string;
+  about: string;
+  languages: string[];
+  expertise: string[];
+  /** From `changedParts`: only the write that changed is sent. */
+  parts: { fields: boolean; expertise: boolean };
+}
+
+/**
+ * The save itself, apart from the hook so it is tested without React: the
+ * fields RPC first, then the tags, each only when it changed.
+ */
+export async function saveProviderProfile(edit: ProviderProfileEdit): Promise<void> {
+  if (edit.parts.fields) {
+    const { error } = await supabase.rpc('update_provider_profile', {
+      p_headline: edit.headline.trim(),
+      p_about: edit.about.trim(),
+      p_languages: edit.languages,
+    });
+    if (error) {
+      const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
+    }
+  }
+  if (edit.parts.expertise) {
+    const { error } = await supabase.rpc('set_provider_expertise', {
+      p_expertise: edit.expertise,
+    });
+    if (error) {
+      const refusal = contactGuardRefusalFromError(error);
+      if (refusal) {
+        throw new ContactGuardRefusalError(refusal);
+      }
+      throw new Error(error.message);
+    }
+  }
+}
+
+/**
+ * A live provider saves their Edit profile form.
+ *
+ * Two existing server writers, not a new combined one: `update_provider_profile`
+ * (180) for headline, about and languages — the only client path to headline
+ * since 012 closed the PATCH — and `set_provider_expertise` (083) for the
+ * tags, which already owns their rule. Fields first, tags second, and each
+ * only when it changed, so an untouched half is never rewritten.
+ *
+ * Both are SECURITY DEFINER with the caller's claims, so the contact guard's
+ * profile trigger (157) still runs and refuses with P0011; the refusal is
+ * thrown as `ContactGuardRefusalError`, whose message is the line to show and
+ * whose `refusal.field` says which field to show it under. No notice on error:
+ * the screen shows the failure inline, next to the field or the Save button.
+ */
+export function useSaveProviderProfile() {
+  const queryClient = useQueryClient();
+  const setNotice = useStore(s => s.setNotice);
+
+  return useMutation<void, Error, ProviderProfileEdit>({
+    mutationFn: saveProviderProfile,
+    onSuccess: () => {
+      tick();
+      setNotice('Profile saved.', 'confirm');
+    },
+    onError: () => {
+      errorTick();
+    },
+    // Settled, not success: a fields write that landed before a refused tags
+    // write is still on the server, and the form re-seeds from what is there.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.profile });
+      void queryClient.invalidateQueries({ queryKey: keys.providers });
+    },
+  });
+}
+
 /**
  * The master switch. `is_available` is an ordinary profile column a provider
  * owns, deliberately not guarded, because being reachable or not is the one
