@@ -349,6 +349,10 @@ begin
     -- A moderator's strike (a reported story's media, 159) always counts.
     v_counts := true;
   elsif p_outcome = 'blocked' then
+    -- Serialize per user so two concurrent blocked writes from the same user
+    -- cannot both see an empty recent-strikes window and double-count.
+    -- pg_advisory_xact_lock is released automatically at transaction end.
+    perform pg_advisory_xact_lock(hashtext(p_user::text));
     -- One honest mistake retyped three times in a minute is one incident.
     v_counts := not exists (
       select 1 from public.contact_guard_strikes s
@@ -485,12 +489,23 @@ declare
   v_count   integer;
   v_limit   integer;
 begin
-  if p_text is not null and length(p_text) > (v_policy ->> 'max_length')::int then
-    return jsonb_build_object('success', false, 'error', 'CONTACT_TOO_LONG');
-  end if;
-
+  -- Check mode first: in 'off' nobody is blocked and shadow logs but never
+  -- blocks; the length cap below must not override that contract.
   v_mode := private.contact_guard_mode();
   if v_mode = 'off' or v_uid is null then
+    return null;
+  end if;
+
+  -- Length guard: keeps the detector from scanning megabytes. In enforce mode
+  -- this is a real refusal (the only mode where blocking is allowed). In shadow
+  -- mode we skip detection silently rather than blocking — same as the profile
+  -- trigger's `continue when length(v_new) > 4000`. The 4000-char cap is a
+  -- guard-specific excerpt limit, not a pre-existing body-length rule; the core
+  -- RPCs impose their own limits after this wrapper returns.
+  if p_text is not null and length(p_text) > (v_policy ->> 'max_length')::int then
+    if v_mode = 'enforce' then
+      return jsonb_build_object('success', false, 'error', 'CONTACT_TOO_LONG');
+    end if;
     return null;
   end if;
 

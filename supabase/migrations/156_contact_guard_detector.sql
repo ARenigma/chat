@@ -190,11 +190,13 @@ end;
 $fn$;
 
 -- True when any hard rule fires. The write path's only detector call.
+-- NOT strict: a NULL input means no text to scan; false is the correct,
+-- explicit answer (strict would propagate NULL, which is wrong for a boolean
+-- guard even though callers currently check for NULL before calling).
 create or replace function private.contact_guard_blocked(p_text text)
 returns boolean
 language plpgsql
 immutable
-strict
 parallel safe
 as $fn$
 declare
@@ -207,6 +209,9 @@ declare
   v_e text;
   v_ec text;
 begin
+  if p_text is null then
+    return false;
+  end if;
   v_t := private.cg_copy_t(p_text);
   if v_t !~ '[0-9@.:#/=-]|(?<![a-z\u0900-\u097f\u0980-\u09ff])(?:at the rate|under score|इंस्टाग्राम|chauhattar|chhihattar|chhiyasath|googlemail|pachhattar|protonmail|rediffmail|underscore|attherate|chauranve|chauvalis|chhiyalis|chhiyanve|clubhouse|instagram|paintalis|pinterest|saintalis|sathattar|sattattar|seventeen|sharechat|taintalis|टेलीग्राम|व्हाट्सएप|व्हाट्सऐप|athattar|atthavan|bahattar|chauntis|chaurasi|chausath|chawalis|chhabbis|chhappan|chhattis|chhiyasi|eighteen|facebook|fourteen|ikhattar|linkedin|nineteen|ninyanve|pachanve|pachchis|painsath|satattar|sattanve|sattavan|sattawan|snapchat|tele\u0067ram|thirteen|tihattar|unhattar|username|whatsapp|स्नैपचैट|adtalis|arattai|artalis|at sign|athanve|atharah|athawan|atthais|bayalis|chaalis|chabbis|chappan|chattis|chaubis|chaudah|chautis|chauvan|chauwan|discord|enimidi|fifteen|hotmail|iktalis|ikyanve|ikyavan|ikyawan|jiochat|moondru|naalugu|ombattu|onbadhu|onbathu|outlook|pachaas|pachasi|pachpan|paintis|pandrah|poojyam|sadsath|saintis|sataees|sattais|sattasi|seventy|shoonya|sixteen|taintis|tetalis|threads|tiranve|tirsath|tommidi|twitter|untalis|watsapp|whatsap|youtube|वॉट्सऐप|adsath|ainthu|arsath|athais|athara|athasi|baanve|baawan|basath|battis|bayasi|byalis|chalis|chauda|chobis|double|eighty|eleven|fourty|gyarah|handle|icloud|ikkees|iksath|ikyasi|irandu|naalku|naangu|nabbey|navasi|nawasi|ninety|paanch|pachas|pachis|pandra|proton|pujyam|reddit|rediff|satrah|sattar|shunno|shunya|shunyo|signal|thirty|tiktok|tirasi|tirpan|trepan|triple|twelve|twenty|unchas|unsath|watsap|wechat|इंस्टा|फेसबुक|adtis|artis|baees|banve|barah|bavan|botim|chaar|chhah|chhai|chheh|chhoy|eight|eradu|fifty|forty|gmail|gyara|ikkis|iktis|insta|moodu|moonu|mooru|naalu|nabbe|okati|ondru|paach|panch|point|rendu|satra|seven|sifar|sixty|skype|solah|sonne|sunna|sunya|terah|tetis|theen|three|unasi|unees|unnis|untis|yahoo|ymail|ज़ीरो|शुन्य|शून्य|सिक्स|सुन्य|শূন্য|aaru|aath|aidu|anju|assi|atth|bais|bara|bees|chah|char|cheh|chha|chhe|daat|dott|entu|ettu|ezhu|five|four|hike|http|josh|live|nine|ondu|onnu|panj|saat|saha|satt|snap|sola|teen|tees|teis|tele|tera|tinn|tran|wtsp|zero|zoho|जीरो|थ्री|नाइन|पाँच|पांच|फाइव|सेवन|পাঁচ|aat|aol|das|don|doo|dot|dui|edu|ekk|elu|ikk|imo|kik|koo|moj|nau|nav|noy|one|six|ten|tin|two|www|चार|तीन|दोन|पाच|फोर|सहा|सात|চার|ছয়|তিন|দুই|নয়|সাত|do|ek|fb|id|ig|sc|tg|yt|आठ|एक|एट|छः|छह|छे|टू|दो|नऊ|नौ|वन|আট|এক)(?![a-z\u0900-\u097f\u0980-\u09ff])|[[({<]' then
     return false;

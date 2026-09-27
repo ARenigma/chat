@@ -570,16 +570,21 @@ const sql = `${header}
 ${sqlCopyFns.join('\n\n')}
 
 -- True when any hard rule fires. The write path's only detector call.
+-- NOT strict: a NULL input means no text to scan; false is the correct,
+-- explicit answer (strict would propagate NULL, which is wrong for a boolean
+-- guard even though callers currently check for NULL before calling).
 create or replace function private.contact_guard_blocked(p_text text)
 returns boolean
 language plpgsql
 immutable
-strict
 parallel safe
 as $fn$
 declare
 ${sqlDeclareCopies}
 begin
+  if p_text is null then
+    return false;
+  end if;
 ${sqlBlockedBody.join('\n')}
   return false;
 end;
