@@ -205,8 +205,11 @@ export function flushIntents(): void {
       if (decision === 'duplicate' || decision === 'ownDialRace') {
         continue;
       }
-      // busyDecline: end the incoming call so the caller knows immediately.
+      // busyDecline: end the incoming call so the caller knows immediately,
+      // and take its CallStyle notification down with it, or a dead ring
+      // (with an Accept that can no longer answer) stays in the shade.
       void _callHooks.endCall(intent.callId);
+      void _callHooks.clearCall(intent.callId);
       continue;
     }
 

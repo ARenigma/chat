@@ -68,7 +68,9 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
       setSecondsLeft(remaining);
     }, 1000);
     return () => clearInterval(timer);
-  }, [suggestion.provider_id, onDismiss]);
+  // Keyed on the suggestion itself, not its provider: the same provider
+  // suggested again is a new prompt with a fresh clock and a fresh answer.
+  }, [suggestion, onDismiss]);
 
   // The hook's own guard reads a ref that only turns over on the next render,
   // so without this a double tap answered twice: a duplicate outcome, a

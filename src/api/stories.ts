@@ -201,6 +201,12 @@ export async function reactToStoryComment(commentId: string, emoji: ReactionEmoj
   return data as StoryReactionResult;
 }
 
+/*
+ * `!error` is the whole answer for both reports: report_story and
+ * report_story_comment return the report's uuid and RAISE for every refusal
+ * (rate limit 54000, unknown story, reused id; 150_story_reports.sql). There
+ * is no soft `{ success: false }` payload to read, unlike the reactions.
+ */
 export async function reportStory(storyId: string, reason: ReportReason, reportId: string): Promise<boolean> {
   const { error } = await supabase.rpc('report_story', {
     p_story_id: storyId,
