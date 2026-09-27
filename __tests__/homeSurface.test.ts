@@ -507,18 +507,19 @@ describe('search MOVES the way the reference app moves it, not only measures lik
      */
     const bar = withoutComments(read('src/components/TabTopBar.tsx'));
     /*
-     * `entering={enter}` / `exiting={exit}`, not the animations by name: the
-     * first render passes neither, because a subtree that mounts inside
-     * `TabLayer`'s `display: 'none'` never runs its entering animation and
-     * would stay at FadeIn's opacity 0 forever (device-found on Favourites —
-     * see the comment on `mounted` in TabTopBar.tsx). Every render after the
-     * first uses `searchIn` / `searchOut`, which is when the crossfade is
-     * wanted, and that binding is what these two lines pin.
+     * Bound by name since navigation step 8. The first-render skip that used to
+     * sit here existed for the old hidden tab layer; `Layout.Screen`'s
+     * `LayoutAnimationConfig skipEntering` now skips the first mount's entrance,
+     * so the row always carries the crossfade and the view no longer needs
+     * `collapsable={false}`.
      */
-    expect(bar).toContain('entering={enter}');
-    expect(bar).toContain('exiting={exit}');
-    expect(bar).toContain('const enter = mounted.current ? searchIn : undefined');
-    expect(bar).toContain('const exit = mounted.current ? searchOut : undefined');
+    expect(bar).toContain('entering={searchIn}');
+    expect(bar).toContain('exiting={searchOut}');
+    expect(bar).not.toContain('mounted.current');
+    expect(bar).not.toContain('collapsable={false}');
+    expect(read('src/components/Layout/Screen.tsx')).toContain(
+      '<LayoutAnimationConfig skipEntering skipExiting>',
+    );
   });
 
   it('swaps the content underneath on the second animator, scales and close delay included', () => {

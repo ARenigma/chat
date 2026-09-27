@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -97,29 +97,12 @@ export function TabTopBar({
   const balance = useStore(s => s.balance);
 
   /*
-   * No entering animation on the FIRST render, and this is a real defect and
-   * not a nicety.
-   *
-   * Found on the device: on Favourites the bar rendered its wallet chip and
-   * nothing else — no title, no magnifier — while Home, running this same
-   * component, was fine. `TabLayer` (App.tsx) mounts a non-Home tab and holds
-   * it at `opacity: 0`, which its animated style turns into
-   * `display: 'none'`, until the tab is first activated. A Reanimated
-   * `entering` animation on a subtree that mounts inside a `display: 'none'`
-   * parent never runs, so the row stayed at FadeIn's starting opacity of 0 and
-   * simply never faded in. Home mounts visible at cold start, so it never
-   * showed the bug.
-   *
-   * The crossfade is only wanted when the row CHANGES state anyway: a bar
-   * appearing with the screen should already be there. So the first render
-   * gets no `entering`, and every render after it does.
+   * The row mounts without its crossfade and swaps with it afterwards. That is
+   * `Layout.Screen`'s `<LayoutAnimationConfig skipEntering>`, which every tab
+   * root renders inside: entering animations are skipped on the screen's first
+   * mount and run for children that mount later, which is the keyed swap below
+   * (https://docs.swmansion.com/react-native-reanimated/docs/layout-animations/layout-animation-config).
    */
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-  }, []);
-  const enter = mounted.current ? searchIn : undefined;
-  const exit = mounted.current ? searchOut : undefined;
 
   return (
     /*
@@ -135,26 +118,12 @@ export function TabTopBar({
      * versions ago).
      */
     <View
-      /*
-       * `collapsable={false}`, and it is load-bearing on Android.
-       *
-       * Device-found on Favourites: this row rendered its wallet chip and
-       * nothing else — no title, no magnifier — while Home, running the same
-       * component, was fine. RN Android's view flattening
-       * (NativeViewHierarchyOptimizer) folds away a View that draws nothing of
-       * its own, and this row inside a `TabLayer` that mounts hidden and is
-       * revealed later came back without its flattened children. The chip
-       * survived because its fill makes it a real view. Proven by giving this
-       * container a background in a throwaway build: everything painted.
-       * https://reactnative.dev/docs/view#collapsable-android
-       */
-      collapsable={false}
       style={[styles.nav, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
       {searching ? (
         <Animated.View
           key="search-row"
-          entering={enter}
-          exiting={exit}
+          entering={searchIn}
+          exiting={searchOut}
           style={styles.searchRow}>
           {/* NO arrow beside the field, and the field takes the whole row.
               Amit, 2026-09-07: "the reference app search icon is on left edge of the bar
@@ -182,8 +151,8 @@ export function TabTopBar({
       ) : (
         <Animated.View
           key="nav-row"
-          entering={enter}
-          exiting={exit}
+          entering={searchIn}
+          exiting={searchOut}
           style={styles.navRow}>
           <Text
             maxFontSizeMultiplier={

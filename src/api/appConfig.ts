@@ -129,19 +129,19 @@ export const FALLBACK_RECHARGE: RechargeConfig = {
   play_ucb_enabled: false,
 };
 
-export const FALLBACK_WALLET: WalletConfig = {
+const FALLBACK_WALLET: WalletConfig = {
   starting_grant_tokens: 0,
   daily_refill_enabled: false,
   daily_refill_tokens: 25,
 };
 
-export const FALLBACK_THRESHOLDS: ThresholdsConfig = {
+const FALLBACK_THRESHOLDS: ThresholdsConfig = {
   low_balance_tokens: 22,
   rate_limit_messages_per_min: 20,
   unanswered_refund_window_hours: 24,
 };
 
-export const FALLBACK_KILL_SWITCHES: KillSwitchesConfig = {
+const FALLBACK_KILL_SWITCHES: KillSwitchesConfig = {
   // Matches PAYMENTS_ENABLED and migration 041 — first-send opens Cashfree.
   // Flip off in admin kill_switches to hard-stop collections without a redeploy.
   payments_enabled: true,
@@ -172,7 +172,7 @@ export const FALLBACK_REPORT_TAXONOMY: ReportTaxonomyConfig = {
   ],
 };
 
-export const FALLBACK_AUTH_UI: AuthUiConfig = {
+const FALLBACK_AUTH_UI: AuthUiConfig = {
   phone_auth_tab_visible: true,
   google_auth_tab_visible: true,
 };

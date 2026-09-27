@@ -135,7 +135,7 @@ export function longDate(iso: string): string {
  * app's readers (India) use and the reference shows. The year is dropped because
  * the divider's relative label already fixes it in the current week.
  */
-export function shortDate(iso: string): string {
+function shortDate(iso: string): string {
   const d = new Date(iso);
   const day = d.toLocaleDateString(undefined, { day: 'numeric' });
   const month = d.toLocaleDateString(undefined, { month: 'long' });

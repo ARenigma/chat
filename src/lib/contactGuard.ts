@@ -60,7 +60,7 @@ const CODES: readonly ContactGuardError[] = [
   'IMAGES_DISABLED',
 ];
 
-export function isContactGuardError(code: unknown): code is ContactGuardError {
+function isContactGuardError(code: unknown): code is ContactGuardError {
   return typeof code === 'string' && (CODES as readonly string[]).includes(code);
 }
 

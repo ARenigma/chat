@@ -810,11 +810,14 @@ describe('the app is wired to the M3 transitions', () => {
     }
   });
 
-  it('animates the toolbar indicator instead of hard-toggling it', () => {
-    const bar = read('src/components/FloatingToolbar.tsx');
-    expect(bar).toContain('<Indicator active={on} />');
-    expect(bar).not.toContain('indicatorOn');
-    expect(bar).toContain("springTo(active ? 1 : 0.6, 'spatialFast')");
+  it('animates the bottom bar indicator by width, never scaleX', () => {
+    // Inverted in navigation step 8: FloatingToolbar's indicator scaled along X,
+    // which smears the pill's full corner into an oval. The bottom bar that
+    // replaced it grows the pill's WIDTH on spatialFast (animate-expo step 4).
+    const bar = stripComments(read('src/shell/bottom-bar/BottomBar.tsx'));
+    expect(bar).toContain('<Indicator selected={selected} />');
+    expect(bar).toContain("springTo(selected ? INDICATOR_WIDTH : 0, 'spatialFast')");
+    expect(bar).not.toContain('scaleX');
   });
 });
 
@@ -1395,7 +1398,6 @@ describe('component heights come from tokens', () => {
   // Rows/bars still holding a raw container height, migrated to layout tokens in
   // the component-heights pass. Grandfathered by style-block name per file.
   const ALLOW: Record<string, string[]> = {
-    'src/components/FloatingToolbar.tsx': ['slot'],
     'src/components/TopAppBar.tsx': ['slot'],
     'src/screens/PaymentSheet.tsx': ['row', 'webRow'],
     'src/screens/ProfileSetupScreen.tsx': ['avatarCell'],
@@ -1657,28 +1659,19 @@ describe('motion lives in one module', () => {
     expect(pressable).toMatch(/if \(isReduced\)/);
   });
 
-  it('exposes the transition lock as a value and a writer, and nothing more', () => {
+  it('holds no transition lock, and no subscription to one', () => {
     /*
-     * W5 #6 built this as a PAIR: a shared value, and an
-     * `onTransitionSettled` subscription so expensive invisible work could be
-     * deferred past the slide. All five of its subscribers were V1's — the
-     * chat wallpaper mount, the message-insert scroll, the emoji panel's
-     * grid, the transcript's photo decode — and they left with that screen on
-     * 2026-09-19.
-     *
-     * So the subscribe half went too, and the absence is asserted rather than
-     * simply not mentioned: a subscription primitive with no subscriber reads
-     * as a wired mechanism to the next person who finds it, which is how a
-     * deferral gets built on something that never fires.
-     *
-     * What is left is what App.tsx actually needs — a value it can read for
-     * `renderToHardwareTextureAndroid`, and one writer.
+     * W5 #6 built a lock (`transitioning` + `setTransitioning`) and a
+     * subscribe half (`onTransitionSettled`, `useAfterTransition`). The
+     * subscribers left with V1's screens on 2026-09-19, and the lock's one
+     * reader, App.tsx's JS push layer, left with react-navigation (step 7);
+     * step 8 deleted the lock. The native stack runs its own transition, so
+     * nothing here may claim to know when one is running.
      */
-    const motion = read('src/theme/motion.ts');
-    expect(motion).toContain('export const transitioning');
-    expect(motion).toContain('export function setTransitioning(');
-    expect(stripComments(motion)).not.toContain('onTransitionSettled');
-    expect(stripComments(motion)).not.toContain('useAfterTransition');
+    const motion = stripComments(read('src/theme/motion.ts'));
+    for (const name of ['transitioning', 'setTransitioning', 'onTransitionSettled', 'useAfterTransition']) {
+      expect(motion).not.toMatch(new RegExp(`\\b${name}\\b`));
+    }
   });
 
   it('animates bubbleArrive on timed curves, not springs', () => {
@@ -1708,8 +1701,8 @@ describe('motion lives in one module', () => {
      * (`ReduceMotion.System`). So a builder that moves something is checked for
      * both, and a builder that only fades is checked for `Never`.
      *
-     * Every exported transition builder — the `screen*`/`menu*`/`row*` worklets
-     * and the `topLevel*`/`fadeSwap*` consts — is inspected on its own, rather
+     * Every exported transition builder — the `menu*`/`row*` worklets and the
+     * `fadeSwap*` consts — is inspected on its own, rather
      * than counting occurrences against a comment that mentions the call
      * (which is a test grading prose).
      */
@@ -1717,8 +1710,8 @@ describe('motion lives in one module', () => {
     /*
      * Bounded by the NEXT top-level export, not by a magic character count. It
      * was `start + 700`, which grades position rather than content: adding a
-     * `requestAnimationFrame` wrapper inside `useScreenEnter` pushed its
-     * `withTiming` past the window and failed a gate about accessibility with a
+     * `requestAnimationFrame` wrapper inside a (since deleted) screen hook pushed
+     * its `withTiming` past the window and failed a gate about accessibility with a
      * change that had nothing to do with it.
      */
     const bodyOf = (name: string): string => {
@@ -1727,7 +1720,7 @@ describe('motion lives in one module', () => {
       const next = motion.indexOf('\nexport ', start + 1);
       return motion.slice(start, next === -1 ? undefined : next);
     };
-    const spatialBuilders = ['useScreenEnter', 'screenOut', 'menuIn', 'rowIn'];
+    const spatialBuilders = ['menuIn', 'rowIn'];
     for (const name of spatialBuilders) {
       // The fade is the fallback (Never); the movement collapses (System, via springTo).
       expect(bodyOf(name)).toContain('ReduceMotion.Never');
@@ -1738,7 +1731,7 @@ describe('motion lives in one module', () => {
     expect(springTo.slice(0, 400)).toContain('ReduceMotion.System');
 
     // The pure-fade builders must always run their fade.
-    for (const name of ['topLevelIn', 'topLevelOut', 'menuOut']) {
+    for (const name of ['menuOut']) {
       const decl = motion.slice(motion.indexOf(`export const ${name} =`));
       expect(decl.slice(0, 220)).toContain('ReduceMotion.Never');
     }
@@ -1933,12 +1926,6 @@ describe('accent budget is enforced in code, not just documented', () => {
     //                   is active, which is a state rather than an ornament, and
     //                   it is the only thing distinguishing the live row from
     //                   the four dimmed ones besides opacity
-    //   EmptyMark   , the warm one of the two bubbles on an empty state. Same
-    //                   wash and same argument as Avatar's `tone="warm"`, which
-    //                   is where this mark's colour came from: it marks *your*
-    //                   side of a conversation that has not started yet. The
-    //                   other bubble is neutral precisely so the pair reads as
-    //                   two people rather than as a decorative shape
     //   ProviderHomeScreen, the same count, for a member waiting on a reply
     //   TabBar      , the active destination's glyph and label. Added with the
     //                   two-tab bar, and it is a state rather than a decoration:
@@ -2085,16 +2072,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * — and it appears once, for one second, at the end of one flow.
        */
       'CompletionRow.tsx',
-      'EmptyMark.tsx',
-      /*
-       * The bottom bar's active tab (FloatingToolbar). It went coral → black slab
-       * → grey box, and both read badly on device (Amit, 2026-08-27). The selected
-       * destination is now a soft accent-tint pill with a coral filled glyph — the
-       * "you are here" signal, which is a state, exactly what the budget reserves
-       * the coral for. An icon-only tab bar (iMessage/the reference app) colours its chosen
-       * tab; this is that.
-       */
-      'FloatingToolbar.tsx',
       /*
        * v13 Home. Two accent uses, both states/actions: the featured hero's warm
        * field (the one designed coral surface on the screen, same class as the
@@ -2301,7 +2278,6 @@ describe('accent budget is enforced in code, not just documented', () => {
      */
     const TRANSCRIPT: Record<string, readonly string[]> = {
       'ChatMessageCellV2.tsx': ["'rgba(255,255,255,0.35)'"],
-      'BubbleTime.tsx': [],
       'ChatComposerV2.tsx': [],
       'ThreadBubble.tsx': [],
     };
@@ -3341,29 +3317,10 @@ describe("Pressable's android ripple capability", () => {
     expect(pressable).toContain('android_ripple');
   });
 
-  it('wires the FloatingToolbar nav tabs to the pill-shaped ripple', () => {
-    // M3 NavigationBar clips its state layer to the indicator pill, not the full
-    // slot. `highlight="ripple"` on the tab Pressable replaces the Reanimated
-    // state layer (layerOpacity forced to 0 in ripple mode) with the Android
-    // native ink wave, so the two effects do not stack.
-    //
-    // The Indicator component — the scaleX tonal fill — is independent of
-    // `highlight` and continues to mark which tab is selected. The ripple marks
-    // that a tap happened. They are complementary.
-    //
-    // https://m3.material.io/foundations/interaction/states/state-layers
-    const bar = read('src/components/FloatingToolbar.tsx');
-    expect(bar).toContain('highlight="ripple"');
-    // Confirm the pill (Indicator) is still present: the fill and the ripple
-    // are two separate concerns and the fill must not have been removed.
-    expect(bar).toContain('<Indicator active={on}');
-    // press="none" stays: a nav tab does not scale on touch.
-    expect(bar).toContain('press="none"');
-    // The layer is suppressed in ripple mode inside Pressable.tsx (layerOpacity=0),
-    // so we verify the Reanimated layer is not explicitly requested here — no
-    // onColor or layerColor prop that would re-introduce a stacked effect.
-    expect(bar).not.toMatch(/onColor.*nav-/);
-  });
+  // The FloatingToolbar ripple pin is deleted (navigation step 8). Reason: the
+  // Bluesky bar, owner decision 2026-09-25, answers a touch with the 0.90 press
+  // and `highlight="none"`; the ripple's removal is veto-able on the D3
+  // prototype (nav-migration §6).
 });
 
 describe('the search field is wide enough to read what you typed', () => {
@@ -3383,36 +3340,6 @@ describe('the search field is wide enough to read what you typed', () => {
     expect(container).toMatch(/\bflex: 1\b/);
     const input = bar.slice(bar.indexOf('input: {'));
     expect(input).toMatch(/\bflex: 1\b/);
-  });
-});
-describe('the transition lock has a write side', () => {
-  const motion = readFileSync(
-    join(__dirname, '..', 'src/theme/motion.ts'),
-    'utf8',
-  );
-
-  it('is raised by useScreenEnter, so no pushed screen can forget', () => {
-    // The lock is dead code without a writer: `transitioning` would read false
-    // forever and App's pushed layer would never be promoted to a hardware
-    // texture for the slide, while looking wired.
-    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
-    expect(hook).toContain('setTransitioning(true)');
-    expect(hook).toContain('runOnJS(setTransitioning)(false)');
-  });
-
-  it('lowers on the fade, and only when the animation actually finished', () => {
-    // The slide is a spring and settles asymptotically, so lowering on it would
-    // hold the lock past the point anything is visibly moving. An interrupted
-    // animation still calls back, and a lock left raised is worse than the jank
-    // it avoids.
-    const hook = motion.slice(motion.indexOf('export function useScreenEnter'));
-    const fade = hook.slice(hook.indexOf('progress.value = withTiming('));
-    expect(fade.indexOf('runOnJS(setTransitioning)(false)')).toBeGreaterThan(
-      -1,
-    );
-    expect(fade.indexOf('runOnJS(setTransitioning)(false)')).toBeLessThan(
-      fade.indexOf('shift.value = springTo'),
-    );
   });
 });
 

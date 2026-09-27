@@ -16,7 +16,7 @@ import { useNavigationState, useRoute } from '@react-navigation/native';
 import { TabFocusedContext } from './tabFocus';
 
 /** Screens that were overlays over a mounted chat in the old tree. */
-export const KEEP_ALIVE_ABOVE: ReadonlySet<string> = new Set(['Wallet', 'ChatRequest']);
+const KEEP_ALIVE_ABOVE: ReadonlySet<string> = new Set(['Wallet', 'ChatRequest']);
 
 export function useChatLive(): boolean {
   const tabFocused = useContext(TabFocusedContext);

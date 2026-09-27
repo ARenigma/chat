@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 /** Signed URL TTL for invoice PDFs — ten minutes, matching attachments. */
 const INVOICE_URL_TTL_SECONDS = 600;
 
-export const txKeys = {
+const txKeys = {
   list: ['transactions'] as const,
   bills: ['bills'] as const,
   invoiceUrl: (p: string | null | undefined) => ['invoice-url', p] as const,

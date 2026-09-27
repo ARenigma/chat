@@ -87,7 +87,7 @@ export interface BillingList {
  * it encodes — settled status decides, not kind, not the presence of an invoice
  * row — is the one that would silently regress.
  */
-export function billingList(rows: readonly BillingRow[] | undefined): BillingList {
+function billingList(rows: readonly BillingRow[] | undefined): BillingList {
   const all = rows ?? [];
   return {
     documents: all.filter(row => SETTLED_RECHARGE_STATUSES.has(row.status)),
@@ -105,7 +105,7 @@ export function billingList(rows: readonly BillingRow[] | undefined): BillingLis
  * "I tried to pay, where is my bill" — and answers it with "that payment did
  * not go through", which is the fact.
  */
-export function unsettledNote(count: number): string | null {
+function unsettledNote(count: number): string | null {
   if (count <= 0) {
     return null;
   }

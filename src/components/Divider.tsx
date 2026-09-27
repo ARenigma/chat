@@ -22,7 +22,7 @@ import { useStyles } from '../theme/ThemeProvider';
 type Variant = 'full' | 'inset';
 
 /** M3 list inset: 16 dp side pad + 40 dp avatar + 16 dp gap. */
-export const AVATAR_LIST_INSET = TOKENS.space.md + 40 + TOKENS.space.md;
+const AVATAR_LIST_INSET = TOKENS.space.md + 40 + TOKENS.space.md;
 
 interface Props {
   variant?: Variant;

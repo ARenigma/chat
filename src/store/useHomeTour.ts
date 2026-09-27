@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { storage } from '../lib/storage';
 
-export const HOME_TOUR_KEY = 'companion.homeTour.v1';
+const HOME_TOUR_KEY = 'companion.homeTour.v1';
 
 export type TourTargetId = 'wallet' | 'chats' | 'explore' | 'favourites' | 'home';
 

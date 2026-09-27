@@ -12,7 +12,7 @@ import type { ConversationSummary } from '../lib/database.types';
 type Threads = readonly ConversationSummary[] | undefined;
 
 /** Member Home: every unread message across every thread, on the side I am on. */
-export function totalUnread(threads: Threads): number {
+function totalUnread(threads: Threads): number {
   return (threads ?? []).reduce(
     (sum, c) =>
       sum + (c.i_am_member ? Number(c.unread_count_member) : Number(c.unread_count_provider)),
@@ -25,7 +25,7 @@ export function totalUnread(threads: Threads): number {
  * anything unread. Their own member-side threads are not somebody waiting on
  * them (the provider Chats badge; ProviderHomeScreen reads it since step 6).
  */
-export function waitingCount(threads: Threads): number {
+function waitingCount(threads: Threads): number {
   return (threads ?? []).filter(
     t => !t.i_am_member && Number(t.unread_count_provider) > 0,
   ).length;

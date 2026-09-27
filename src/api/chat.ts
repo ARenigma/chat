@@ -316,16 +316,16 @@ export function useMessages(conversationId: string | undefined) {
  * Editing and deleting a message (migration 103)
  * ------------------------------------------------------------------------- */
 
-export function editedAt(message: Message): string | null {
+function editedAt(message: Message): string | null {
   return message.edited_at ?? null;
 }
 
-export function deletedAt(message: Message): string | null {
+function deletedAt(message: Message): string | null {
   return message.deleted_at ?? null;
 }
 
 /** A tombstone: the sender took it back and both people can see that. */
-export function isDeleted(message: Message): boolean {
+function isDeleted(message: Message): boolean {
   return deletedAt(message) !== null;
 }
 

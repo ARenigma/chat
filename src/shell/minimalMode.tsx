@@ -114,7 +114,7 @@ export function useMinimalShellHidden(): boolean {
   return required(useContext(HiddenContext), 'useMinimalShellHidden');
 }
 
-export function useMinimalShellModeSetters(): MinimalModeSetters {
+function useMinimalShellModeSetters(): MinimalModeSetters {
   return required(useContext(SetContext), 'useMinimalShellModeSetters');
 }
 

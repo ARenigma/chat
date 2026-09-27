@@ -89,7 +89,7 @@ export const Chip = memo(ChipView);
  * androidx-main:
  *   compose/material3/.../tokens/FilterChipTokens.kt
  */
-export const FILTER_CHIP_MIN_HEIGHT = 32;
+const FILTER_CHIP_MIN_HEIGHT = 32;
 
 /**
  * `m3_chip_icon_size` — 18dp, agreed by `FilterChipTokens.IconSize` and by

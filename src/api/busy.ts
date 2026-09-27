@@ -24,7 +24,7 @@ export { withBusyWaits, type BusyWaits } from '../lib/busyWaits';
 /** The directory's poll, so busy state and the list it decorates move together. */
 const BUSY_WAITS_POLL_MS = 30_000;
 
-export const busyWaitsKey = (ids: readonly string[]) =>
+const busyWaitsKey = (ids: readonly string[]) =>
   ['providers', 'busy', ids.join(',')] as const;
 
 async function fetchBusyWaits(ids: readonly string[]): Promise<ProviderBusyWait[]> {

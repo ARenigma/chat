@@ -55,7 +55,7 @@ export const useFavorites = create<FavoritesState>((set, get) => ({
 
 // ─── Server-backed hooks (migration 125) ────────────────────────────────────
 
-export const favoriteKeys = {
+const favoriteKeys = {
   mine: ['my-favorites'] as const,
 };
 
