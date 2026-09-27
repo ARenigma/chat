@@ -10,13 +10,14 @@ import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
 import { AVAILABILITY, useAvailabilityToggle } from '../lib/providerAvailability';
-import { useConversations, useProfile } from '../api/chat';
+import { useConversations, useProfile, useSelfId } from '../api/chat';
 import { useConversationLabels } from '../api/conversationLabels';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
+import { YourStoryRow } from '../components/stories/StoryRail';
 
 /*
  * OWN CONSTANTS since 2026-09-08, where this used to import ROW_AVATAR and
@@ -216,6 +217,7 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
   );
 
   const separator = useCallback(() => <View style={styles.separator} />, [styles]);
+  const { data: selfId } = useSelfId();
 
   return (
     <View style={styles.root}>
@@ -260,6 +262,10 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
           />
         </View>
       </View>
+      {/* "Your story" (owner, 2026-09-26): the provider's own entry to stories,
+          fixed under the bar and above the list, so it is there whether or
+          not any chat is. */}
+      <YourStoryRow selfId={selfId} />
       {isPending ? (
         <View style={styles.centre}>
           <LoadingIndicator size={48} />
