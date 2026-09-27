@@ -95,6 +95,13 @@ interface AppState {
    * somebody is holding the mic.
    */
   peerActivity: PeerActivityState | null;
+  /**
+   * Every tagged conversation's activity at once. Two chats can be mounted
+   * (one per tab) and both keep their incoming channel, so a background
+   * chat's "typing" must not overwrite the focused one's: `peerActivity` is
+   * the latest writer, this is what a conversation reads.
+   */
+  peerActivityBy: Record<string, PeerActivity>;
   refillVisible: boolean;
   /**
    * A session that just ended and has not been rated yet (goal item 14).
@@ -217,6 +224,7 @@ const INITIAL = {
   balance: null,
   sending: false,
   peerActivity: null,
+  peerActivityBy: {},
   refillVisible: false,
   pendingReview: null,
   incomingRequest: null,
@@ -257,10 +265,19 @@ export const useStore = create<AppState>()(set => ({
   setSending: sending => set({ sending }),
   setPeerActivity: (activity, conversationId) =>
     set(state => {
+      const by = withActivity(state.peerActivityBy, conversationId, activity);
       if (activity !== null) {
-        return { peerActivity: { kind: activity, conversationId: conversationId ?? null } };
+        return {
+          peerActivity: { kind: activity, conversationId: conversationId ?? null },
+          peerActivityBy: by,
+        };
       }
-      return ownsPeerActivity(state.peerActivity, conversationId) ? { peerActivity: null } : state;
+      return {
+        peerActivity: ownsPeerActivity(state.peerActivity, conversationId)
+          ? null
+          : state.peerActivity,
+        peerActivityBy: by,
+      };
     }),
   setPlaying: playing => set({ playing }),
   /*
@@ -357,6 +374,7 @@ export const useStore = create<AppState>()(set => ({
       peerActivity: ownsPeerActivity(state.peerActivity, conversationId)
         ? null
         : state.peerActivity,
+      peerActivityBy: withActivity(state.peerActivityBy, conversationId, null),
       notice: null,
       playing: null,
       uploadProgress: {},
@@ -382,6 +400,25 @@ export const useStore = create<AppState>()(set => ({
  * always may; a named one only clears its own conversation's activity or an
  * untagged one.
  */
+/** The map with one conversation's activity set or cleared; untagged writes leave it alone. */
+function withActivity(
+  by: Record<string, PeerActivity>,
+  conversationId: string | null | undefined,
+  activity: PeerActivity | null,
+): Record<string, PeerActivity> {
+  if (conversationId === undefined || conversationId === null) {
+    return by;
+  }
+  if (activity !== null) {
+    return by[conversationId] === activity ? by : { ...by, [conversationId]: activity };
+  }
+  if (!(conversationId in by)) {
+    return by;
+  }
+  const { [conversationId]: _gone, ...rest } = by;
+  return rest;
+}
+
 function ownsPeerActivity(
   current: PeerActivityState | null,
   conversationId: string | null | undefined,
@@ -407,10 +444,15 @@ export const selectPeerActivity = (s: AppState): PeerActivity | null =>
 export const selectPeerActivityIn =
   (conversationId: string | undefined) =>
   (s: AppState): PeerActivity | null => {
-    const a = s.peerActivity;
-    if (a === null) {
-      return null;
+    // Its own entry first: a background chat's activity cannot hide it.
+    if (conversationId !== undefined) {
+      const own = s.peerActivityBy[conversationId];
+      if (own !== undefined) {
+        return own;
+      }
     }
-    return a.conversationId === null || a.conversationId === conversationId ? a.kind : null;
+    // An untagged writer (thread not known yet) still lights the reader.
+    const a = s.peerActivity;
+    return a !== null && a.conversationId === null ? a.kind : null;
   };
 export const selectIsLow = (s: AppState): boolean => isLowBalance(s.balance);

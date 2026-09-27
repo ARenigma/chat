@@ -364,6 +364,10 @@ export function CallScreen({
   const onEnd = useCallback(() => setEnding(true), []);
   const onEndedRef = useRef(onEnded);
   onEndedRef.current = onEnded;
+  // Order with the guard effect below does not matter: the host's `onEnded`
+  // sets its own `leaving` ref BEFORE it navigates, and its usePreventRemove
+  // callback lets the action through when `leaving` is set (CallRoute's header),
+  // so the call's own exit is never stopped by its own back guard.
   useEffect(() => {
     if (ending) {
       onEndedRef.current();

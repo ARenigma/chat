@@ -84,12 +84,14 @@ export function BirthDetailsSheet({ visible, onClose, onSend }: Props) {
   }, []);
 
   const placeError = birthPlaceProblem(place);
+  // No body while the place is invalid: its "no numbers" rule is also what
+  // keeps a phone number out of this card, so Send must honour it.
   const body = useMemo(
     () =>
-      date === null || (!timeUnknown && time === null)
+      date === null || (!timeUnknown && time === null) || placeError !== null
         ? null
         : formatBirthDetails({ date, time: timeUnknown ? null : time, place }),
-    [date, place, time, timeUnknown],
+    [date, place, placeError, time, timeUnknown],
   );
 
   const send = useCallback(() => {

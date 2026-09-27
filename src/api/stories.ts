@@ -276,7 +276,16 @@ function uploadStoryMedia(
       disarm();
       resolve(ok);
     };
-    xhr.onload = () => done(xhr.status >= 200 && xhr.status < 300);
+    // "Already exists" at THIS path is a success, not a conflict: the path is
+    // this story's own (its id, its owner), so the object can only be the
+    // earlier attempt of this same post whose response was lost. Without this
+    // a retry after a dropped response could never finish, since no x-upsert.
+    xhr.onload = () =>
+      done(
+        (xhr.status >= 200 && xhr.status < 300) ||
+          xhr.status === 409 ||
+          /already exists|duplicate/i.test(xhr.responseText ?? ''),
+      );
     xhr.onerror = () => done(false);
     xhr.onabort = () => done(false);
     xhr.send(form);

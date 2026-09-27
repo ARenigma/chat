@@ -78,6 +78,12 @@ interface Props {
  * who has never opened the photo manager, and then to a warm gradient with the
  * person's mark — the same honest fallback as the featured card on Home.
  */
+/*
+ * No back barrier, deliberately (navigation step 7): this is a native-stack
+ * route (a formSheet, or the full-page ProviderProfile), so hardware back is
+ * the stack's and pops it. Home's search back-guard (useSearchBack) is
+ * focus-scoped and is not registered while this screen covers Home.
+ */
 export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCall, sheet = false }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();

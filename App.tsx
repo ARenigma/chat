@@ -102,6 +102,7 @@ import { Button } from './src/components/Button';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
+import { chatRingDeadline } from './src/lib/chatRing';
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
 import { usePresenceHeartbeat } from './src/hooks/usePresenceHeartbeat';
 import { APPLY_INITIAL_STATE, RoutesContainer, stripForRestore } from './src/Navigation';
@@ -1368,14 +1369,11 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
         conversationId: request.conversationId,
         peerId: request.initiatorId,
         peerName,
-        // Local receipt time: avoids device/server clock skew (A8, nav-migration §3).
         // An ABSOLUTE deadline, on purpose, even for a request that queues
-        // behind another ring: the server request expires at that same moment,
-        // so a queued one is promoted with only the seconds it really has left,
-        // and one that ran out while waiting is skipped (store.test "skips a
-        // queued request that expired while it waited"). A fresh countdown on
-        // promotion would offer an Accept the server has already refused.
-        expiresAt: Date.now() + CHAT_RING_SECONDS * 1000,
+        // behind another ring: a queued one is promoted with only the seconds
+        // it really has left, and one that ran out while waiting is skipped
+        // (store.test "skips a queued request that expired while it waited").
+        expiresAt: chatRingDeadline(request.expiresAt, request.createdAt, CHAT_RING_SECONDS),
         createdAt: request.createdAt,
       });
     },

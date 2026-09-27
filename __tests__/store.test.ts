@@ -69,6 +69,18 @@ describe('useStore', () => {
     expect(selectPeerActivityIn('conv-b')(useStore.getState())).toBe('recording');
   });
 
+  it('keeps a focused chat typing when a background chat starts typing too', () => {
+    // Both chats keep their incoming channel (review 2026-09-27): B's event
+    // must not erase A's indicator.
+    useStore.getState().setPeerActivity('typing', 'conv-a');
+    useStore.getState().setPeerActivity('recording', 'conv-b');
+    expect(selectPeerActivityIn('conv-a')(useStore.getState())).toBe('typing');
+    expect(selectPeerActivityIn('conv-b')(useStore.getState())).toBe('recording');
+    useStore.getState().setPeerActivity(null, 'conv-b');
+    expect(selectPeerActivityIn('conv-a')(useStore.getState())).toBe('typing');
+    expect(selectPeerActivityIn('conv-b')(useStore.getState())).toBeNull();
+  });
+
   it('owner-checks a clear that names a conversation', () => {
     useStore.getState().setPeerActivity('typing', 'conv-a');
     useStore.getState().setPeerActivity(null, 'conv-b');

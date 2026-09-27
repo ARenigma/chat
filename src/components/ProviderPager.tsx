@@ -160,6 +160,9 @@ export function ProviderPager({
         }
       },
       jumpTo: (index: number) => {
+        // The screen's own move (Favourites opening on the tab that has
+        // someone in it): its one scroll frame must reach the indicator.
+        didInit.set(true);
         pagerView.current?.setPageWithoutAnimation(index);
       },
     }),

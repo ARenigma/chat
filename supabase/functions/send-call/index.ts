@@ -229,8 +229,8 @@ Deno.serve(async request => {
    * (_shared/names.ts). From `profiles.role`, not the directory: a provider the
    * directory hides is still a provider. A failed lookup FAILS CLOSED: every
    * sender is named by first name, so a DB hiccup can never put a provider's
-   * full name on a lock screen (a member's handle is one token, so it is
-   * unchanged by the rule).
+   * full name on a lock screen. A member's two-word handle then shows its
+   * first word only, which reveals nothing more than the handle does.
    */
   const peerIds = [...new Set(pending.map(r => r.peer_id))];
   const { data: roles, error: roleError } = await db

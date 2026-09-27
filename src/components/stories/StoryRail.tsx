@@ -66,6 +66,9 @@ function StoryRailView({ providerIds }: RailProps) {
   const seen = useSeenStoryIds();
   const providers = useProviders();
 
+  // `Date.now()` inside a memo is enough: the server drops an expired story
+  // from the live query, which refetches every 60 s, so an expiry arrives as
+  // new `live.data` and recomputes this within a minute.
   const groups = useMemo(() => {
     const all = groupStories(live.data ?? [], Date.now()).filter(g => providerIds.has(g.providerId));
     return orderRail(all, seen.data ?? new Set());
