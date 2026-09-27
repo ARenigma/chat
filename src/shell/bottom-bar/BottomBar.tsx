@@ -36,7 +36,7 @@ import { Icon, type IconName } from '../../components/Icon';
 import { Pressable } from '../../components/Pressable';
 import { TourAnchor } from '../../components/TourAnchor';
 import { useDedupe } from '../../hooks/useDedupe';
-import { emitSoftReset } from '../../lib/events';
+import { emitSoftReset, emitTabPress } from '../../lib/events';
 import { getTabState, TabState } from '../../lib/routes/helpers';
 import type { TourTargetId } from '../../store/useHomeTour';
 import { useShellLayout } from '../shellLayout';
@@ -137,6 +137,9 @@ function BottomBarView({ state, navigation, tabs }: Props) {
     (tab: TabRootName) => {
       const current = navigation.getState();
       const tabState = getTabState(current, tab);
+      // Before the navigation below, so a screen closes its search (or other
+      // transient state) as its tab comes back, not after it has been seen.
+      emitTabPress(tab);
       if (tabState === TabState.InsideAtRoot) {
         emitSoftReset();
       } else if (tabState === TabState.Inside) {

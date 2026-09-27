@@ -46,3 +46,29 @@ export function listenSoftReset(fn: Listener): UnlistenFn {
     softResetListeners.delete(fn);
   };
 }
+
+// ---------------------------------------------------------------------------
+// Tab press
+// ---------------------------------------------------------------------------
+
+type TabListener = (tab: string) => void;
+const tabPressListeners = new Set<TabListener>();
+
+/**
+ * Fires on EVERY bottom-bar press, with the tab pressed: a re-tap, a pop to
+ * root, or arriving from another tab. The soft reset above is only the re-tap
+ * at the root; this is what lets a screen close transient state (search) the
+ * moment its own tab is pressed, whichever of the three it was.
+ */
+export function emitTabPress(tab: string): void {
+  for (const fn of tabPressListeners) {
+    fn(tab);
+  }
+}
+
+export function listenTabPress(fn: TabListener): UnlistenFn {
+  tabPressListeners.add(fn);
+  return () => {
+    tabPressListeners.delete(fn);
+  };
+}

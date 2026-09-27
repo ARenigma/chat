@@ -1,8 +1,14 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  Keyboard,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useReducedMotion, useSharedValue } from 'react-native-reanimated';
 import { useSoftReset } from '../lib/routes/useSoftReset';
+import { useTabPress } from '../lib/routes/useTabPress';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -97,11 +103,15 @@ export function FavouritesScreen({ onOpenProvider, focused = true }: Props) {
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const closeSearch = useCallback(() => {
+    // The IME leaves with search, on every exit (as on Home).
+    Keyboard.dismiss();
     setQuery('');
     setSearching(false);
   }, []);
   // Hardware back leaves search first, as on Home (`useSearchBack`, nav §4).
   useSearchBack(searching, closeSearch);
+  // Pressing Favourites leaves search, as pressing Home does (2026-09-27).
+  useTabPress('Favourites', closeSearch);
   // One list per page, each filtered by its own category and the one query.
   const favouritesByCategory = useMemo(() => {
     const needle = query.trim().toLowerCase();

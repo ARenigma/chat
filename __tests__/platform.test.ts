@@ -3213,7 +3213,7 @@ describe('re-selecting a tab scrolls its root to the top (nav step 9)', () => {
     const src = read(file);
     expect(src).toContain('useSoftReset(');
     // Every scroll it triggers honours reduced motion.
-    expect(src).toMatch(/animated: !reducedMotion/);
+    expect(src).toMatch(/animated(: | = )!reducedMotion/);
     expect(src).not.toMatch(/animated: true/);
   });
 
@@ -3230,5 +3230,24 @@ describe('re-selecting a tab scrolls its root to the top (nav step 9)', () => {
     expect(read('src/components/ProviderTypeTabs.tsx')).toContain(
       'onPress={() => (c === value ? emitSoftReset() : onSelect(c))}',
     );
+  });
+});
+
+describe('pressing a tab leaves its search (2026-09-27)', () => {
+  it.each([
+    ['src/screens/HomeScreen.tsx', 'Home'],
+    ['src/screens/FavouritesScreen.tsx', 'Favourites'],
+    ['src/screens/SettingsSheet.tsx', 'You'],
+  ])('%s closes search when %s is pressed, and takes the keyboard with it', (file, tab) => {
+    const src = read(file);
+    expect(src).toContain(`useTabPress('${tab}', closeSearch)`);
+    const close = src.slice(src.indexOf('const closeSearch = useCallback('));
+    expect(close.slice(0, 400)).toContain('Keyboard.dismiss()');
+  });
+
+  it('the bar announces every press before it navigates', () => {
+    const bar = read('src/shell/bottom-bar/BottomBar.tsx');
+    expect(bar.indexOf('emitTabPress(tab)')).toBeGreaterThan(-1);
+    expect(bar.indexOf('emitTabPress(tab)')).toBeLessThan(bar.indexOf('emitSoftReset();'));
   });
 });

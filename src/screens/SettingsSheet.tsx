@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   Image,
+  Keyboard,
   Linking,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { useSoftReset } from '../lib/routes/useSoftReset';
+import { useTabPress } from '../lib/routes/useTabPress';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 import { useSearchBack } from '../hooks/useSearchBack';
 import { SCROLL_PHYSICS } from '../lib/scroll';
@@ -279,10 +281,14 @@ export function SettingsSheet({
   const barOffset = useBottomBarOffset(TOKENS.space.md);
   // Hardware back leaves search first, as on Home (`useSearchBack`, nav §4).
   const closeSearch = useCallback(() => {
+    // The IME leaves with search, on every exit (as on Home).
+    Keyboard.dismiss();
     setQuery('');
     setSearching(false);
   }, []);
   useSearchBack(searching, closeSearch);
+  // Pressing You leaves search, as pressing Home does (2026-09-27).
+  useTabPress('You', closeSearch);
   const needle = query.trim().toLowerCase();
   const shows = (rowTitle: string) =>
     needle === '' || rowTitle.toLowerCase().includes(needle);

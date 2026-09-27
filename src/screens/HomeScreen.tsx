@@ -18,6 +18,7 @@ import { presenceForSpeech, readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import Animated, { useReducedMotion, useSharedValue } from 'react-native-reanimated';
 import { useSoftReset } from '../lib/routes/useSoftReset';
+import { useTabPress } from '../lib/routes/useTabPress';
 import { contentColumnWidth } from '../lib/windowSize';
 import { sizedStorageImageUri } from '../lib/storageImage';
 import { avatarImageSource } from '../lib/clayAvatars';
@@ -595,18 +596,15 @@ export function HomeScreen({
   useSearchBack(searching, closeSearch);
 
   /*
-   * Re-tapping Home at its root (step 9, nav-migration §6). Searching, the
-   * results go back to the top; otherwise the directory refetches, and the
-   * settled page scrolls itself up (DirectoryPage's own listener).
+   * Pressing Home, from anywhere, leaves search (Amit, 2026-09-27: "search
+   * should get dismissed if home is clicked"): the member asked for Home, and
+   * Home is the directory. A re-tap at the root then also refetches the
+   * directory, and the settled page scrolls itself up (DirectoryPage's own
+   * listener, step 9).
    */
-  const reducedMotion = useReducedMotion();
-  const searchListRef = useRef<FlashListRef<ProviderSummary> | null>(null);
+  useTabPress('Home', closeSearch);
   useSoftReset(() => {
-    if (searching) {
-      searchListRef.current?.scrollToOffset({ offset: 0, animated: !reducedMotion });
-    } else {
-      void refetchProviders();
-    }
+    void refetchProviders();
   });
 
   const loading = convosPending || providersPending;
@@ -932,7 +930,6 @@ export function HomeScreen({
             entering={searchResultsIn}
             exiting={searchResultsOut}>
             <FlashList
-              ref={searchListRef}
               data={results}
               keyExtractor={p => p.id}
               renderItem={renderSearchRow}
