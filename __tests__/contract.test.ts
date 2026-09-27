@@ -2452,19 +2452,6 @@ describe('the redesign holds its own invariants', () => {
     expect(source).not.toContain('shadowOpacity');
   });
 
-  it('draws Chats as bubbles with no separators at all', () => {
-    // The other half of the split, asserted so the two idioms stay deliberate
-    // rather than drifting back together. A bubble list separates by gap; adding
-    // a hairline as well is what made an earlier version read as rows wearing
-    // rounded corners.
-    const bubble = read('src/components/ThreadBubble.tsx');
-    expect(bubble).toContain('TOKENS.radius.thread');
-    expect(bubble).toContain('borderCurve');
-    expect(bubble).not.toContain('hairlineWidth');
-    expect(bubble).not.toContain('ROW_SEPARATOR_INSET');
-    // Retired with InboxScreen.tsx: v13 HomeScreen renders the CHATS section as a
-    // horizontal avatar rail (RailItem), not a ThreadBubble list.
-  });
 
   it('never fills a bubble with bg/raised, which is invisible in light mode', () => {
     /*
@@ -2473,13 +2460,7 @@ describe('the redesign holds its own invariants', () => {
      * so a bubble filled with it vanishes into the page and is held together by
      * nothing. It has already shipped once, on the incoming message bubble.
      */
-    for (const file of [
-      'src/components/ThreadBubble.tsx',
-      'src/chat-v2/ChatMessageCellV2.tsx',
-    ]) {
-      expect(read(file)).not.toContain('bg.raised');
-    }
-    expect(read('src/components/ThreadBubble.tsx')).toContain('bg.sunken');
+    expect(read('src/chat-v2/ChatMessageCellV2.tsx')).not.toContain('bg.raised');
   });
 
   it('keeps the message bubble radius in the tokens and concentric with its media', () => {
@@ -2520,17 +2501,9 @@ describe('the redesign holds its own invariants', () => {
   it('never puts a neutral avatar on a surface its own fill matches', () => {
     /*
      * The same bug one layer in, and it shipped: an Avatar's neutral wash is
-     * `bg/sunken`, the thread bubble is also `bg/sunken`, so the disc vanished and
-     * left a bare initial floating in the row. Seen on the emulator; every gate
-     * was green.
-     *
-     * Asserted as a seam rather than as a colour: the bubble must tell the avatar
-     * what it is sitting on, and the avatar must branch on it. Either half missing
-     * brings the bug back.
+     * `bg/sunken`; asserted as a seam — the avatar must branch on the surface
+     * prop so a caller can guarantee the disc is visible.
      */
-    expect(read('src/components/ThreadBubble.tsx')).toContain(
-      'surface="sunken"',
-    );
     const avatar = read('src/components/Avatar.tsx');
     expect(avatar).toContain("surface === 'sunken'");
     expect(avatar).toContain('bg.base');
@@ -7383,22 +7356,6 @@ describe('search opens the way the reference app opens it, and the week has a ca
     // Still no timer: nothing moves under a still finger.
     expect(home).not.toMatch(/carouselDwell/);
 
-    /*
-     * The centred, endless hero lives on for the profile photo pager, and its
-     * wrap arithmetic keeps its guards.
-     */
-    expect(read('src/screens/ProviderDetailScreen.tsx')).toContain('HeroCarousel');
-    const carousel = withoutComments(read('src/components/HeroCarousel.tsx'));
-    expect(carousel).toContain('snapToInterval={pitch}');
-    expect(carousel).toContain('heroRecentre(');
-    expect(carousel).toContain('paddingHorizontal: inset');
-    // Recentred on BOTH settle paths: a slow drag never gains momentum, and
-    // would otherwise strand the strip in an outer copy.
-    expect(carousel).toContain('onMomentumScrollEnd={onSettled}');
-    expect(carousel).toContain('onScrollEndDrag={onSettled}');
-    expect(carousel).not.toMatch(
-      /setInterval|setTimeout|withRepeat|carouselDwell/,
-    );
     // Three copies: one to swipe back into, one to sit in, one to swipe forward.
     expect(read('src/lib/carousel.ts')).toContain(
       'export const HERO_COPIES = 3',

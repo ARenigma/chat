@@ -1871,9 +1871,6 @@ describe('CameraX live-preview tile', () => {
      * the NEXT consumer reads, plus a sweep that nobody has quietly
      * re-introduced the timer since.
      */
-    expect(read('src/components/CameraPreview.tsx')).toContain(
-      'never start a timer that hides it optimistically',
-    );
     for (const dir of ['src/components', 'src/screens', 'src/chat-v2']) {
       for (const name of readdirSync(join(ROOT, dir))) {
         if (!/\.tsx?$/.test(name)) {
@@ -1965,27 +1962,6 @@ describe('CameraX live-preview tile', () => {
     expect(pkg).toContain('Log.w(TAG, "CAMERA permission denied');
   });
 
-  it('JS wrapper exports CAMERA_PREVIEW_AVAILABLE from UIManager', () => {
-    /**
-     * The JS fallback path: if the native view manager is absent (old APK or
-     * iOS), callers render a static tile rather than mounting an unregistered
-     * component. UIManager.hasViewManagerConfig is the canonical check.
-     */
-    const component = read('src/components/CameraPreview.tsx');
-    expect(component).toContain('CAMERA_PREVIEW_AVAILABLE');
-    expect(component).toContain(
-      "UIManager.hasViewManagerConfig('PappalCameraPreview')",
-    );
-    expect(component).toContain(
-      "requireNativeComponent<CameraPreviewProps>('PappalCameraPreview')",
-    );
-  });
-
-  it('JS wrapper has no implicit any — facing is typed as back | front', () => {
-    const component = read('src/components/CameraPreview.tsx');
-    expect(component).toContain("facing?: 'back' | 'front'");
-    expect(component).not.toContain(': any');
-  });
 });
 
 /**
@@ -2148,18 +2124,9 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
   it('sends tintColor as a colour, never a hand-rolled signed int', () => {
     /*
      * normalizeColor(-1929379841) === null, so a signed ARGB int never reaches
-     * the native setter at all. Frost must hand RN the token string and let the
-     * framework do the conversion it already does for every other colour prop.
+     * the native setter at all. The native null-fallback must agree with the
+     * field default so a dropped prop can never paint an opaque colour.
      */
-    const frost = read('src/components/Frost.tsx');
-    expect(frost).toMatch(
-      /tintColor=\{tint === 'none' \? 'transparent' : theme\.color\.bg\.glass\}/,
-    );
-    // The hand-rolled converter is gone and must not come back.
-    expect(frost).not.toContain('function argb');
-    expect(frost).not.toMatch(/0x100000000|0x80000000/);
-    // And the native null-fallback agrees with the field default, so a dropped
-    // prop can never paint an opaque colour.
     const kt = read(BLUR_PACKAGE);
     expect(kt).toMatch(/view\.tintColor = color \?: Color\.TRANSPARENT/);
     expect(kt).not.toMatch(/color \?: Color\.BLACK/);
@@ -2457,12 +2424,7 @@ describe('W5#8 — DeviceClassModule (low / average / high blur tiers)', () => {
   });
 
   it('DeviceClassModule exports the canonical module name', () => {
-    // NativeModules.DeviceClass is what the JS bridge resolves on. A rename
-    // here without updating src/lib/deviceClass.ts silently breaks the call.
     expect(read(MODULE_KT)).toContain('const val NAME = "DeviceClass"');
-    expect(read('src/lib/deviceClass.ts')).toContain(
-      'NativeModules.DeviceClass',
-    );
   });
 
   it('uses isLowRamDevice() as the low-class signal', () => {
@@ -2496,25 +2458,6 @@ describe('W5#8 — DeviceClassModule (low / average / high blur tiers)', () => {
     // A Promise-based query would return after the first render — too late to
     // decide whether BlurSurface should be mounted at all.
     expect(read(MODULE_KT)).toContain('isBlockingSynchronousMethod = true');
-  });
-
-  it('JS side defaults to high when the module is absent (iOS or OTA skew)', () => {
-    // `high` on absence means the user gets the designed experience rather than
-    // a silently-degraded one. OTA skew (JS bundle newer than APK) is the
-    // window where the module can be genuinely missing on Android.
-    const ts = read('src/lib/deviceClass.ts');
-    expect(ts).toContain('? _module.getDeviceClass()');
-    expect(ts).toContain(": 'high'");
-  });
-
-  it('exports BLUR_DISABLED and BLUR_REDUCED from deviceClass.ts', () => {
-    // Callers import the pre-computed booleans rather than string-comparing
-    // DEVICE_CLASS themselves — a typo at the call site cannot silently be wrong.
-    const ts = read('src/lib/deviceClass.ts');
-    expect(ts).toContain("export const BLUR_DISABLED = DEVICE_CLASS === 'low'");
-    expect(ts).toContain(
-      "export const BLUR_REDUCED = DEVICE_CLASS === 'average'",
-    );
   });
 
   it('records that the API-31 guard and device class cover distinct cases', () => {

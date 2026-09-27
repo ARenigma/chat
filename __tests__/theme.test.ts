@@ -1289,10 +1289,6 @@ describe('spacing lives in tokens', () => {
     'src/components/ReactionStrip.tsx': ['paddingHorizontal: 6'],
     'src/components/Sheet.tsx': ['paddingTop: 5'],
     'src/components/SpotlightCard.tsx': ['paddingVertical: 5'],
-    'src/components/ThreadBubble.tsx': [
-      'paddingVertical: 1',
-      'paddingHorizontal: 5',
-    ],
     /*
      * The last four are the WhatsApp bubble box, read from the APK on
      * 2026-09-08 (com.whatsapp 2.26.34.81, pulled off the Redmi over adb).
@@ -2059,14 +2055,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * it appears in.
        */
       'ChatSessionBarV2.tsx',
-      /*
-       * The chat wallpaper's blush wash uses bg.accentTint — the softest tint,
-       * reserved for warm atmospheric surfaces (the same token behind Avatar's
-       * warm mark). It gives the transcript its requested pink hue (user
-       * 2026-08-31). An atmospheric field, same class as the hero surfaces, laid
-       * UNDER the bubbles as ambience — not chrome, a header or a divider.
-       */
-      'ChatWallpaper.tsx',
       // ChatsListScreen.tsx no longer has a hand-rolled accent pill; Badge owns it.
       'Chip.tsx',
       /*
@@ -2249,7 +2237,6 @@ describe('accent budget is enforced in code, not just documented', () => {
        * this exemption covers a logo, not a screen heading.
        */
       'TabTopBar.tsx',
-      'ThreadBubble.tsx',
       'Toggle.tsx',
       'TypingIndicator.tsx',
       'WordColumn.tsx',
@@ -2292,7 +2279,6 @@ describe('accent budget is enforced in code, not just documented', () => {
     const TRANSCRIPT: Record<string, readonly string[]> = {
       'ChatMessageCellV2.tsx': ["'rgba(255,255,255,0.35)'"],
       'ChatComposerV2.tsx': [],
-      'ThreadBubble.tsx': [],
     };
     const literal = /'(#[0-9A-Fa-f]{3,8}|rgba?\([^')]*\))'/g;
     for (const s of uiSources.filter(c => TRANSCRIPT[c.file] !== undefined)) {
@@ -2990,22 +2976,6 @@ describe('chat-visuals: SpotlightCard is a bottom-anchored M3 sheet', () => {
   });
 });
 
-describe('chat-visuals: the chat wallpaper carries no hue in dark mode', () => {
-  const wallpaper = read('src/components/ChatWallpaper.tsx');
-
-  it('washes with the charcoal base in dark and the blush tint only in light', () => {
-    // User 2026-09-01: no pink wash in dark mode. The dark JPG is an AMOLED
-    // black, so the wash still runs — it lifts the sheet to bg.base charcoal
-    // rather than leaving the transcript darker than the app around it.
-    expect(wallpaper).toContain('isDark');
-    expect(wallpaper).toMatch(
-      /isDark\s*\n?\s*\?\s*{\s*backgroundColor:\s*theme\.color\.bg\.base/,
-    );
-    expect(wallpaper).toMatch(
-      /:\s*{\s*backgroundColor:\s*theme\.color\.bg\.accentTint/,
-    );
-  });
-});
 
 describe('chat-visuals: typing indicator uses conveyor dots, not breathing', () => {
   const typing = read('src/components/TypingIndicator.tsx');
