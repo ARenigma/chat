@@ -1,11 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "index.js",
-    "App.tsx",
-    "__tests__/**/*.{ts,tsx}",
-    "scripts/**/*.{mjs,js}"
-  ],
+  "entry": ["App.tsx", "__tests__/**/*.{ts,tsx}", "scripts/**/*.{mjs,js}"],
   "project": ["src/**/*.{ts,tsx}"],
   "ignore": [
     "admin/**",
@@ -16,10 +11,19 @@
     "src/lib/*.generated.ts"
   ],
   "ignoreDependencies": [
-    "@react-native/.*",
     "@babel/.*",
     "react-native-.*",
-    "@commitlint/.*"
+    "@emoji-mart/data",
+    "@phosphor-icons/core",
+    "@env"
   ],
-  "ignoreBinaries": ["uvx"]
+  "ignoreBinaries": [
+    "uvx",
+    "maestro",
+    "psql",
+    "adb",
+    "sips",
+    "supabase",
+    "sentry-cli"
+  ]
 }

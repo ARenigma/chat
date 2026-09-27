@@ -92,6 +92,7 @@
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-agora": "^4.6.4",
+    "cashfree-pg-api-contract": "2.1.1",
     "react-native-cashfree-pg-sdk": "^2.4.0",
     "react-native-gesture-handler": "^3.2.1",
     "react-native-get-random-values": "^2.0.0",
