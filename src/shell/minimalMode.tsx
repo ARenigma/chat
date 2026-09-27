@@ -29,7 +29,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
+  
   useMemo,
   useRef,
   useState,
@@ -116,18 +116,6 @@ export function useMinimalShellHidden(): boolean {
 
 function useMinimalShellModeSetters(): MinimalModeSetters {
   return required(useContext(SetContext), 'useMinimalShellModeSetters');
-}
-
-/** Hides the bar while the calling component is mounted. */
-export function useEnableMinimalShellMode({ enabled }: { enabled: boolean }): void {
-  const setters = useMinimalShellModeSetters();
-  useEffect(() => {
-    if (!enabled) {
-      return undefined;
-    }
-    setters.add();
-    return () => setters.subtract();
-  }, [enabled, setters]);
 }
 
 /**

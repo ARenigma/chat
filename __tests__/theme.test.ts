@@ -1285,7 +1285,6 @@ describe('spacing lives in tokens', () => {
     ],
     'src/components/CallingDots.tsx': ['marginLeft: 6'],
     'src/components/NoticeBar.tsx': ['paddingVertical: 10'],
-    'src/components/ProviderCard.tsx': ['gap: 3'],
     'src/components/ReactionStrip.tsx': ['paddingHorizontal: 6'],
     'src/components/Sheet.tsx': ['paddingTop: 5'],
     'src/components/SpotlightCard.tsx': ['paddingVertical: 5'],
@@ -1673,25 +1672,6 @@ describe('motion lives in one module', () => {
     for (const name of ['transitioning', 'setTransitioning', 'onTransitionSettled', 'useAfterTransition']) {
       expect(motion).not.toMatch(new RegExp(`\\b${name}\\b`));
     }
-  });
-
-  it('animates bubbleArrive on timed curves, not springs', () => {
-    // Rule (motion-system.md 2026-09-06): a peer's message arriving from the
-    // network has no gesture velocity — a spring would overshoot for no reason
-    // the user caused. Re-cut to 120ms fade (listAdd) + 250ms keyboard-cubic
-    // translate (medium1). Scale removed: a scale with no gesture behind it
-    // reads as the animation shrinking the object, not as mass or direction.
-    const motion = read('src/theme/motion.ts');
-    const start = motion.indexOf('export function bubbleArrive(');
-    const block = motion.slice(start, start + 800);
-    expect(block).not.toContain('withSpring');
-    expect(block).toContain('DURATION.listAdd');
-    expect(block).toContain('KEYBOARD_CUBIC');
-    expect(block).toContain('M3.duration.medium1');
-    // The fade is the accessible fallback and must always run.
-    expect(block).toContain('ReduceMotion.Never');
-    // The translate collapses under reduce-motion.
-    expect(block).toContain('ReduceMotion.System');
   });
 
   it('honours the OS reduce-motion setting on every transition builder', () => {

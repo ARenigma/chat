@@ -25,9 +25,9 @@ import { closeAllActiveElements } from './activeElements';
  * `BOOT` and adopted when the restored session reaches `ready`.
  * nav-migration §3.
  */
-export const BOOT: unique symbol = Symbol('BOOT');
+const BOOT: unique symbol = Symbol('BOOT');
 
-export type IntentOwner = string | null | typeof BOOT;
+type IntentOwner = string | null | typeof BOOT;
 
 export type NavIntent =
   | { type: 'incomingCall'; peerId: string; callId: string; medium: 'voice' | 'video' }

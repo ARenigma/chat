@@ -15,7 +15,7 @@ import type {
 } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-export type { NativeStackScreenProps } from '@react-navigation/native-stack';
+;
 
 /** Call medium — matches the database type in src/lib/database.types.ts. */
 export type CallMedium = 'voice' | 'video';

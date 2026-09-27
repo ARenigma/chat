@@ -119,7 +119,7 @@ export function replyLatency(seconds: number | null): string | null {
  * is what `Avatar`'s deliberately-closed size union carries, and 76 already has
  * the hand-tuned FONT and DOT entries a new value would have to invent.
  */
-export const ROW_AVATAR = 76;
+const ROW_AVATAR = 76;
 
 /**
  * The ring, which Astrotalk has and this row did not.
@@ -187,7 +187,7 @@ const ROW_LINE_GAP = TOKENS.space['2xs'];
  * one really is tappable, so the 48 applies with full force. A 36dp button is
  * the reference being wrong.
  */
-export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
+const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
 
 /**
  * The CTA's DRAWN height: 33dp, Bluesky's small button (Amit, 2026-09-26:
@@ -218,7 +218,7 @@ export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget;
  * target stays 48, invisible, through the slot and hitSlop.
  */
 export const ROW_CTA_VISUAL_HEIGHT = 36;
-export const ROW_CTA_WIDTH = 108;
+const ROW_CTA_WIDTH = 108;
 
 /**
  * How far the CTA slot's 48dp TARGET box bleeds past its 33dp DRAWING, top
@@ -354,8 +354,8 @@ const GEIST_CAP_HEIGHT = 0.71;
 const SEAL_INK_BOTTOM = 0.052;
 const SEAL_INK_TOP = 0.948;
 const NAME_CAP_HEIGHT = GEIST_CAP_HEIGHT * TOKENS.typography.textXlSemiBold.fontSize;
-export const VERIFIED_SEAL_PX = Math.round(NAME_CAP_HEIGHT / (SEAL_INK_TOP - SEAL_INK_BOTTOM));
-export const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE;
+const VERIFIED_SEAL_PX = Math.round(NAME_CAP_HEIGHT / (SEAL_INK_TOP - SEAL_INK_BOTTOM));
+const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE;
 
 /**
  * ...AND IT SITS ON THE BASELINE, not in the middle of the line box.
@@ -411,7 +411,7 @@ export const ROW_CARD_GAP = TOKENS.space.sm;
  * change to the type scale fails there rather than silently mis-hinting the
  * list.
  */
-export const PROVIDER_ROW_RIGHT_COLUMN =
+const PROVIDER_ROW_RIGHT_COLUMN =
   TOKENS.typography.textXlSemiBold.lineHeight +
   ROW_LINE_GAP +
   TOKENS.typography.bodySmall.lineHeight +
@@ -450,7 +450,7 @@ const ROW_LAST_LINE_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CATEGORY_LINE / 2;
  * under its price. The busy wait line hangs into the same space on the right
  * (see ROW_BUSY_LINE_BOTTOM).
  */
-export const PROVIDER_ROW_LEFT_COLUMN = Math.max(
+const PROVIDER_ROW_LEFT_COLUMN = Math.max(
   // Aligned: the star row's centre on the last text line's.
   ROW_LAST_LINE_CENTRE +
     STARS_HEIGHT / 2 +
@@ -465,20 +465,6 @@ export const PROVIDER_ROW_LEFT_COLUMN = Math.max(
 );
 
 /**
- * Where the busy wait line ends, from the top of the right column: the tail's
- * centre plus half the button, the gap and the textXs line,
- * (107 - 39 / 2) + 33 / 2 + 2 + 15 = 121. The test holds it inside the card's
- * content height, so the line can hang out of the text column without ever
- * hanging out of the card.
- */
-export const ROW_BUSY_LINE_BOTTOM =
-  PROVIDER_ROW_RIGHT_COLUMN -
-  ROW_TAIL / 2 +
-  ROW_CTA_VISUAL_HEIGHT / 2 +
-  BUSY_LINE_GAP +
-  TOKENS.typography.textXs.lineHeight;
-
-/**
  * The card itself, without the gap under it: the taller column plus padding.
  * `Math.max` rather than naming the left column, so a future right-column line
  * grows the card instead of spilling out of it.
@@ -488,7 +474,6 @@ export const PROVIDER_CARD_HEIGHT =
 
 /** What the list must reserve per item: the card plus the gap beneath it. */
 export const PROVIDER_ROW_HEIGHT = PROVIDER_CARD_HEIGHT + ROW_CARD_GAP;
-
 
 /**
  * A directory card, copied from Astrotalk with Clarity's expertise pills.

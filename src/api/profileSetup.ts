@@ -66,16 +66,6 @@ export async function setMemberAgeBracket(bracket: AgeBracket): Promise<void> {
   }
 }
 
-export function useSetAgeBracket() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: setMemberAgeBracket,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: keys.profile });
-    },
-  });
-}
-
 /**
  * True when a member has never answered the language step.
  *
@@ -133,17 +123,7 @@ export async function setPreferredLanguages(
   }
 }
 
-export function useSetPreferredLanguages() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: setPreferredLanguages,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: keys.profile });
-    },
-  });
-}
-
-export type DisplayNameStatus = 'available' | 'taken' | 'invalid';
+type DisplayNameStatus = 'available' | 'taken' | 'invalid';
 
 export interface DisplayNameCheck {
   status: DisplayNameStatus;

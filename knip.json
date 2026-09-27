@@ -3,9 +3,6 @@
   "entry": ["App.tsx", "__tests__/**/*.{ts,tsx}", "scripts/**/*.{mjs,js}"],
   "project": ["src/**/*.{ts,tsx}"],
   "ignore": [
-    "admin/**",
-    "web/**",
-    "supabase/**",
     "src/lib/database.types.ts",
     "src/theme/*.generated.ts",
     "src/lib/*.generated.ts"

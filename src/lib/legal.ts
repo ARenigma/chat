@@ -10,7 +10,7 @@
  * stable HTTPS origin:
  * https://developer.android.com/training/basics/intents/sending#ViewWebPage
  */
-export const LEGAL_BASE_URL = 'https://chat-arenigmas-projects.vercel.app';
+const LEGAL_BASE_URL = 'https://chat-arenigmas-projects.vercel.app';
 
 type LegalPage = 'privacy' | 'terms' | 'delete' | 'refund';
 

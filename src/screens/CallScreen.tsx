@@ -46,7 +46,7 @@ import { setKeepScreenOn } from '../lib/windowChrome';
 import { openRefill } from '../lib/routes/actions';
 
 /** Which way the call goes. Outgoing dials; incoming rings and offers answer. */
-export type CallDirection = 'out' | 'in';
+type CallDirection = 'out' | 'in';
 
 interface Props {
   /** The peer: the provider being called, or the caller ringing us. */

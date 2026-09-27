@@ -57,22 +57,6 @@ export function usePendingPolicies() {
   });
 }
 
-export function useAcceptPolicy() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (versionId: string) => {
-      const { error } = await supabase.rpc('accept_policy', {
-        p_version_id: versionId,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: policyKeys.pending });
-      track('policy_accepted');
-    },
-  });
-}
-
 export function useAcceptAllPendingPolicies() {
   const queryClient = useQueryClient();
   return useMutation({

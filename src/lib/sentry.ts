@@ -29,7 +29,7 @@ export interface ScrubbableBreadcrumb {
   data?: Record<string, unknown>;
 }
 
-export interface ScrubbableFrame {
+interface ScrubbableFrame {
   vars?: Record<string, unknown>;
   [key: string]: unknown;
 }

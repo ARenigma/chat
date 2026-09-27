@@ -60,7 +60,7 @@ export interface ChatV2ImageBody {
  * than as an empty line. A parent that is not in the page produces no quote at
  * all: a preview that says nothing is worse than no preview.
  */
-export interface ChatV2Quote {
+interface ChatV2Quote {
   author: string;
   body: string | null;
 }
@@ -85,7 +85,7 @@ export interface ChatV2MessageRow {
   image?: ChatV2ImageBody;
 }
 
-export interface ChatV2CallRow {
+interface ChatV2CallRow {
   kind: 'call';
   id: string;
   sortAt: string;
@@ -94,7 +94,7 @@ export interface ChatV2CallRow {
 }
 
 /** A centered notice — a session boundary or an ephemeral confirmation. */
-export interface ChatV2SystemRow {
+interface ChatV2SystemRow {
   kind: 'system';
   id: string;
   sortAt: string;
@@ -105,7 +105,7 @@ export interface ChatV2SystemRow {
   opensDay: boolean;
 }
 
-export interface ChatV2DividerRow {
+interface ChatV2DividerRow {
   kind: 'divider';
   id: 'unread-divider';
   sortAt: string;
@@ -149,7 +149,7 @@ const CHAT_V2_NOTICE_ID = 'chat-v2-notice';
  * did; the other person is told only that something was taken back, which is
  * already obvious from the side the bubble is on.
  */
-export function chatV2TombstoneText(mine: boolean): string {
+function chatV2TombstoneText(mine: boolean): string {
   return mine ? 'You deleted this message' : 'This message was deleted';
 }
 
@@ -541,7 +541,7 @@ export function unreadAnchorOf(
 /** How far back the contact guard's hard window looks (spec 3.5: 6 messages / 15 min). */
 export const CONTACT_WINDOW_MS = 15 * 60 * 1000;
 /** The window's earlier messages; the one being sent is the sixth. */
-export const CONTACT_WINDOW_PRIOR = 5;
+const CONTACT_WINDOW_PRIOR = 5;
 
 /**
  * The sender's own recent text bodies, OLDEST FIRST, for the composer's

@@ -41,7 +41,7 @@ const noticeOut = FadeOut.duration(DURATION.fast)
 
 const DISMISS_AFTER_MS = 4200;
 
-export function NoticeBar() {
+function NoticeBar() {
   const styles = useStyles(makeStyles);
   const notice = useStore(s => s.notice);
   const tone = useStore(s => s.noticeTone);

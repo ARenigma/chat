@@ -98,7 +98,7 @@ export interface ApplyGuard {
  *
  * Pure so the table is testable without the screen (nav-migration §4, 3c).
  */
-export function applicationBackStep(phase: Phase): 'leave' | 'editDetails' | 'toVerify' | 'stay' {
+function applicationBackStep(phase: Phase): 'leave' | 'editDetails' | 'toVerify' | 'stay' {
   switch (phase) {
     case 'verify':
       return 'leave';

@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
 import type {
-  Gender,
+  
   MyApplication,
   Profile,
   ProviderEarnings,
@@ -97,16 +97,6 @@ export interface PayoutAccountDraft {
   accountHolderName?: string;
 }
 
-export interface ApplicationDraft {
-  displayName: string;
-  gender: Gender | null;
-  /** ISO date. The gate is enforced in SQL, not here. */
-  dateOfBirth: string | null;
-  headline: string;
-  languages: string[];
-  about: string;
-}
-
 /** Null when this account has never applied. */
 export function useMyApplication() {
   return useQuery<MyApplication | null>({
@@ -117,51 +107,6 @@ export function useMyApplication() {
         throw new Error(error.message);
       }
       return data.length > 0 ? (data[0] as MyApplication) : null;
-    },
-  });
-}
-
-/**
- * Submit or resubmit. Returns the fields still missing, so the form can mark
- * them immediately rather than showing a generic failure.
- */
-export function useSubmitApplication() {
-  const queryClient = useQueryClient();
-  const setNotice = useStore(s => s.setNotice);
-
-  return useMutation<string[], Error, ApplicationDraft>({
-    mutationFn: async draft => {
-      const { data, error } = await supabase.rpc('submit_provider_application', {
-        p_display_name: draft.displayName,
-        p_gender: draft.gender,
-        p_date_of_birth: draft.dateOfBirth,
-        p_headline: draft.headline,
-        p_languages: draft.languages,
-        p_about: draft.about,
-      });
-      if (error) {
-        throw new Error(error.message);
-      }
-      return data ?? [];
-    },
-    onSuccess: missing => {
-      void queryClient.invalidateQueries({ queryKey: providerKeys.application });
-      if (missing.length === 0) {
-        tick();
-        setNotice('Application submitted. We will be in touch.', 'confirm');
-      }
-    },
-    onError: err => {
-      errorTick();
-      // The 18+ refusal comes back as a server error and is worth showing
-      // plainly rather than as "something went wrong", it is not retryable.
-      setNotice(
-        err instanceof ContactGuardRefusalError
-          ? err.message
-          : /18 or older/.test(err.message)
-          ? 'You must be 18 or older to be a provider.'
-          : 'Could not submit right now.',
-      );
     },
   });
 }
@@ -325,49 +270,6 @@ export function useSetChannels() {
       errorTick();
       setNotice(
         err instanceof ContactGuardRefusalError ? err.message : 'Could not change what you offer.',
-      );
-    },
-  });
-}
-
-/**
- * A provider replaces their own topic tags (migration 083).
- *
- * Through the RPC rather than a direct PATCH, unlike `useSetChannels` next
- * door, and the difference is worth stating because the two look alike. RLS
- * would permit the PATCH — `expertise` is provider-owned and deliberately
- * absent from the 063 guard — but the CHECK behind it reports a constraint
- * name, and "profiles_expertise_sane" is not something a caller can act on.
- * The function restates the rule as a sentence and returns what it stored, so
- * the client renders the server's answer instead of its own optimism.
- */
-export function useSetProviderExpertise() {
-  const queryClient = useQueryClient();
-  const setNotice = useStore(s => s.setNotice);
-
-  return useMutation<string[], Error, string[]>({
-    mutationFn: async expertise => {
-      const { data, error } = await supabase.rpc('set_provider_expertise', {
-        p_expertise: expertise,
-      });
-      if (error) {
-        const refusal = contactGuardRefusalFromError(error);
-      if (refusal) {
-        throw new ContactGuardRefusalError(refusal);
-      }
-      throw new Error(error.message);
-      }
-      return data ?? [];
-    },
-    onSuccess: () => {
-      tick();
-      void queryClient.invalidateQueries({ queryKey: keys.profile });
-      void queryClient.invalidateQueries({ queryKey: keys.providers });
-    },
-    onError: err => {
-      errorTick();
-      setNotice(
-        err instanceof ContactGuardRefusalError ? err.message : 'Could not save what you help with.',
       );
     },
   });
@@ -784,110 +686,6 @@ export function useCashfreeVerification() {
 }
 
 /**
- * Upload a directory photo. Public `avatars` bucket; path `{uid}/{uuid}.jpg`.
- * Uses the same FormData uri branch as chat attachments (RN FormData has no
- * `has()`), then writes the public URL onto `profiles.avatar_url`.
- */
-export function useUploadAvatar() {
-  const queryClient = useQueryClient();
-  const setNotice = useStore(s => s.setNotice);
-
-  return useMutation<void, Error, { uri: string; mime?: string }>({
-    mutationFn: async ({ uri, mime = 'image/jpeg' }) => {
-      const { data: auth } = await supabase.auth.getUser();
-      const me = auth.user?.id;
-      const session = (await supabase.auth.getSession()).data.session;
-      if (me === undefined || session?.access_token === undefined) {
-        throw new Error('No session');
-      }
-
-      const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
-      const path = `${me}/${Date.now()}.${ext}`;
-      const form = new FormData();
-      form.append('cacheControl', '3600');
-      form.append('', {
-        uri: uri.startsWith('file://') || uri.startsWith('content://') ? uri : `file://${uri}`,
-        name: `avatar.${ext}`,
-        type: mime,
-      } as unknown as Blob);
-
-      const response = await fetch(
-        `${ENV.supabaseUrl}/storage/v1/object/avatars/${path}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: ENV.supabaseAnonKey,
-            'x-upsert': 'true',
-          },
-          body: form,
-        },
-      );
-      if (!response.ok) {
-        throw new Error('UPLOAD');
-      }
-
-      const publicUrl = `${ENV.supabaseUrl}/storage/v1/object/public/avatars/${path}`;
-      const { error } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', me);
-      if (error) {
-        throw new Error(error.message);
-      }
-    },
-    onSuccess: () => {
-      tick();
-      setNotice('Photo updated. Members will see it in the directory.', 'confirm');
-      void queryClient.invalidateQueries({ queryKey: keys.profile });
-      void queryClient.invalidateQueries({ queryKey: keys.providers });
-    },
-    onError: () => {
-      errorTick();
-      setNotice('Could not update your photo. Try again.');
-    },
-  });
-}
-
-/**
- * Clear the profile photo. Both roles, like useUploadAvatar. The storage object
- * is left for the orphan-purge cron; only the `avatar_url` pointer is nulled,
- * which is what every reader keys off. `avatar_url` is not a privileged column
- * (guard_privileged_profile_columns), so the owner's own RLS update applies.
- */
-export function useRemoveAvatar() {
-  const queryClient = useQueryClient();
-  const setNotice = useStore(s => s.setNotice);
-
-  return useMutation<void, Error, void>({
-    mutationFn: async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const me = auth.user?.id;
-      if (me === undefined) {
-        throw new Error('No session');
-      }
-      const { error } = await supabase
-        .from('profiles')
-        .update({ avatar_url: null })
-        .eq('id', me);
-      if (error) {
-        throw new Error(error.message);
-      }
-    },
-    onSuccess: () => {
-      tick();
-      setNotice('Photo removed.', 'confirm');
-      void queryClient.invalidateQueries({ queryKey: keys.profile });
-      void queryClient.invalidateQueries({ queryKey: keys.providers });
-    },
-    onError: () => {
-      errorTick();
-      setNotice('Could not remove your photo. Try again.');
-    },
-  });
-}
-
-/**
  * Set the profile photo to a bundled DiceBear "clay" avatar. Writes the
  * `clay:<seed>` sentinel onto `avatar_url`; every reader resolves it through
  * `resolveAvatarSource`. No upload, no storage object — the art ships in the app.
@@ -958,7 +756,7 @@ export function useSetClayAvatar() {
  *
  * https://supabase.com/docs/reference/javascript/storage-from-remove
  */
-export function avatarObjectKey(url: string): string | null {
+function avatarObjectKey(url: string): string | null {
   const marker = '/storage/v1/object/public/avatars/';
   const at = url.indexOf(marker);
   if (at < 0) {
@@ -1439,43 +1237,6 @@ export function useProviderRatings(providerId: string | null) {
       return (data as ProviderRatings | null) ?? null;
     },
   });
-}
-
-/** A member rating a finished conversation. One per thread, member only. */
-export function useSubmitReview() {
-  const queryClient = useQueryClient();
-  const setNotice = useStore(s => s.setNotice);
-
-  return useMutation<void, Error, { conversationId: string; rating: number; comment: string | null }>(
-    {
-      mutationFn: async input => {
-        const { error } = await supabase.rpc('submit_review', {
-          p_conversation_id: input.conversationId,
-          p_rating: input.rating,
-          p_comment: input.comment,
-        });
-        if (error) {
-          throw new Error(error.message);
-        }
-      },
-      onSuccess: (_void, input) => {
-        tick();
-        // Rating is a 1..5 integer, so it is safe as a telemetry dimension; the
-        // free-text comment never is.
-        track('review_submitted', { rating: input.rating });
-        setNotice('Thanks, that helps the next person choose.', 'confirm');
-        void queryClient.invalidateQueries({ queryKey: keys.conversationList });
-      },
-      onError: err => {
-        errorTick();
-        setNotice(
-          /nothing to review/.test(err.message)
-            ? 'Have a conversation first, then you can rate it.'
-            : 'Could not save that rating.',
-        );
-      },
-    },
-  );
 }
 
 /**

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { storage } from '../lib/storage';
 
@@ -86,30 +86,3 @@ export function useServerFavorites() {
   });
 }
 
-/** Toggle a favourite on the server (and optimistically in MMKV). */
-export function useToggleFavorite() {
-  const queryClient = useQueryClient();
-  const toggleLocal = useFavorites(s => s.toggle);
-
-  return useMutation({
-    mutationFn: async (likedId: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase.rpc as any)('toggle_favorite', {
-        p_liked_id: likedId,
-      });
-      if (error) throw new Error(error.message);
-      return data as { success: boolean; now_liked: boolean; was_liked: boolean };
-    },
-    onMutate: likedId => {
-      // Optimistic local update so the heart responds instantly.
-      toggleLocal(likedId);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: favoriteKeys.mine });
-    },
-    onError: (_err, likedId) => {
-      // Revert the optimistic update.
-      toggleLocal(likedId);
-    },
-  });
-}

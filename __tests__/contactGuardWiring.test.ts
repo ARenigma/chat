@@ -131,7 +131,6 @@ describe('profile writes map P0011', () => {
     ['src/api/profileSetup.ts', 'preferred_languages: [...languages]'],
     ['src/api/provider.ts', "rpc('complete_provider_onboarding'"],
     ['src/api/provider.ts', ".from('profiles').update(patch)"],
-    ['src/api/provider.ts', "const { data, error } = await supabase.rpc('set_provider_expertise'"],
     // The Edit profile save (180): both of its writes map the refusal.
     ['src/api/provider.ts', "const { error } = await supabase.rpc('update_provider_profile'"],
     ['src/api/provider.ts', "const { error } = await supabase.rpc('set_provider_expertise'"],
@@ -152,6 +151,6 @@ describe('profile writes map P0011', () => {
 
   it('shows the guard line where onError had a generic one', () => {
     const provider = read('src/api/provider.ts');
-    expect(provider.match(/err instanceof ContactGuardRefusalError\s*\?\s*err\.message/g)?.length).toBe(3);
+    expect(provider.match(/err instanceof ContactGuardRefusalError\s*\?\s*err\.message/g)?.length).toBe(1);
   });
 });

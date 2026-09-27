@@ -375,7 +375,6 @@ describe('success messages are tagged as confirmations', () => {
     'Blocked. They can no longer message you.',
     'Unblocked.',
     'Reported. Our team will review this.',
-    'Application submitted. We will be in touch.',
     'Thanks, that helps the next person choose.',
   ])('tags %s', message => {
     expect(sources).toContain(`setNotice('${message}', 'confirm')`);

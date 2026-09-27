@@ -31,7 +31,7 @@ import { NativeModules, Platform } from 'react-native';
 // platform test can assert the exact string without duplicating it.
 // ---------------------------------------------------------------------------
 /** @internal exported only for the platform-test assertion */
-export const DEV_EMAIL_DOMAIN = '@example.test';
+const DEV_EMAIL_DOMAIN = '@example.test';
 
 const native = (
   NativeModules as {

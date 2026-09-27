@@ -11,7 +11,7 @@ import { create } from 'zustand';
 
 import type { HomeSuggestion } from '../api/homeSuggestions';
 
-export interface HomeSuggestionPrompt {
+interface HomeSuggestionPrompt {
   suggestion: HomeSuggestion;
   onAccept: () => void;
   onDismiss: () => void;

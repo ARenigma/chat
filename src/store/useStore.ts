@@ -22,7 +22,7 @@ import type { ActiveCall } from '../lib/routes/actions';
  * looking like failures. Seen on a device right after submitting a rating: a
  * thank-you inside an error box.
  */
-export type NoticeTone = 'error' | 'confirm';
+type NoticeTone = 'error' | 'confirm';
 
 /**
  * Which voice note is playing, and how far in.
@@ -34,7 +34,7 @@ export type NoticeTone = 'error' | 'confirm';
  * on a slow connection is long enough that a play button with no pending state
  * looks broken.
  */
-export interface PlayingVoice {
+interface PlayingVoice {
   messageId: string;
   positionMs: number;
   durationMs: number;
@@ -52,7 +52,7 @@ export type PeerActivity = 'typing' | 'recording';
  * light the header of whichever chat read it. `conversationId` is null only
  * when a writer does not know its thread yet.
  */
-export interface PeerActivityState {
+interface PeerActivityState {
   kind: PeerActivity;
   conversationId: string | null;
 }
@@ -397,9 +397,6 @@ export function resetStore(): void {
   useStore.setState({ ...INITIAL });
 }
 
-/** Selectors, kept next to the store so components subscribe narrowly. */
-export const selectBalance = (s: AppState): number | null => s.balance;
-export const selectSending = (s: AppState): boolean => s.sending;
 export const selectPeerActivity = (s: AppState): PeerActivity | null =>
   s.peerActivity?.kind ?? null;
 /**
@@ -417,7 +414,3 @@ export const selectPeerActivityIn =
     return a.conversationId === null || a.conversationId === conversationId ? a.kind : null;
   };
 export const selectIsLow = (s: AppState): boolean => isLowBalance(s.balance);
-export const selectUploadProgress =
-  (id: string) =>
-  (s: AppState): number | undefined =>
-    s.uploadProgress[id];

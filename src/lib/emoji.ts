@@ -26,7 +26,7 @@ import {
  * hand-edited).
  */
 
-export type EmojiCategoryId = 'recent' | GeneratedCategoryId;
+type EmojiCategoryId = 'recent' | GeneratedCategoryId;
 
 export interface EmojiCategory {
   id: EmojiCategoryId;

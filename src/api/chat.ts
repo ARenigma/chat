@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
   onlineManager,
-  useMutation,
+  
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -9,7 +9,7 @@ import {
 import { AppState } from 'react-native';
 import { supabase } from '../lib/supabase';
 import type {
-  ClaimResult,
+  
   ConversationPeer,
   ConversationSummary,
   Message,
@@ -87,7 +87,6 @@ const NOTICE: Record<SendError, string> = {
   CHANNEL_DISABLED_BY_PROVIDER: 'They are not taking chats right now.',
   ...CONTACT_GUARD_NOTICE,
 };
-
 
 /*
  * `getSession()`, not `getUser()` (L2, 2026-09-17 audit). `getUser()` is a
@@ -217,7 +216,7 @@ export function useConversations() {
 }
 
 /** How often an open chat re-reads its provider peer's presence. */
-export const PEER_PRESENCE_POLL_MS = 15_000;
+const PEER_PRESENCE_POLL_MS = 15_000;
 
 /** The two presence columns of one thread's peer row (migration 155). */
 export type PeerPresenceRow = Pick<ConversationPeer, 'peer_online' | 'peer_last_seen_at'>;
@@ -339,7 +338,7 @@ function isDeleted(message: Message): boolean {
  * going to come back EDIT_WINDOW_CLOSED is the app lying about what it can do.
  * `__tests__/chatSurface.test.ts` asserts the two agree.
  */
-export const EDIT_WINDOW_MS = 15 * 60_000;
+const EDIT_WINDOW_MS = 15 * 60_000;
 
 /**
  * Whether to draw the Edit action on a bubble at all.
@@ -644,31 +643,6 @@ export function useLiveMessageEdits(
       void supabase.removeChannel(channel);
     };
   }, [conversationId, selfId, queryClient]);
-}
-
-/**
- * Prefetch messages for a conversation into the React Query cache.
- *
- * Called on `onPressIn` from the CHATS rail so the fetch is already in flight
- * when the navigation animation finishes and the chat mounts. No-op if the
- * data is already fresh in cache (React Query's default behaviour).
- */
-export function prefetchMessages(qc: QueryClient, conversationId: string): void {
-  void qc.prefetchQuery({
-    queryKey: keys.messages(conversationId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false })
-        .limit(PAGE_SIZE);
-      if (error) {
-        throw new Error(error.message);
-      }
-      return data;
-    },
-  });
 }
 
 /**
@@ -1084,38 +1058,6 @@ export function useCalls(conversationId: string | undefined) {
   });
 }
 
-/** The refill trigger behind the low-balance sheet. */
-export function useClaimTokens() {
-  const queryClient = useQueryClient();
-  const setBalance = useStore(s => s.setBalance);
-  const setNotice = useStore(s => s.setNotice);
-  const closeRefill = useStore(s => s.closeRefill);
-
-  return useMutation<ClaimResult>({
-    mutationFn: async () => {
-      const { data, error } = await supabase.rpc('claim_daily_tokens');
-      if (error || !data) {
-        throw new Error(error?.message ?? 'Refill failed');
-      }
-      return data;
-    },
-    onSuccess: result => {
-      if (result.success && typeof result.new_balance === 'number') {
-        setBalance(result.new_balance);
-        closeRefill();
-        void queryClient.invalidateQueries({ queryKey: keys.profile });
-        return;
-      }
-      setNotice(
-        result.error === 'TOO_SOON'
-          ? 'Your next free refill unlocks within 24 hours.'
-          : 'Refill unavailable right now.',
-      );
-    },
-    onError: () => setNotice('Refill unavailable right now.'),
-  });
-}
-
 /**
  * How many times a queued send is replayed automatically before it is left to
  * the member.
@@ -1126,7 +1068,7 @@ export function useClaimTokens() {
  * stays on screen marked failed, so nothing is lost — it just stops trying by
  * itself, which is the honest state to be in.
  */
-export const REPLAY_LIMIT = 5;
+const REPLAY_LIMIT = 5;
 
 /**
  * Drain the persisted outbox for this conversation.

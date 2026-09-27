@@ -179,7 +179,7 @@ export function chatV2ScrolledAway(offsetY: number): boolean {
  * `pin` moves the list to the newest row, `count` adds to the page-down badge
  * instead, `idle` leaves both alone.
  */
-export type ChatV2ScrollAction = 'idle' | 'pin' | 'count';
+type ChatV2ScrollAction = 'idle' | 'pin' | 'count';
 
 export interface ChatV2Arrival {
   action: ChatV2ScrollAction;

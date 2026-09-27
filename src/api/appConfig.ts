@@ -33,7 +33,7 @@ import {
  * the decision they feed has to be unit-testable and this module imports
  * supabase. Re-exported so consumers still have one config import.
  */
-export { FALLBACK_CLIENT_SUPPORT };
+;
 export type { ClientSupportConfig };
 
 // ─── Domain payload types ────────────────────────────────────────────────────
@@ -53,18 +53,6 @@ export interface RechargeConfig {
   play_product_ids: string[];
   cashfree_enabled: boolean;
   play_ucb_enabled: boolean;
-}
-
-export interface WalletConfig {
-  starting_grant_tokens: number;
-  daily_refill_enabled: boolean;
-  daily_refill_tokens: number;
-}
-
-export interface ThresholdsConfig {
-  low_balance_tokens: number;
-  rate_limit_messages_per_min: number;
-  unanswered_refund_window_hours: number;
 }
 
 export interface KillSwitchesConfig {
@@ -89,11 +77,6 @@ export interface KillSwitchesConfig {
 
 export interface ReportTaxonomyConfig {
   reasons: string[];
-}
-
-export interface AuthUiConfig {
-  phone_auth_tab_visible: boolean;
-  google_auth_tab_visible: boolean;
 }
 
 export type PermissionLevel = 'optional' | 'required';
@@ -288,7 +271,6 @@ export function useReportTaxonomy() {
     placeholderData: FALLBACK_REPORT_TAXONOMY,
   });
 }
-
 
 // ─── Human-readable labels for report reasons ────────────────────────────────
 

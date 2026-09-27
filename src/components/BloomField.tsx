@@ -29,7 +29,7 @@ import {
  * one thing is what keeps the field to a single cross-fade per layer instead of
  * one per property.
  */
-export interface BloomStage {
+interface BloomStage {
   readonly palette: BloomPalette;
   /** False only on the welcome screen, where each layer holds a solid core. */
   readonly collapsed: boolean;

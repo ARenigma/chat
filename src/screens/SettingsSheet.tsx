@@ -87,7 +87,7 @@ interface Props {
 const ROW_TEXT_INSET = 32 + TOKENS.space.sm;
 
 /** One navigable row of the list, as data. */
-export interface SettingsRowSpec {
+interface SettingsRowSpec {
   icon: IconName;
   title: string;
   detail?: string;

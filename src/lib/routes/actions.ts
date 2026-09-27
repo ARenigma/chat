@@ -321,6 +321,8 @@ export function focusedStackKey(): string | undefined {
  * while a paid chat is on it asks that chat first (`requestAway`), so no
  * intent silently walks away from a running bill: the chat's leave dialog
  * opens, and confirming ends the session and then proceeds.
+ *
+ * @public exercised by __tests__/routeActions.test.ts through a loaded module.
  */
 export function applyChatPlan(plan: ChatPlan): void {
   if (plan.kind === 'noop' || !navigationRef.isReady()) {

@@ -85,7 +85,7 @@ import {
  *
  * Phone + OTP is built below and switched off, see PHONE_AUTH_ENABLED.
  */
-export type SocialProvider = 'google';
+type SocialProvider = 'google';
 
 // Defined in src/config.ts — the single home for all feature flags.
 // Imported here so the function bodies in this file can reference it directly,
@@ -113,8 +113,8 @@ export { PHONE_AUTH_ENABLED };
  * OnboardingScreen calls sendPhoneOtp/verifyPhoneOtp and never learns
  * which path ran — the flag lives entirely here.
  */
-export type PhoneAuthProvider = 'firebase' | 'supabase';
-export const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'supabase';
+type PhoneAuthProvider = 'firebase' | 'supabase';
+const AUTH_PHONE_PROVIDER: PhoneAuthProvider = 'supabase';
 
 /**
  * Whether to try Credential Manager before the browser.
@@ -364,6 +364,8 @@ export async function currentSession(): Promise<CurrentSessionResult> {
  * is indistinguishable from a phishing page, and Google blocks it outright
  * (`disallowed_useragent`). `skipBrowserRedirect` hands us the URL so we can
  * open it with `Linking` instead of letting the SDK navigate.
+ *
+ * @public exercised by __tests__/pushForeground.test.ts through a loaded module.
  */
 export async function signInWith(
   provider: SocialProvider,

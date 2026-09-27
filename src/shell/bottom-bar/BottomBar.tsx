@@ -46,7 +46,7 @@ import { useMemberUnreadTotal, useNoBadge, useProviderWaitingCount } from '../ba
 import { clampBottomInset, INDICATOR_WIDTH, makeStyles } from './BottomBarStyles';
 
 /** A tab root name, the `X` of the `XTab` navigator route (Bluesky `isTab`). */
-export type TabRootName = 'Home' | 'Favourites' | 'Calls' | 'You' | 'Chats' | 'Saved';
+type TabRootName = 'Home' | 'Favourites' | 'Calls' | 'You' | 'Chats' | 'Saved';
 
 export interface BottomBarTab {
   name: TabRootName;

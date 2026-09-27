@@ -11,7 +11,7 @@ import { CONTACT_INFO_SQLSTATE, contactGuardNotice } from './contactGuard';
  * and every caller of that RPC would otherwise report it as "check your
  * connection".
  */
-export const CHANNEL_DISABLED_SQLSTATE = 'P0009';
+const CHANNEL_DISABLED_SQLSTATE = 'P0009';
 
 /**
  * The result of a `send_message` call, with a raised channel refusal folded

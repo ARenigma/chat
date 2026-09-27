@@ -2270,36 +2270,13 @@ describe('hardware GPU backdrop blur (PappalBlurRoot + PappalBlurSurface)', () =
     expect(tsx).toContain("UIManager.hasViewManagerConfig('PappalBlurRoot')");
   });
 
-  it('JS wrapper exports typed requireNativeComponent wrappers for both views', () => {
+  it('JS wrapper exports a typed requireNativeComponent wrapper for the root', () => {
     const tsx = read(BLUR_SURFACE_TSX);
-    expect(tsx).toContain(
-      "requireNativeComponent<BlurSurfaceProps>('PappalBlurSurface')",
-    );
     expect(tsx).toContain(
       "requireNativeComponent<BlurRootProps>('PappalBlurRoot')",
     );
   });
 
-  it('BlurSurface props are fully typed — no implicit any', () => {
-    /**
-     * Strict types on the JS bridge boundary prevent callers from silently
-     * passing wrong types (e.g., a CSS colour string where the native side
-     * expects an ARGB integer).
-     */
-    const tsx = read(BLUR_SURFACE_TSX);
-    /*
-     * A COLOUR, not a number. This assertion used to demand `tintColor?: number`
-     * and so locked in the defect: `customType = "Color"` routes the value
-     * through RN's normaliser, which rejects negative numbers, and a signed
-     * 32-bit ARGB int is negative for any alpha above 0x7F. The value was
-     * dropped and every frosted bar painted the native default instead.
-     */
-    expect(tsx).toContain('tintColor?: ColorValue');
-    expect(tsx).toContain('tintAlpha?: number');
-    expect(tsx).toContain('blurRadius?: number');
-    expect(tsx).toContain('enabled?: boolean');
-    expect(tsx).not.toContain(': any');
-  });
 });
 
 describe('hardware back reaches the app', () => {

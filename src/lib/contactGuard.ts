@@ -33,10 +33,10 @@ export type ContactGuardError =
   | 'CONTACT_TOO_LONG'
   | 'IMAGES_DISABLED';
 
-export type ContactGuardCategory = 'phone' | 'email' | 'payment' | 'link' | 'handle' | 'window';
+type ContactGuardCategory = 'phone' | 'email' | 'payment' | 'link' | 'handle' | 'window';
 
 /** Where the text was going; public and profile text get their own line. */
-export type ContactGuardSurface = 'chat' | 'story_comment' | 'story_caption' | 'profile';
+type ContactGuardSurface = 'chat' | 'story_comment' | 'story_caption' | 'profile';
 
 export interface ContactGuardRefusal {
   success?: false;

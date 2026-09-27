@@ -109,7 +109,7 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
      * And 76 is in `Avatar`'s closed size union, which carries hand-tuned FONT
      * and DOT entries per value — 72 would have meant inventing both.
      */
-    expect(read(ROW)).toContain('export const ROW_AVATAR = 76');
+    expect(read(ROW)).toContain('const ROW_AVATAR = 76');
     const union = /type Size = ([^;]+);/.exec(read('src/components/Avatar.tsx'))?.[1];
     expect(union).toContain('76');
     expect(code(ROW)).toContain('size={ROW_AVATAR}');
@@ -193,7 +193,7 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
       'const ROW_LAST_LINE_CENTRE = PROVIDER_ROW_RIGHT_COLUMN - ROW_CATEGORY_LINE / 2',
     );
     expect(src).toContain('const ROW_CATEGORY_LINE = Math.round(TOKENS.icon.sm * ICON_SCALE)');
-    const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
+    const leftFormula = between(src, 'const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
     expect(leftFormula).toContain('ROW_LAST_LINE_CENTRE');
     expect(leftFormula).toContain('RING_TO_STARS');
     // The count sits one line gap under the stars, the same gap as the text
@@ -299,9 +299,9 @@ describe('the explore row is Astrotalk anatomy, measured rather than eyeballed',
       'const NAME_CAP_HEIGHT = GEIST_CAP_HEIGHT * TOKENS.typography.textXlSemiBold.fontSize',
     );
     expect(src).toContain(
-      'export const VERIFIED_SEAL_PX = Math.round(NAME_CAP_HEIGHT / (SEAL_INK_TOP - SEAL_INK_BOTTOM))',
+      'const VERIFIED_SEAL_PX = Math.round(NAME_CAP_HEIGHT / (SEAL_INK_TOP - SEAL_INK_BOTTOM))',
     );
-    expect(src).toContain('export const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE');
+    expect(src).toContain('const VERIFIED_SEAL_SIZE = VERIFIED_SEAL_PX / ICON_SCALE');
     expect(code(ROW)).toContain('size={VERIFIED_SEAL_SIZE}');
 
     // The arithmetic: a 13.35dp cap height wants a 14.90dp box, `Icon` rounds
@@ -459,12 +459,12 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
      * https://developer.android.com/guide/topics/ui/accessibility/apps
      */
     const src = read(ROW);
-    expect(src).toContain('export const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
+    expect(src).toContain('const ROW_CTA_HEIGHT = TOKENS.interaction.minTarget');
     // A fixed 108 × 36 since 2026-09-27: hugging its content with only a
     // minHeight, the button stretched to its 48dp slot and DREW 74 × 48 on
     // the S22. 36 is its old height and Astrotalk's (35.6).
     expect(src).toContain('export const ROW_CTA_VISUAL_HEIGHT = 36;');
-    expect(src).toContain('export const ROW_CTA_WIDTH = 108;');
+    expect(src).toContain('const ROW_CTA_WIDTH = 108;');
     const visual = 36;
     expect(code(ROW)).toContain('size={ROW_CTA_VISUAL_HEIGHT}');
     expect(TOKENS.interaction.minTarget).toBe(48);
@@ -525,7 +525,7 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(style('ctaOutlineAway')).toContain('borderColor: t.color.text.secondary');
     expect(style('ctaAway')).not.toContain('borderColor');
     // ROW_CTA_WIDTH is back (108, 2026-09-27): one fixed shape for every state.
-    expect(src).toContain('export const ROW_CTA_WIDTH = 108;');
+    expect(src).toContain('const ROW_CTA_WIDTH = 108;');
     expect(style('ctaLabel')).toContain('...TOKENS.typography.textSmSemiBold');
   });
 
@@ -612,7 +612,7 @@ describe('the CTA is a 33dp small button inside a 48dp target', () => {
     expect(style('ctaFillAwayLabel')).toContain('color: t.color.text.onInverse');
     // Pressable's `none` highlight really draws nothing of its own.
     const pressableSrc = code('src/components/Pressable.tsx');
-    expect(pressableSrc).toContain("export type Highlight = 'material' | 'dim' | 'ripple' | 'none'");
+    expect(pressableSrc).toContain("type Highlight = 'material' | 'dim' | 'ripple' | 'none'");
     expect(pressableSrc).toContain('ripple || bare ? 0 : INTERACTION.statePressed');
     expect(pressableSrc).toContain('onPressOutProp?.()');
   });
@@ -914,7 +914,6 @@ describe('every row is still the same height', () => {
     expect(TOKENS.typography.textXs.lineHeight).toBe(15);
     expect(bottom).toBe(121);
     expect(bottom).toBeLessThanOrEqual(126); // the left column, the card's content
-    expect(src).toContain('export const ROW_BUSY_LINE_BOTTOM =');
   });
 
   it('computes to a 150dp card and a 162dp pitch, from the tokens', () => {
@@ -1000,14 +999,14 @@ describe('every row is still the same height', () => {
      * text below stops matching even when the total happens to survive.
      */
     const src = read(ROW);
-    const leftFormula = between(src, 'export const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
+    const leftFormula = between(src, 'const PROVIDER_ROW_LEFT_COLUMN = Math.max(', ');\n');
     expect(leftFormula).toContain('ROW_LAST_LINE_CENTRE');
     expect(leftFormula).toContain('ROW_AVATAR_RING');
     expect(leftFormula.match(/STARS_HEIGHT/g)?.length).toBe(2);
     expect(leftFormula).toContain('RING_TO_STARS');
     expect(read(ROW)).toContain('const RING_TO_STARS = TOKENS.space.xs');
 
-    const rightFormula = between(src, 'export const PROVIDER_ROW_RIGHT_COLUMN =', ';');
+    const rightFormula = between(src, 'const PROVIDER_ROW_RIGHT_COLUMN =', ';');
     expect(rightFormula).toContain('textXlSemiBold.lineHeight');
     // The CTA is in none of it: the tail is Exp and the category.
     expect(rightFormula).toContain('ROW_TAIL');
@@ -1102,8 +1101,6 @@ describe('MetaChip keeps flexing, and that was a decision', () => {
     const chip = between(code(CHIP), '    chip: {', '    },');
     expect(chip).not.toContain('flexShrink');
     expect(chip).not.toContain('minWidth');
-    // The bounded, wrapping call site the ban protects.
-    expect(code('src/components/ProviderCard.tsx')).toContain("flexWrap: 'wrap'");
   });
 });
 
@@ -1161,7 +1158,7 @@ describe('the tag line always has something in it', () => {
     expect(left).toContain('height: PROVIDER_ROW_LEFT_COLUMN');
     // And the constant it is stated in terms of is the same one the row height
     // is derived from, so the two cannot drift.
-    expect(read(ROW)).toContain('export const PROVIDER_ROW_LEFT_COLUMN');
+    expect(read(ROW)).toContain('const PROVIDER_ROW_LEFT_COLUMN');
   });
 });
 

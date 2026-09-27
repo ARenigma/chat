@@ -183,36 +183,6 @@ export function useSessionRealtime(conversationId: string | undefined): void {
   }, [conversationId, queryClient]);
 }
 
-/** Start a session request for a conversation/channel. */
-export function useCreateSessionRequest() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      conversationId,
-      channel,
-    }: {
-      conversationId: string;
-      channel: SessionChannel;
-    }) => {
-      const { data, error } = await supabase.rpc('create_session_request', {
-        p_conversation_id: conversationId,
-        p_channel: channel,
-      });
-      if (error) throw error;
-      track('session_requested', { channel });
-      return data; // request id (string)
-    },
-    onSuccess: (_requestId, { conversationId }) => {
-      void queryClient.invalidateQueries({
-        queryKey: sessionKeys.active(conversationId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: sessionKeys.pendingRequest(conversationId),
-      });
-    },
-  });
-}
-
 /**
  * What `announce_chat_open` answered (migration 068, goal items 3 and 4).
  *
@@ -314,7 +284,7 @@ function useNotifyPeer(conversationId: string | undefined) {
  * 'we have notified them' banner is built from this answer") applied to a
  * button instead of a banner.
  */
-export type NotifyState =
+type NotifyState =
   | { kind: 'idle' }
   | { kind: 'pending' }
   | { kind: 'notified'; cooldownUntil: string | null }

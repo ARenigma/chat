@@ -27,7 +27,7 @@ export type SettingsRowId =
   | 'privacy'
   | 'refund';
 
-export type SettingsSectionId = 'profile' | 'money' | 'app' | 'legal';
+type SettingsSectionId = 'profile' | 'money' | 'app' | 'legal';
 
 export interface SettingsSectionModel {
   id: SettingsSectionId;

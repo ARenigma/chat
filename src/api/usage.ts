@@ -8,7 +8,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 
-export type UsageChannel = 'chat' | 'audio' | 'video';
+type UsageChannel = 'chat' | 'audio' | 'video';
 
 export interface UsageRow {
   session_id: string;

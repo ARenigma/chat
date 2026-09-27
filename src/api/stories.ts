@@ -47,7 +47,7 @@ import {
 } from '../lib/stories';
 import { useStore } from '../store/useStore';
 
-export const storyKeys = {
+const storyKeys = {
   all: ['stories'] as const,
   live: ['stories', 'live'] as const,
   seen: ['stories', 'seen'] as const,
@@ -69,7 +69,7 @@ export function storyRefusalLine(result: { error?: string | null } | null | unde
 // ---------------------------------------------------------------------------
 
 /** Every live story the caller may see, newest first (RLS filters audience). */
-export async function fetchLiveStories(): Promise<Story[]> {
+async function fetchLiveStories(): Promise<Story[]> {
   const { data, error } = await supabase
     .from('stories')
     .select('*')
@@ -83,7 +83,7 @@ export async function fetchLiveStories(): Promise<Story[]> {
 }
 
 /** The ids of stories the caller has seen (own rows only, 145). */
-export async function fetchSeenStoryIds(): Promise<string[]> {
+async function fetchSeenStoryIds(): Promise<string[]> {
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();
   const { data, error } = await supabase.from('story_views').select('story_id').gt('viewed_at', since);
   if (error) {
@@ -103,7 +103,7 @@ export async function fetchStoryMediaUrl(storyId: string): Promise<StoryMediaUrl
   return data;
 }
 
-export async function fetchReactionCounts(storyId: string): Promise<StoryReactionCount[]> {
+async function fetchReactionCounts(storyId: string): Promise<StoryReactionCount[]> {
   const { data, error } = await supabase.rpc('story_reaction_counts', { p_story_id: storyId });
   if (error) {
     throw new Error(error.message);
@@ -111,7 +111,7 @@ export async function fetchReactionCounts(storyId: string): Promise<StoryReactio
   return (data ?? []) as StoryReactionCount[];
 }
 
-export async function fetchMyReaction(storyId: string): Promise<ReactionEmoji | null> {
+async function fetchMyReaction(storyId: string): Promise<ReactionEmoji | null> {
   const { data, error } = await supabase
     .from('story_reactions')
     .select('emoji')
@@ -140,7 +140,7 @@ export async function fetchComments(storyId: string): Promise<StoryCommentFeedIt
 // Writes
 // ---------------------------------------------------------------------------
 
-export async function markStoryViewed(storyId: string): Promise<void> {
+async function markStoryViewed(storyId: string): Promise<void> {
   await supabase.rpc('mark_story_viewed', { p_story_id: storyId });
 }
 
@@ -177,7 +177,7 @@ export async function postStoryComment(
  * The author removes their own; the provider removes one on their story, and
  * with a reason the report is filed first in the same transaction (150).
  */
-export async function deleteStoryComment(
+async function deleteStoryComment(
   commentId: string,
   report?: { reason: ReportReason; reportId: string },
 ): Promise<{ success: boolean; error?: string }> {
@@ -242,7 +242,7 @@ export async function deleteOwnStory(storyId: string): Promise<boolean> {
  * file natively, and XHR is the only transport with upload progress. No
  * `x-upsert`: a story's media is evidence once reported (150).
  */
-export function uploadStoryMedia(
+function uploadStoryMedia(
   path: string,
   uri: string,
   accessToken: string,

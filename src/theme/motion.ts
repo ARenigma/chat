@@ -1,16 +1,15 @@
-import { useEffect } from 'react';
 import {
   Easing,
   FadeIn,
-  FadeInDown,
-  FadeInUp,
+  
+  
   FadeOut,
-  FadeOutDown,
-  FadeOutUp,
+  
+  
   ReduceMotion,
   type WithSpringConfig,
-  useAnimatedStyle,
-  useSharedValue,
+  
+  
   withDelay,
   withSequence,
   withSpring,
@@ -40,7 +39,7 @@ import { TOKENS } from './tokens';
  * a finger left behind and a spring can.
  */
 
-export const SPRING = TOKENS.motion.spring;
+const SPRING = TOKENS.motion.spring;
 export const PRESS = TOKENS.motion.press;
 export const DURATION = TOKENS.motion.duration;
 export const STAGGER = TOKENS.motion.stagger;
@@ -98,18 +97,6 @@ export const EASE_OUT = Easing.bezier(
   M3.easing.easeOut[3],
 );
 /**
- * Standard CSS ease (0.25,0.1,0.25,1) — a gentle start-and-end curve for
- * in-place timed changes that want a softer character than ease-out: camera
- * slot collapse, composer multi-line growth, etc. Named `ease` in the token.
- * https://developer.mozilla.org/en-US/docs/Web/CSS/easing-function#ease
- */
-export const EASE = Easing.bezier(
-  M3.easing.ease[0],
-  M3.easing.ease[1],
-  M3.easing.ease[2],
-  M3.easing.ease[3],
-);
-/**
  * A genuine sinusoidal breathe, for slow looping pulse animations.
  *
  * `Easing.inOut(Easing.sin)` is the mathematically correct breath curve: sine
@@ -131,24 +118,6 @@ export const EASE_BREATHE = Easing.inOut(Easing.sin);
  * linear". For anything entering or exiting, reach for EASE_OUT instead.
  */
 export const EASE_CONSTANT = Easing.linear;
-
-/**
- * The keyboard's own curve, for a panel that stands in for the keyboard.
- *
- * `CubicBezierInterpolator(0.19919472913616398, 0.010644531250000006,
- * 0.27920937042459737, 0.91025390625)` — the reference app's
- * `ChatListItemAnimator.DEFAULT_INTERPOLATOR` (`:47`), which is what it runs
- * every IME-adjacent translation on for `AdjustPanLayoutHelper.keyboardDuration`
- * = 250ms (`AdjustPanLayoutHelper.java:41-42`). A docked emoji or attach panel
- * is replacing the keyboard, so it has to travel on the same curve or the swap
- * reads as two different mechanisms.
- */
-export const KEYBOARD_CUBIC = Easing.bezier(
-  M3.easing.keyboard[0],
-  M3.easing.keyboard[1],
-  M3.easing.keyboard[2],
-  M3.easing.keyboard[3],
-);
 
 /**
  * Scale a pressable element to its named press scale over `pressRamp` ms.
@@ -213,8 +182,6 @@ const ALL_SPRINGS = { ...SPRING, ...M3.spring };
 /** Material 3 state-layer opacities, the 48dp minimum target, and scrim opacity. */
 export const INTERACTION = TOKENS.interaction;
 
-export type SpringName = keyof typeof SPRING;
-export type M3SpringName = keyof typeof M3.spring;
 export type AnySpringName = keyof typeof ALL_SPRINGS;
 
 /**
@@ -540,51 +507,6 @@ export const directoryOut = contentLeave(
   0,
 );
 
-/**
- * A bar that docks in at the TOP of a screen and leaves the same way.
- *
- * Hoisted for the reason every builder here is: they allocate on construction,
- * so one built inside a render is a new object per render. These two were the
- * last raw `.duration()` calls left in a screen — `220`/`160` written by hand at
- * the call site, close enough to `base`/`fast` to look like the tokens and
- * different enough to drift from them.
- *
- * In is slower than out on purpose, and it is the app's existing asymmetry
- * rather than a new opinion: `fadeSwap`/`fadeSwapFast` are the same `base`/`fast`
- * pair, and it matches the reference's own send-button reveal (~220ms in,
- * ~150ms out, `ChatActivityEnterView.java:8217, 10302-10319`). Arriving is an
- * announcement and wants to be seen; leaving should get out of the way.
- */
-export const barIn = FadeInDown.duration(DURATION.base)
-  .easing(EASE_OUT)
-  .reduceMotion(ReduceMotion.System);
-export const barOut = FadeOutUp.duration(DURATION.fast)
-  .easing(EASE_OUT)
-  .reduceMotion(ReduceMotion.System);
-
-/**
- * `barIn`/`barOut`'s mirror image, for a control docked at the BOTTOM instead
- * — the chat transcript's page-down button (2026-09-17 audit).
- *
- * the reference app's own button matches this shape from source: alpha 0→1 and
- * `translationY = dp(80) * (1 - visibility)`, so it rises into place from
- * below rather than fading in place
- * (`ChatActivitySideControlsButtonsLayout.java:169-176`,
- * `checkButtonsPositionsAndVisibility`). `FadeInUp`/`FadeOutDown` is that
- * same up-to-dock / down-to-leave direction. the reference app drives both halves
- * through one symmetric 280ms `DECELERATE_INTERPOLATOR`; kept `base`-in/
- * `fast`-out instead, the same departure `barIn`/`barOut` already state for
- * the top-docked bar — arriving is an announcement, leaving should get out
- * of the way, and that asymmetry is this app's own house style, not
- * the reference app's.
- */
-export const pageDownIn = FadeInUp.duration(DURATION.base)
-  .easing(EASE_OUT)
-  .reduceMotion(ReduceMotion.System);
-export const pageDownOut = FadeOutDown.duration(DURATION.fast)
-  .easing(EASE_OUT)
-  .reduceMotion(ReduceMotion.System);
-
 /* -------------------------------------------------------------------------
  * A section of a card that its own master switch reveals and hides
  * ------------------------------------------------------------------------- */
@@ -720,42 +642,6 @@ function stagger(base: number, index: number, cap: number): number {
 }
 
 /**
- * A two-thing cross-fade toggle, for a slot that swaps one control for another
- * (the composer's send ⇆ mic).
- *
- * the reference app reveals its send button by scaling it from 0.1 and fading it in over
- * ~220ms on EASE_OUT_QUINT while the mic scales away (`ChatActivityEnterView.java:
- * 8217, 10302-10319`); the reverse is quicker (~150ms). The two returned styles
- * are opposite phases of one shared value, so exactly one control is ever
- * substantial and they never both sit at full size mid-swap. `Never` on the
- * timing: this is discrete UI feedback, not a decorative flourish, and a user on
- * reduce-motion still needs to see which control is live — the cross-fade is the
- * signal, not an embellishment.
- */
-export function useCrossfade(shown: boolean): {
-  shownStyle: ReturnType<typeof useAnimatedStyle>;
-  hiddenStyle: ReturnType<typeof useAnimatedStyle>;
-} {
-  const p = useSharedValue(shown ? 1 : 0);
-  useEffect(() => {
-    p.value = withTiming(shown ? 1 : 0, {
-      duration: shown ? M3.duration.short4 : M3.duration.short3,
-      easing: EASE_OUT_QUINT,
-      reduceMotion: ReduceMotion.Never,
-    });
-  }, [shown, p]);
-  const shownStyle = useAnimatedStyle(() => ({
-    opacity: p.value,
-    transform: [{ scale: 0.1 + 0.9 * p.value }],
-  }));
-  const hiddenStyle = useAnimatedStyle(() => ({
-    opacity: 1 - p.value,
-    transform: [{ scale: 0.1 + 0.9 * (1 - p.value) }],
-  }));
-  return { shownStyle, hiddenStyle };
-}
-
-/**
  * A bottom sheet rising and settling. Position only — the sheet body never fades.
  *
  * M3 is explicit that a bottom sheet should not fade as it enters or exits; the
@@ -826,54 +712,6 @@ export function rowIn(index: number) {
         transform: [{ translateY: withDelay(delay, springTo(0, 'spatialSlow')) }],
       },
     };
-  };
-}
-
-/**
- * A peer's message arriving.
- *
- * Rule (motion-system.md, 2026-09-06): a spring where a finger's velocity is
- * being continued; a timed curve where it is not. A received message has no
- * gesture behind it, so both channels are timed — the previous version used
- * `SPRING.gentle` for both translate and scale, which overshoots for no reason
- * a user caused. Re-cut to:
- *
- *   opacity  — 120ms (`listAdd`) on emphasized-decelerate: the fade is the
- *              accessible fallback and must always run (`Never`).
- *   translateX — 250ms (`medium1`) on the keyboard cubic: the same curve and
- *              duration the IME panel travels on, so the bubble arrives as if
- *              it came from the same slot the keyboard did. Collapses under
- *              reduce-motion (`System`).
- *
- * Scale is removed entirely: a scale with no gesture behind it reads as the
- * animation just making the object smaller for a moment, rather than
- * expressing mass or direction.
- *
- * Source: `design/references/motion-system.md` §Refinement 2026-09-06.
- */
-export function bubbleArrive() {
-  'worklet';
-  return {
-    initialValues: {
-      opacity: 0,
-      transform: [{ translateX: -14 }],
-    },
-    animations: {
-      opacity: withTiming(1, {
-        duration: DURATION.listAdd,
-        easing: EMPH_DECEL,
-        reduceMotion: ReduceMotion.Never,
-      }),
-      transform: [
-        {
-          translateX: withTiming(0, {
-            duration: M3.duration.medium1,
-            easing: KEYBOARD_CUBIC,
-            reduceMotion: ReduceMotion.System,
-          }),
-        },
-      ],
-    },
   };
 }
 

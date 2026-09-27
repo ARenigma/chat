@@ -1302,7 +1302,7 @@ describe('launcher icon', () => {
 describe('sign-in copy matches the sign-in that exists', () => {
   const providers = (() => {
     const union = read('src/api/auth.ts').match(
-      /export type SocialProvider =([^;]+);/,
+      /type SocialProvider =([^;]+);/,
     )?.[1];
     expect(union).toBeDefined();
     return [...(union ?? '').matchAll(/'([a-z]+)'/g)].map(m => m[1] ?? '');
@@ -1853,7 +1853,7 @@ describe('config.toml cannot silently disable a live provider', () => {
   it('enables every provider the sign-in screen offers', () => {
     const providers = [
       ...(
-        /export type SocialProvider =([^;]+);/.exec(
+        /type SocialProvider =([^;]+);/.exec(
           read('src/api/auth.ts'),
         )?.[1] ?? ''
       ).matchAll(/'([a-z]+)'/g),
@@ -4337,7 +4337,6 @@ describe('no screen reads a listing switch as a presence dot', () => {
     // The dot is `online` and nothing else: available but idle draws unlit.
     for (const file of [
       'src/components/ProviderRow.tsx',
-      'src/components/ProviderCard.tsx',
       'src/screens/HomeScreen.tsx',
       'src/screens/ChatsListScreen.tsx',
       'src/chat-v2/ChatHeaderV2.tsx',
@@ -9175,7 +9174,7 @@ describe('navigation step 6: the application says what back does in each phase',
 
   it('maps every phase to what its header arrow does', () => {
     const table = apply.slice(
-      apply.indexOf('export function applicationBackStep'),
+      apply.indexOf('function applicationBackStep'),
       apply.indexOf('export function ProviderApplicationScreen'),
     );
     expect(table).toMatch(/case 'verify':\s*return 'leave';/);

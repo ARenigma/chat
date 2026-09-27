@@ -22,9 +22,9 @@ export type WidthSizeClass = 'compact' | 'medium' | 'expanded';
 export type HeightSizeClass = 'compact' | 'medium' | 'expanded';
 
 /** Width at which the window leaves compact. */
-export const WIDTH_MEDIUM_MIN = 600;
+const WIDTH_MEDIUM_MIN = 600;
 /** Width at which the window becomes expanded. */
-export const WIDTH_EXPANDED_MIN = 840;
+const WIDTH_EXPANDED_MIN = 840;
 /** Height at which the window leaves compact. */
 const HEIGHT_MEDIUM_MIN = 480;
 /** Height at which the window becomes expanded. */

@@ -323,7 +323,7 @@ function StoryReplySheetView({ visible, story, selfId, onClose }: Props) {
 }
 
 /** What each role may do to a comment, in the order the menu lists it. */
-export function commentActions(
+function commentActions(
   comment: Pick<StoryCommentFeedItem, 'is_own'>,
   viewerIsProvider: boolean,
 ): { key: 'delete' | 'report' | 'removeReport' | 'block' | 'remove'; label: string; danger?: boolean }[] {

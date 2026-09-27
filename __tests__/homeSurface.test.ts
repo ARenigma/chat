@@ -539,7 +539,7 @@ describe('search MOVES the way the reference app moves it, not only measures lik
     expect(TOKENS.motion.m3.easing.easeOut).toEqual([0, 0, 0.58, 1]);
     const swap = motion.slice(
       motion.indexOf('const SEARCH_RESULTS_AWAY'),
-      motion.indexOf('export const barIn'),
+      motion.indexOf('const SECTION_SHIFT'),
     );
     expect(swap).toContain('const SEARCH_RESULTS_AWAY = 1.05');
     expect(swap).toContain('const SEARCH_DIRECTORY_AWAY = 0.95');

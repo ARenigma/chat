@@ -282,7 +282,7 @@ export function bloomExitGradient(layer: BloomLayer, palette: BloomPalette): str
 }
 
 /** The sentinel for the source's `.clear`: present, positioned, invisible. */
-export const TRANSPARENT = 'transparent';
+const TRANSPARENT = 'transparent';
 
 /**
  * One step's three colours, back to front.
@@ -383,7 +383,7 @@ export function bloomTravel(layer: BloomLayer, screenHeight: number): number {
  * kept symmetric (midpoint still exactly 0.5) so the overall motion character is
  * unchanged. It cannot overshoot, so there is still no bounce to reproduce.
  */
-export function smooth(t: number): number {
+function smooth(t: number): number {
   'worklet';
   return t * t * t * (t * (t * 6 - 15) + 10);
 }

@@ -29,8 +29,8 @@
  * what the card could have sent.
  */
 
-export const BIRTH_PREFIX = 'Birth details: ';
-export const BIRTH_TIME_UNKNOWN = 'time unknown';
+const BIRTH_PREFIX = 'Birth details: ';
+const BIRTH_TIME_UNKNOWN = 'time unknown';
 export const BIRTH_PLACE_MAX = 60;
 /** The earliest birth year the date picker offers. */
 export const BIRTH_YEAR_MIN = 1900;
@@ -74,7 +74,7 @@ export interface BirthDetails {
 const PLACE = /^[\p{L}\p{M}][\p{L}\p{M} .,'()-]*$/u;
 
 /** The place as it will be sent: trimmed, inner runs of space collapsed. */
-export function cleanBirthPlace(place: string): string {
+function cleanBirthPlace(place: string): string {
   return place.trim().replace(/\s+/gu, ' ');
 }
 

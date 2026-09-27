@@ -26,7 +26,7 @@ import { INTERACTION, PRESS, pressIn, pressOut, springTo } from '../theme/motion
  * stated in design/tokens.json `$tabDeviation`.
  * https://github.com/bluesky-social/social-app/blob/main/src/view/com/util/forms/PressableScale.tsx
  */
-export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'tab' | 'none';
+type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'tab' | 'none';
 
 /**
  * Which platform's press model this surface uses.
@@ -54,7 +54,7 @@ export type PressKind = 'card' | 'row' | 'button' | 'chip' | 'send' | 'tab' | 'n
  * dim on top of that fill would be a second, muddier answer to the same touch.
  * `busy` still holds the surface compressed; that is state, not press feedback.
  */
-export type Highlight = 'material' | 'dim' | 'ripple' | 'none';
+type Highlight = 'material' | 'dim' | 'ripple' | 'none';
 
 interface Props {
   onPress: () => void;

@@ -24,13 +24,10 @@ import { useTheme } from '../theme/ThemeProvider';
 /** Canonical M3 contained-loading-indicator diameter. */
 const LOADING_CONTAINER_SIZE = 48;
 
-/** Canonical active shape diameter inside the 48dp container. */
-export const LOADING_INDICATOR_SIZE = 38;
-
-export type LoadingIndicatorVariant = 'auto' | 'loading' | 'circular';
+type LoadingIndicatorVariant = 'auto' | 'loading' | 'circular';
 
 /** M3 defines the expressive loader as a sub-five-second component. */
-export const LONG_WAIT_MS = 5000;
+const LONG_WAIT_MS = 5000;
 
 interface NativeIndicatorProps extends ViewProps {
   indicatorColor: ColorValue;

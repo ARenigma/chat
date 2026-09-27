@@ -6,4 +6,4 @@
  * see THIRD_PARTY_LICENSES.md
  */
 
-export { Screen, type ScreenProps } from './Screen';
+export { Screen } from './Screen';

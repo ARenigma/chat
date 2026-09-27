@@ -25,7 +25,7 @@
  * instead of mounting BlurRoot/BlurSurface.
  */
 import { Platform, UIManager, requireNativeComponent } from 'react-native';
-import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
+import type {  StyleProp, ViewStyle } from 'react-native';
 
 // ─── BlurRoot ────────────────────────────────────────────────────────────────
 
@@ -104,70 +104,3 @@ export const BlurRoot = requireNativeComponent<BlurRootProps>('PappalBlurRoot');
 
 // ─── BlurSurface ─────────────────────────────────────────────────────────────
 
-/**
- * Props accepted by the PappalBlurSurface native view manager.
- *
- * All props are optional. Defaults match the reference app's chat blur configuration:
- * tintAlpha 0.70 = key_chat_BlurAlpha 0xB2/255 (ThemeColors.java:660),
- * blurRadius 60 = HIGH-class radius (SizeNotifierFrameLayout.java:952).
- */
-export interface BlurSurfaceProps {
-  style?: StyleProp<ViewStyle>;
-  /**
-   * ARGB tint colour composited OVER the blur.
-   *
-   * A COLOUR STRING, e.g. 'rgba(255,255,255,0.55)' or '#0B141A' or
-   * 'transparent'. Not a number.
-   *
-   * The native side declares this `@ReactProp(customType = "Color")`, which
-   * hands the value to React Native's colour normaliser before it crosses the
-   * bridge. That normaliser REJECTS negative numbers, and a signed 32-bit ARGB
-   * int - the obvious thing to reach for on Android - is negative for any
-   * colour with alpha above 0x7F. A rejected value is dropped rather than sent,
-   * so the view silently keeps its default.
-   *
-   * That is not hypothetical: this prop used to take a hand-converted signed
-   * int and every frosted bar in the app painted the native default instead of
-   * the tint. Verified with RN's own normaliser:
-   *   normalizeColor(-1929379841)              -> null
-   *   normalizeColor('rgba(255,255,255,0.55)') -> 4294967180
-   *
-   * A number is still accepted by the type, because RN accepts one - but it
-   * must be the UNSIGNED 0xRRGGBBAA form RN documents, never a signed ARGB int.
-   * Passing the token string is simpler and cannot be got wrong.
-   */
-  tintColor?: ColorValue;
-  /**
-   * Opacity of the tint overlay in [0, 1].
-   *
-   * Default 0.70 matches the reference app's key_chat_BlurAlpha (70%). At this value
-   * the blur is ~30% visible — enough to show depth without becoming a lens.
-   * A lower value lets more blur through; higher approaches a solid plate.
-   */
-  tintAlpha?: number;
-  /**
-   * Blur radius in downscaled-pixel space (passed to RenderEffect.createBlurEffect).
-   *
-   * Default 60 matches the reference app's HIGH-class radius. The perceived blur in
-   * screen space is radius × DOWNSCALE (DOWNSCALE = 6 in BlurPackage.kt).
-   */
-  blurRadius?: number;
-  /**
-   * Whether to use the hardware blur path.
-   *
-   * false → the native view draws a solid tintColor rect at full opacity
-   * (the same fallback used on API < 31).  Useful for temporarily disabling
-   * the blur during heavy animations without unmounting the view.
-   */
-  enabled?: boolean;
-}
-
-/**
- * The native PappalBlurSurface view.
- *
- * Must be a child of BlurRoot (or a descendant at any depth). If no BlurRoot
- * ancestor is found at attach time the native view logs a warning and renders
- * the solid fallback rather than crashing.
- */
-export const BlurSurface =
-  requireNativeComponent<BlurSurfaceProps>('PappalBlurSurface');

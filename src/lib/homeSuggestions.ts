@@ -46,9 +46,6 @@ export const PROMPT_DURATION_S = 30;
 /** Idle wait before the first prompt fires. */
 export const IDLE_WAIT_MS = 10_000;
 
-/** Gap between prompts. */
-export const INTER_PROMPT_MS = 10_000;
-
 export const INITIAL_STATE: CampaignState = { phase: 'dormant' };
 
 /**

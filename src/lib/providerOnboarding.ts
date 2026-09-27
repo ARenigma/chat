@@ -10,67 +10,8 @@
  * `onboarding.ts` respectively; import from there rather than duplicating them.
  */
 
-import type { IconName } from '../components/Icon';
 import { BLOOM_PALETTES, type BloomPalette } from './bloom';
 import type { Phase } from './onboarding';
-import { APPLICATION_STEPS } from './applicationSteps';
-
-/**
- * The three checklist row keys for the provider application.
- *
- * Separate from `StepKey` in onboarding.ts, which is `'identify' | 'verify'`
- * and belongs to the member sign-in flow. These are provider-specific values
- * that map to `APPLICATION_STEPS[0..2]`.
- */
-export type ProviderStepKey = 'you' | 'how' | 'why';
-
-/**
- * One row of the provider checklist.
- *
- * Mirrors the shape of `StepSpec` from onboarding.ts — same four fields, same
- * purposes — with `key` typed to `ProviderStepKey` instead of `StepKey`.
- * `OnboardingStep` only reads `title`, `description`, and `glyph` at runtime;
- * the caller casts via `as unknown as StepSpec` at the call site so `tsc` stays
- * clean while the runtime stays correct.
- */
-export interface ProviderStepSpec {
-  readonly key: ProviderStepKey;
-  readonly title: string;
-  readonly description: string;
-  readonly glyph: IconName;
-}
-
-/**
- * The three checklist rows, in order.
- *
- * Titles are pulled from `APPLICATION_STEPS` so they cannot drift: the stepper
- * used to declare its own "You / How you talk / Why you" literals, which were a
- * second source of truth for names the server cares about.
- *
- * Descriptions are the `STEP_INTRO` copy from the previous screen, now living
- * here alongside the glyph so both are versioned together.
- */
-export const PROVIDER_STEPS: readonly ProviderStepSpec[] = [
-  {
-    key: 'you',
-    title: APPLICATION_STEPS[0]?.title ?? 'You',
-    description:
-      'Enough that somebody can decide whether to talk to you. Your date of birth is never shown.',
-    glyph: 'person',
-  },
-  {
-    key: 'how',
-    title: APPLICATION_STEPS[1]?.title ?? 'How you talk',
-    description: 'What you speak, and one line people will see first.',
-    glyph: 'chat',
-  },
-  {
-    key: 'why',
-    title: APPLICATION_STEPS[2]?.title ?? 'Why you',
-    description: 'The part a reviewer actually reads.',
-    glyph: 'heart',
-  },
-] as const;
 
 /**
  * Which palette the bloom field wears, given where the provider flow is.

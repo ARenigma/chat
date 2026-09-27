@@ -12,18 +12,18 @@ import type { Story, StoryError, StoryMediaType } from './database.types';
 export const STORIES_BUCKET = 'stories';
 
 /** 144's `file_size_limit`: the Storage API refuses anything larger. */
-export const MAX_STORY_BYTES = 50 * 1024 * 1024;
+const MAX_STORY_BYTES = 50 * 1024 * 1024;
 
 /** 143's `story_duration_in_range`: a video clip is 1-30s. */
-export const MAX_VIDEO_MS = 30_000;
-export const MIN_VIDEO_MS = 1_000;
+const MAX_VIDEO_MS = 30_000;
+const MIN_VIDEO_MS = 1_000;
 
 /** 143: an image shows for 7s when no duration is given. */
-export const IMAGE_DISPLAY_MS = 7_000;
+const IMAGE_DISPLAY_MS = 7_000;
 
 /** 143's caption rule: 1-200 characters, at most 3 line breaks. */
 export const MAX_CAPTION_CHARS = 200;
-export const MAX_CAPTION_LINE_BREAKS = 3;
+const MAX_CAPTION_LINE_BREAKS = 3;
 
 /** 147's comment rule: 1-500 visible characters, at most 6 lines. */
 export const MAX_COMMENT_CHARS = 500;
@@ -187,7 +187,7 @@ export function orderRail(groups: readonly StoryGroup[], seen: ReadonlySet<strin
 }
 
 /** Where a group opens: its first unseen story, or the start when all are seen. */
-export function firstUnseenIndex(group: StoryGroup, seen: ReadonlySet<string>): number {
+function firstUnseenIndex(group: StoryGroup, seen: ReadonlySet<string>): number {
   const i = group.stories.findIndex(s => !seen.has(s.id));
   return i === -1 ? 0 : i;
 }

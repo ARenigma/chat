@@ -245,31 +245,6 @@ export function useBills() {
 }
 
 /**
- * A signed URL for one stored invoice PDF, cached.
- *
- * Mirrors useAttachmentUrl exactly: keyed on the path, staleTime just under
- * the TTL so react-query re-mints before the URL expires, enabled only when
- * pdfPath is a non-empty string.
- */
-export function useInvoiceUrl(pdfPath: string | null | undefined) {
-  return useQuery({
-    queryKey: txKeys.invoiceUrl(pdfPath),
-    enabled: typeof pdfPath === 'string' && pdfPath.length > 0,
-    staleTime: (INVOICE_URL_TTL_SECONDS - 30) * 1000,
-    gcTime: INVOICE_URL_TTL_SECONDS * 1000,
-    queryFn: async () => {
-      const { data, error } = await supabase.storage
-        .from('invoices')
-        .createSignedUrl(pdfPath as string, INVOICE_URL_TTL_SECONDS);
-      if (error || !data) {
-        throw error ?? new Error('no signed url');
-      }
-      return data.signedUrl;
-    },
-  });
-}
-
-/**
  * Format paise as a rupee string with 2 decimal places.
  * ₹30000 paise → '₹300.00'
  */

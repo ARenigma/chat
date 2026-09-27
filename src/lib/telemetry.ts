@@ -23,10 +23,10 @@ import { supabase } from './supabase';
 import type { TelemetryEvent } from './database.types';
 import { propsAreSafe, type EventProps } from './telemetryGuard';
 
-export { propsAreSafe } from './telemetryGuard';
+;
 export type { EventProps } from './telemetryGuard';
 
-export async function record(
+async function record(
   name: TelemetryEvent,
   props: EventProps = {},
 ): Promise<void> {

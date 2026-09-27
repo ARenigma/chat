@@ -8,11 +8,11 @@ import type {
 } from './types';
 
 export type {
-  CallConnState,
-  CallMediaBackend,
+  
+  
   CallMediaSession,
-  CallQualitySample,
-  CallVideoSource,
+  
+  
 } from './types';
 
 const noop = () => undefined;

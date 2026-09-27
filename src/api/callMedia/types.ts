@@ -10,7 +10,7 @@ export type CallMediaBackend = 'current' | 'livekit' | 'agora';
  * call timer (the server keeps billing through a reconnect; freezing the
  * clock would only make the screen lie about that, not fix it).
  */
-export type CallConnState =
+type CallConnState =
   | 'connecting'
   | 'connected'
   | 'reconnecting'

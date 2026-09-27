@@ -6,7 +6,6 @@
  * `useDebouncedQuery`, the second by the caller searching both lists. Both fixes
  * live here rather than in the screen so they can be tested without a device.
  */
-import { useEffect, useState } from 'react';
 
 /**
  * How long typing has to settle before the list re-filters.
@@ -40,29 +39,3 @@ export function matchesQuery(fields: readonly (string | null | undefined)[], q: 
   return fields.some(field => typeof field === 'string' && field.toLowerCase().includes(q));
 }
 
-/**
- * The value the list should filter on, trailing the value the field displays.
- *
- * Returns the normalised query, so callers never repeat the folding. The input
- * itself stays fully controlled by the caller: nothing here delays a keystroke
- * appearing, only the work that follows it.
- *
- * An empty query short-circuits with no timer, so clearing the field restores the
- * full list immediately. Waiting 250ms to show everything again would read as the
- * app being slow at the one moment the user is asking it to do less.
- */
-export function useDebouncedQuery(raw: string, ms: number = SEARCH_DEBOUNCE_MS): string {
-  const target = normaliseQuery(raw);
-  const [settled, setSettled] = useState(target);
-
-  useEffect(() => {
-    if (target === '') {
-      setSettled('');
-      return;
-    }
-    const timer = setTimeout(() => setSettled(target), ms);
-    return () => clearTimeout(timer);
-  }, [target, ms]);
-
-  return settled;
-}

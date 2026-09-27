@@ -13,7 +13,7 @@
  * real enforcement, this exists so a mistake surfaces in a test rather than as
  * a silent insert rejection nobody is watching.
  */
-export const FORBIDDEN_PROP_KEY =
+const FORBIDDEN_PROP_KEY =
   /(body|message|content|text|detail|email|phone|name|token)/i;
 
 /** Only primitives. An object would be a place for a message body to hide. */

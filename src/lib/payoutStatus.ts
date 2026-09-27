@@ -17,7 +17,7 @@
  */
 import type { PayoutAccount, PayoutReadiness } from '../api/provider';
 
-export type GetPaidTone = 'verified' | 'pending' | 'action' | 'unknown';
+type GetPaidTone = 'verified' | 'pending' | 'action' | 'unknown';
 
 export interface GetPaidStatus {
   tone: GetPaidTone;

@@ -24,7 +24,7 @@ import { CONTENT_COLUMN_MAX } from '../../lib/windowSize';
  * on the Bluesky bar, which has none of its own.
  */
 export const INDICATOR_WIDTH = 64;
-export const INDICATOR_HEIGHT = 32;
+const INDICATOR_HEIGHT = 32;
 
 /**
  * The bar's bottom padding: the navigation inset clamped to

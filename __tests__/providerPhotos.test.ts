@@ -180,8 +180,8 @@ describe('a provider publishes several photos, and one of them is the face', () 
   it('reuses the 038 bucket and the 013 path shape, not a second upload path', () => {
     const api = code('src/api/provider.ts');
     expect(api).toContain('/storage/v1/object/avatars/');
-    // useUploadAvatar plus the new batch upload, and no third.
-    expect(api.match(/storage\/v1\/object\/avatars/g)).toHaveLength(2);
+    // The batch upload is the one path (useUploadAvatar went unused, 09-27).
+    expect(api.match(/storage\/v1\/object\/avatars/g)).toHaveLength(1);
     // STANDING BAN, not a red-on-revert gate: this one also passes on the
     // pre-070 file, and it is kept because the react-query KEY is
     // `['provider-photos', id]` while the TABLE is `provider_photos`. Typing

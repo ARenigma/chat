@@ -15,12 +15,3 @@ import type { AllNavigatorParams } from './types';
 export const navigationRef =
   createNavigationContainerRef<AllNavigatorParams>();
 
-/** Root navigator state, or undefined when not yet ready. */
-export function getRootState():
-  | ReturnType<typeof navigationRef.getRootState>
-  | undefined {
-  if (!navigationRef.isReady()) {
-    return undefined;
-  }
-  return navigationRef.getRootState();
-}

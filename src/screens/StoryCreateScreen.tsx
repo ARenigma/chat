@@ -62,7 +62,7 @@ interface Props {
 }
 
 /** The picker's asset as a draft; null when it is not something a story can be. */
-export function draftFromAsset(asset: Asset | undefined): StoryDraft | null {
+function draftFromAsset(asset: Asset | undefined): StoryDraft | null {
   if (asset?.uri === undefined) {
     return null;
   }

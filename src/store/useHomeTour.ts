@@ -5,7 +5,7 @@ const HOME_TOUR_KEY = 'companion.homeTour.v1';
 
 export type TourTargetId = 'wallet' | 'chats' | 'explore' | 'favourites' | 'home';
 
-export interface TourRect {
+interface TourRect {
   x: number;
   y: number;
   width: number;

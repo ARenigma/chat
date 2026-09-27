@@ -236,7 +236,7 @@ export function chatV2Receipt(
  * which a 1:1 thread has no use for — or Edit and Delete sitting on a peer
  * message where the server would refuse both.
  */
-export type ChatV2ActionSurface = 'none' | 'reactions' | 'menu';
+type ChatV2ActionSurface = 'none' | 'reactions' | 'menu';
 
 export interface ChatV2MessageActions {
   surface: ChatV2ActionSurface;

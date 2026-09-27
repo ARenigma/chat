@@ -45,17 +45,6 @@ import { currentVersionCode } from '../lib/appUpdate';
 import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
 
 // ---------------------------------------------------------------------------
-// Play Billing (UCB) native bridge — kept for production path (ADR-0022).
-// ---------------------------------------------------------------------------
-
-
-
-export type BillingEvent =
-  | { type: 'purchaseAcknowledged'; purchaseToken: string; productId: string; orderId: string }
-  | { type: 'alternativeChosen'; externalTransactionToken: string }
-  | { type: 'error'; code: number; message: string };
-
-// ---------------------------------------------------------------------------
 // Shared types
 // ---------------------------------------------------------------------------
 
@@ -115,7 +104,7 @@ export function discountedBasePaise(baseInr: number, discountBps: number): numbe
 }
 
 /** Total in paise the member will be charged: discounted base + GST on it. */
-export function discountedTotalPaise(
+function discountedTotalPaise(
   baseInr: number,
   gstRateBps: number,
   discountBps: number,
@@ -237,7 +226,7 @@ export interface CashfreeCheckoutResult {
 }
 
 /** How the member pays. `upi` is the one-tap intent; `web` is the card/NB fallback. */
-export type CashfreeMethod = 'upi' | 'web';
+type CashfreeMethod = 'upi' | 'web';
 
 export interface CashfreeCheckoutVars {
   productId: string;

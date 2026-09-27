@@ -85,7 +85,7 @@ export const META_CHIP_HEIGHT = 32;
  * height.
  * https://m3.material.io/components/chips/specs
  */
-export const META_CHIP_HEIGHT_SM = 24;
+const META_CHIP_HEIGHT_SM = 24;
 
 function MetaChipView({ label, tone = 'surface', size = 'md', testID, style }: Props) {
   const styles = useStyles(makeStyles);
