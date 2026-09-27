@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
-import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
 import { M3Field } from '../components/TextField';
+import { Toggle } from '../components/Toggle';
 import {
   BIRTH_PLACE_MAX,
   birthPlaceProblem,
@@ -17,7 +17,7 @@ import {
 import { pickBirthDate, pickBirthTime } from '../lib/birthPicker';
 import { tick } from '../lib/haptics';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles } from '../theme/ThemeProvider';
 
 interface Props {
   visible: boolean;
@@ -45,7 +45,6 @@ interface Props {
  */
 export function BirthDetailsSheet({ visible, onClose, onSend }: Props) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const [date, setDate] = useState<BirthDate | null>(null);
   const [time, setTime] = useState<BirthTime | null>(null);
   const [timeUnknown, setTimeUnknown] = useState(false);
@@ -79,9 +78,9 @@ export function BirthDetailsSheet({ visible, onClose, onSend }: Props) {
     }
   }, [time]);
 
-  const toggleUnknown = useCallback(() => {
+  const setUnknown = useCallback((next: boolean) => {
     tick();
-    setTimeUnknown(current => !current);
+    setTimeUnknown(next);
   }, []);
 
   const placeError = birthPlaceProblem(place);
@@ -145,29 +144,19 @@ export function BirthDetailsSheet({ visible, onClose, onSend }: Props) {
             void chooseTime();
           }}
         />
-        <Pressable
-          testID="birth-details-time-unknown"
-          accessibilityRole="checkbox"
-          checked={timeUnknown}
-          accessibilityLabel="I don't know the time"
-          onPress={toggleUnknown}
-          style={styles.checkRow}
-        >
-          <View
-            style={[styles.checkBox, timeUnknown ? styles.checkBoxOn : null]}
-          >
-            {timeUnknown ? (
-              <Icon
-                name="check"
-                size={TOKENS.icon.xs}
-                color={theme.color.text.onAccent}
-              />
-            ) : null}
-          </View>
+        {/* The app's own switch (Toggle.tsx), so the on state is a thumb
+            that moves and a filled track, not a tint alone. */}
+        <View style={styles.checkRow}>
           <Text allowFontScaling style={styles.checkLabel}>
             I don't know the time
           </Text>
-        </Pressable>
+          <Toggle
+            testID="birth-details-time-unknown"
+            value={timeUnknown}
+            onValueChange={setUnknown}
+            accessibilityLabel="I don't know the time"
+          />
+        </View>
         <M3Field
           testID="birth-details-place"
           label="Place of birth"
@@ -267,22 +256,9 @@ const makeStyles = (t: Theme) =>
       minHeight: TOKENS.interaction.minTarget,
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       gap: TOKENS.space.sm,
-      paddingHorizontal: TOKENS.space.xs,
-    },
-    checkBox: {
-      width: 20,
-      height: 20,
-      borderRadius: TOKENS.radius.xs,
-      borderWidth: 2,
-      borderColor: t.color.border.strong,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    // The coral fill for the checked state, the one accent in the sheet.
-    checkBoxOn: {
-      backgroundColor: t.color.bg.accentStrong,
-      borderColor: t.color.bg.accentStrong,
+      paddingHorizontal: TOKENS.space.md,
     },
     checkLabel: {
       ...TOKENS.typography.textMd,
