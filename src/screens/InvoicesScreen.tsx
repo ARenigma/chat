@@ -23,13 +23,14 @@
  * "N payments did not go through". The old `unsettledNote` and `billingList`
  * count are removed.
  */
+import { paymentState } from '../lib/paymentStatus';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { longDate } from '../lib/datetime';
+import { moneyDate } from '../lib/datetime';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
 import {
@@ -258,26 +259,33 @@ function BillRow({ entry, onOpen }: RowProps) {
         <Text allowFontScaling style={styles.amount}>
           {formatPaise(entry.amountPaise)}
         </Text>
+        {/* The download slot, empty: every row keeps the amount in one column. */}
+        <View style={styles.glyphSlot} />
       </View>
     );
   }
 
-  // State 2: pending payment (created — in flight or abandoned at gateway)
+  // State 2: an order with no verdict. Pending only inside the gateway's
+  // window; past it, an abandoned checkout that will never bill
+  // (lib/paymentStatus, the rule Recharge history shares).
   if (entry.status === 'created') {
+    const pending = paymentState('created', entry.paidAt) === 'pending';
     return (
       <View style={styles.line} testID={`bill-${entry.transactionId}`}>
         <Icon name="receipt" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
         <View style={styles.lineBody}>
           <Text allowFontScaling style={styles.title}>
-            Payment pending
+            {pending ? 'Payment pending' : 'Payment not completed'}
           </Text>
           <Text allowFontScaling style={styles.meta}>
-            Bill follows once it clears
+            {pending ? 'Bill follows once it clears' : 'No bill: nothing was charged'}
           </Text>
         </View>
         <Text allowFontScaling style={styles.amount}>
           {formatPaise(entry.amountPaise)}
         </Text>
+        {/* The download slot, empty: every row keeps the amount in one column. */}
+        <View style={styles.glyphSlot} />
       </View>
     );
   }
@@ -292,7 +300,7 @@ function BillRow({ entry, onOpen }: RowProps) {
             Bill pending
           </Text>
           <Text allowFontScaling style={styles.meta}>
-            {`Paid ${longDate(entry.paidAt)}`}
+            {`Paid ${moneyDate(entry.paidAt)}`}
           </Text>
           <Text allowFontScaling style={styles.meta}>
             The document for this top-up has not been raised yet.
@@ -301,6 +309,8 @@ function BillRow({ entry, onOpen }: RowProps) {
         <Text allowFontScaling style={styles.amount}>
           {formatPaise(entry.amountPaise)}
         </Text>
+        {/* The download slot, empty: every row keeps the amount in one column. */}
+        <View style={styles.glyphSlot} />
       </View>
     );
   }
@@ -315,7 +325,7 @@ function BillRow({ entry, onOpen }: RowProps) {
   // A reversed recharge keeps its document — the number was issued and the
   // series is gapless — so the row says what happened to the money instead of
   // disappearing. See SETTLED_RECHARGE_STATUSES.
-  const meta = `${label} · ${longDate(invoice.issuedAt)}${
+  const meta = `${label} · ${moneyDate(invoice.issuedAt)}${
     entry.status === 'refunded' ? ' · Refunded' : ''
   }`;
 
@@ -338,6 +348,8 @@ function BillRow({ entry, onOpen }: RowProps) {
         <Text allowFontScaling style={styles.amount}>
           {formatPaise(invoice.totalPaise)}
         </Text>
+        {/* The download slot, empty: every row keeps the amount in one column. */}
+        <View style={styles.glyphSlot} />
       </View>
     );
   }
@@ -349,7 +361,7 @@ function BillRow({ entry, onOpen }: RowProps) {
       testID={`bill-${entry.transactionId}`}
       accessibilityLabel={`Open ${label} ${invoice.invoiceNumber}, ${formatPaise(
         invoice.totalPaise,
-      )}, ${longDate(invoice.issuedAt)}`}
+      )}, ${moneyDate(invoice.issuedAt)}`}
       accessibilityHint="Opens the PDF in another app"
       press="none"
       highlight="dim"

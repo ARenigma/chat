@@ -335,7 +335,8 @@ describe('the KPIs are wired above the rows', () => {
     // The secondary line contains the elapsed label and the date, not a
     // channel word before them.
     expect(SCREEN).toContain('elapsedLabel(row)');
-    expect(SCREEN).toContain('listStamp(row.started_at)');
+    // One date form across the money screens (moneyDate, 2026-09-29).
+    expect(SCREEN).toContain('moneyDate(row.started_at)');
   });
 
   it('groups rows into month sections', () => {
@@ -373,5 +374,22 @@ describe('the KPIs are wired above the rows', () => {
     expect(SCREEN).not.toContain('totalCard');
     expect(SCREEN).not.toContain('totalValue');
     expect(SCREEN).not.toContain('totalLabel');
+  });
+});
+
+describe('payment state and the one money date (2026-09-29)', () => {
+  const { paymentState, PENDING_WINDOW_MS } = require('../src/lib/paymentStatus');
+  const { moneyDate } = require('../src/lib/datetime');
+  const NOW = Date.parse('2026-09-29T12:00:00Z');
+  it('calls an order pending only inside the window', () => {
+    expect(paymentState('created', new Date(NOW - 60_000).toISOString(), NOW)).toBe('pending');
+    expect(paymentState('created', new Date(NOW - PENDING_WINDOW_MS - 1).toISOString(), NOW)).toBe('incomplete');
+    expect(paymentState('created', '2026-08-30T07:00:00Z', NOW)).toBe('incomplete');
+    expect(paymentState('succeeded', '2026-08-30T07:00:00Z', NOW)).toBe('paid');
+    expect(paymentState('failed', '2026-08-30T07:00:00Z', NOW)).toBe('failed');
+  });
+  it('writes one short date', () => {
+    expect(moneyDate('2026-09-13T12:00:00Z')).toBe('13 Sep 2026');
+    expect(moneyDate('not a date')).toBe('');
   });
 });

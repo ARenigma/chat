@@ -1,3 +1,5 @@
+import { moneyDate } from '../lib/datetime';
+import { PAYMENT_STATE_LABEL, paymentState, type PaymentState } from '../lib/paymentStatus';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -34,18 +36,9 @@ function kindLabel(kind: TokenTransaction['kind']): string {
   }
 }
 
-/** Status display name shown as a coloured word trailing the amount. */
-function statusLabel(status: TokenTransaction['status']): string {
-  switch (status) {
-    case 'succeeded':
-      return 'Paid';
-    case 'created':
-      return 'Pending';
-    case 'failed':
-      return 'Failed';
-    case 'refunded':
-      return 'Refunded';
-  }
+/** The coloured status word trailing the amount (shared rule: lib/paymentStatus). */
+function stateOf(tx: TokenTransaction): PaymentState {
+  return paymentState(tx.status, tx.createdAt);
 }
 
 /**
@@ -64,18 +57,12 @@ export function allTransactions(
 
 /** Short date + time: "27 Aug 2026, 10:30 AM" */
 function shortDateTime(iso: string): string {
-  const d = new Date(iso);
-  const date = d.toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-  const time = d.toLocaleTimeString('en-IN', {
+  const time = new Date(iso).toLocaleTimeString('en-IN', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
   });
-  return `${date}, ${time}`;
+  return `${moneyDate(iso)}, ${time}`;
 }
 
 /** "SEPTEMBER 2026" from an ISO timestamp. */
@@ -107,14 +94,15 @@ function groupByMonth(rows: TokenTransaction[]): FlatTx[] {
 }
 
 /** Filter labels in display order. */
-const FILTER_OPTIONS = ['All', 'Paid', 'Pending', 'Failed', 'Refunded'] as const;
+const FILTER_OPTIONS = ['All', 'Paid', 'Pending', 'Not completed', 'Failed', 'Refunded'] as const;
 type FilterOption = (typeof FILTER_OPTIONS)[number];
 
 /** The status values that correspond to each filter label. */
-const FILTER_STATUS: Record<FilterOption, TokenTransaction['status'] | null> = {
+const FILTER_STATUS: Record<FilterOption, PaymentState | null> = {
   All: null,
-  Paid: 'succeeded',
-  Pending: 'created',
+  Paid: 'paid',
+  Pending: 'pending',
+  'Not completed': 'incomplete',
   Failed: 'failed',
   Refunded: 'refunded',
 };
@@ -141,7 +129,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
 
   // Which statuses are present in the full list — only those get a chip.
   const presentStatuses = useMemo(
-    () => new Set(rows.map(tx => tx.status)),
+    () => new Set(rows.map(stateOf)),
     [rows],
   );
 
@@ -166,7 +154,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
   const filteredRows = useMemo(() => {
     const status = FILTER_STATUS[activeFilter];
     if (status === null) return rows;
-    return rows.filter(tx => tx.status === status);
+    return rows.filter(tx => stateOf(tx) === status);
   }, [rows, activeFilter]);
 
   const flatRows = useMemo(() => groupByMonth(filteredRows), [filteredRows]);
@@ -296,12 +284,12 @@ function TransactionRow({ tx, onDownload }: RowProps) {
           allowFontScaling
           style={[
             styles.rowStatus,
-            tx.status === 'succeeded' && styles.statusPaid,
-            tx.status === 'created' && styles.statusPending,
-            tx.status === 'failed' && styles.statusFailed,
-            tx.status === 'refunded' && styles.statusRefunded,
+            stateOf(tx) === 'paid' && styles.statusPaid,
+            stateOf(tx) === 'pending' && styles.statusPending,
+            (stateOf(tx) === 'failed' || stateOf(tx) === 'incomplete') && styles.statusFailed,
+            stateOf(tx) === 'refunded' && styles.statusRefunded,
           ]}>
-          {statusLabel(tx.status)}
+          {PAYMENT_STATE_LABEL[stateOf(tx)]}
         </Text>
       </View>
 

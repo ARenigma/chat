@@ -34,7 +34,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { providerFirstName } from '../lib/display';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { listStamp } from '../lib/datetime';
+import { moneyDate } from '../lib/datetime';
 import { formatCount, formatRupees } from '../lib/rates';
 import { durationWords } from '../lib/transcript';
 import { useUsageLedger, type UsageRow } from '../api/usage';
@@ -344,7 +344,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
                    */}
                   <Text allowFontScaling style={styles.rowMeta}>
                     {`${elapsedLabel(row)}${
-                      row.started_at !== null ? ` · ${listStamp(row.started_at)}` : ''
+                      row.started_at !== null ? ` · ${moneyDate(row.started_at)}` : ''
                     }`}
                   </Text>
                 </View>

@@ -173,3 +173,19 @@ export function dividerParts(
 export function opensDay(row: { created_at: string }, older?: { created_at: string }): boolean {
   return older === undefined || !sameDay(row.created_at, older.created_at);
 }
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * "30 Aug 2026": the one date form the money screens share (Usage, Recharge
+ * history, Bills & invoices), which had three between them (S22 2026-09-29:
+ * "19/09/26", "13 Sept 2026", "2 September 2026"). Composed by hand for the
+ * reason `longDate`'s neighbours are: Hermes ships one locale.
+ */
+export function moneyDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return '';
+  }
+  return `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
