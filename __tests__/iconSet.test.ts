@@ -222,8 +222,8 @@ describe('every icon name resolves to a glyph the font draws', () => {
     }
     // The scan found what is known to be there, so a regex that silently
     // matched nothing cannot pass this.
-    // The bottom bar only: ProviderHomeScreen's own tab row went with the file
-    // in navigation step 7, and FloatingToolbar in step 8.
+    // One dynamic site: the bottom bar (step 5 shell). UsageLedger icons are
+    // now literal names (name="call", name="video", name="chat").
     expect(dynamicSites).toBe(1);
     expect([...names.keys()]).toEqual(
       expect.arrayContaining(['home', 'heart', 'person', 'chat', 'star']),

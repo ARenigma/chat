@@ -24,7 +24,8 @@
  * count are removed.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { Linking, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -70,21 +71,25 @@ function monthHeader(iso: string): string {
   return `${month} ${d.getFullYear()}`;
 }
 
-/** Group billing rows by month; the date used is paidAt (created_at). */
-function groupByMonth(
-  rows: BillingRow[],
-): Array<{ title: string; data: BillingRow[] }> {
-  const sections: Array<{ title: string; data: BillingRow[] }> = [];
-  let currentTitle = '';
+/**
+ * Flat array with month-header strings interleaved before the first row of
+ * each new month. FlashList has no sections prop — sections are expressed as
+ * a flat list with header rows in it, plus getItemType for recycling pools.
+ */
+type FlatBill = string | BillingRow;
+
+function groupByMonth(rows: BillingRow[]): FlatBill[] {
+  const flat: FlatBill[] = [];
+  let currentHeader = '';
   for (const row of rows) {
-    const title = monthHeader(row.paidAt);
-    if (title !== currentTitle) {
-      sections.push({ title, data: [] });
-      currentTitle = title;
+    const header = monthHeader(row.paidAt);
+    if (header !== currentHeader) {
+      flat.push(header);
+      currentHeader = header;
     }
-    sections[sections.length - 1]!.data.push(row);
+    flat.push(row);
   }
-  return sections;
+  return flat;
 }
 
 export function InvoicesScreen({ onBack }: Props) {
@@ -104,7 +109,7 @@ export function InvoicesScreen({ onBack }: Props) {
   // All billing rows — settled ones get real documents, unsettled ones get an
   // explanatory row. Amit 2026-09-29: no footnote count; every attempt visible.
   const allRows = useMemo(() => data ?? [], [data]);
-  const sections = useMemo(() => groupByMonth(allRows), [allRows]);
+  const flatRows = useMemo(() => groupByMonth(allRows), [allRows]);
 
   const openDocument = useCallback(
     async (invoice: InvoiceRecord) => {
@@ -174,26 +179,31 @@ export function InvoicesScreen({ onBack }: Props) {
           </Text>
         </View>
       ) : (
-        <SectionList
+        <FlashList
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
-          sections={sections}
-          keyExtractor={entry => entry.transactionId}
+          data={flatRows}
+          keyExtractor={item => (typeof item === 'string' ? item : item.transactionId)}
+          getItemType={item => (typeof item === 'string' ? 'header' : 'row')}
           contentContainerStyle={[
             styles.list,
             { paddingBottom: barOffset },
           ]}
-          renderSectionHeader={({ section }) => (
-            <Text allowFontScaling style={styles.sectionHeader}>
-              {section.title}
-            </Text>
-          )}
-          renderItem={({ item: entry }) => (
-            <BillRow
-              entry={entry}
-              onOpen={openDocument}
-            />
-          )}
+          renderItem={({ item }) => {
+            if (typeof item === 'string') {
+              return (
+                <Text allowFontScaling style={styles.sectionHeader}>
+                  {item}
+                </Text>
+              );
+            }
+            return (
+              <BillRow
+                entry={item}
+                onOpen={openDocument}
+              />
+            );
+          }}
         />
       )}
     </View>

@@ -196,8 +196,12 @@ describe('the screen shows all statuses and filters client-side', () => {
   });
 
   it('groups rows into month sections', () => {
-    expect(SCREEN).toContain('SectionList');
-    expect(SCREEN).toContain('renderSectionHeader');
+    /*
+     * SectionList is banned (contract.test.ts); the flat-array + getItemType
+     * pattern is used instead.
+     */
+    expect(SCREEN).toContain('FlashList');
+    expect(SCREEN).toContain('getItemType');
     expect(SCREEN).toContain('groupByMonth');
   });
 });

@@ -340,10 +340,12 @@ describe('the KPIs are wired above the rows', () => {
 
   it('groups rows into month sections', () => {
     /*
-     * Amit 2026-09-29: SectionList with "SEPTEMBER 2026" headers.
+     * Amit 2026-09-29: FlashList with "SEPTEMBER 2026" headers.
+     * SectionList is banned (contract.test.ts); the flat-array + getItemType
+     * pattern interleaves string month-headers into the data array.
      */
-    expect(SCREEN).toContain('SectionList');
-    expect(SCREEN).toContain('renderSectionHeader');
+    expect(SCREEN).toContain('FlashList');
+    expect(SCREEN).toContain('getItemType');
     expect(SCREEN).toContain('groupByMonth');
   });
 

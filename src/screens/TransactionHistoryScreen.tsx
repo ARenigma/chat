@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Linking, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -84,21 +85,25 @@ function monthHeader(iso: string): string {
   return `${month} ${d.getFullYear()}`;
 }
 
-/** Group rows into {title, data} sections by calendar month, preserving order. */
-function groupByMonth(
-  rows: TokenTransaction[],
-): Array<{ title: string; data: TokenTransaction[] }> {
-  const sections: Array<{ title: string; data: TokenTransaction[] }> = [];
-  let currentTitle = '';
+/**
+ * Flat array with month-header strings interleaved before the first row of
+ * each new month. FlashList has no sections prop — sections are expressed as
+ * a flat list with header rows in it, plus getItemType for recycling pools.
+ */
+type FlatTx = string | TokenTransaction;
+
+function groupByMonth(rows: TokenTransaction[]): FlatTx[] {
+  const flat: FlatTx[] = [];
+  let currentHeader = '';
   for (const row of rows) {
-    const title = monthHeader(row.createdAt);
-    if (title !== currentTitle) {
-      sections.push({ title, data: [] });
-      currentTitle = title;
+    const header = monthHeader(row.createdAt);
+    if (header !== currentHeader) {
+      flat.push(header);
+      currentHeader = header;
     }
-    sections[sections.length - 1]!.data.push(row);
+    flat.push(row);
   }
-  return sections;
+  return flat;
 }
 
 /** Filter labels in display order. */
@@ -164,7 +169,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
     return rows.filter(tx => tx.status === status);
   }, [rows, activeFilter]);
 
-  const sections = useMemo(() => groupByMonth(filteredRows), [filteredRows]);
+  const flatRows = useMemo(() => groupByMonth(filteredRows), [filteredRows]);
 
   const handleDownload = useCallback(
     async (pdfPath: string) => {
@@ -203,11 +208,12 @@ export function TransactionHistoryScreen({ onBack }: Props) {
           </Text>
         </View>
       ) : (
-        <SectionList
+        <FlashList
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
-          sections={sections}
-          keyExtractor={tx => tx.id}
+          data={flatRows}
+          keyExtractor={item => (typeof item === 'string' ? item : item.id)}
+          getItemType={item => (typeof item === 'string' ? 'header' : 'row')}
           contentContainerStyle={[
             styles.list,
             { paddingBottom: barOffset },
@@ -229,14 +235,16 @@ export function TransactionHistoryScreen({ onBack }: Props) {
               </View>
             ) : null
           }
-          renderSectionHeader={({ section }) => (
-            <Text allowFontScaling style={styles.sectionHeader}>
-              {section.title}
-            </Text>
-          )}
-          renderItem={({ item: tx }) => (
-            <TransactionRow tx={tx} onDownload={handleDownload} />
-          )}
+          renderItem={({ item }) => {
+            if (typeof item === 'string') {
+              return (
+                <Text allowFontScaling style={styles.sectionHeader}>
+                  {item}
+                </Text>
+              );
+            }
+            return <TransactionRow tx={item} onDownload={handleDownload} />;
+          }}
           ListEmptyComponent={
             /* Shown when a filter leaves no rows (the full list is non-empty). */
             <View style={styles.center}>

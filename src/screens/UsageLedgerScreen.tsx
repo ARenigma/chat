@@ -27,7 +27,8 @@
  * reaches this file to be leaked.
  */
 import React from 'react';
-import { SectionList, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -39,7 +40,7 @@ import { durationWords } from '../lib/transcript';
 import { useUsageLedger, type UsageRow } from '../api/usage';
 import { useProfile } from '../api/chat';
 import { BackButton } from '../components/BackButton';
-import { Icon, type IconName } from '../components/Icon';
+import { Icon } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { RupeeAmount } from '../components/RupeeAmount';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
@@ -48,11 +49,11 @@ interface Props {
   onBack: () => void;
 }
 
-const CHANNEL_GLYPH: Record<UsageRow['channel'], IconName> = {
+const CHANNEL_GLYPH = {
   chat: 'chat',
   audio: 'call',
   video: 'video',
-};
+} as const;
 
 /**
  * Duration label for a usage row — actual elapsed time when available (migration
@@ -72,20 +73,25 @@ function monthHeader(iso: string): string {
   return `${month} ${d.getFullYear()}`;
 }
 
-/** Group rows into {title, data} sections by calendar month, preserving order. */
-function groupByMonth(rows: UsageRow[]): Array<{ title: string; data: UsageRow[] }> {
-  const sections: Array<{ title: string; data: UsageRow[] }> = [];
-  let currentTitle = '';
+/**
+ * Flat array with month-header strings interleaved before the first row of
+ * each new month. FlashList has no sections prop — sections are expressed as
+ * a flat list with header rows in it, plus getItemType for recycling pools.
+ * (ProviderChatsScreen uses the same pattern, introduced 2026-09-12.)
+ */
+function groupByMonth(rows: UsageRow[]): Array<string | UsageRow> {
+  const flat: Array<string | UsageRow> = [];
+  let currentHeader = '';
   for (const row of rows) {
     const date = row.started_at ?? null;
-    const title = date !== null ? monthHeader(date) : 'EARLIER';
-    if (title !== currentTitle) {
-      sections.push({ title, data: [] });
-      currentTitle = title;
+    const header = date !== null ? monthHeader(date) : 'EARLIER';
+    if (header !== currentHeader) {
+      flat.push(header);
+      currentHeader = header;
     }
-    sections[sections.length - 1]!.data.push(row);
+    flat.push(row);
   }
-  return sections;
+  return flat;
 }
 
 /** The two top-level figures, with the words that make each one mean something. */
@@ -231,7 +237,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
   // always sees "Earnings" language, not "Usage" language, even before their
   // first session.
   const earning = kpis?.earning ?? (profile?.role === 'provider');
-  const sections = kpis !== null ? groupByMonth(rows) : [];
+  const flatRows = kpis !== null ? groupByMonth(rows) : [];
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]} testID="usage-ledger">
@@ -267,11 +273,12 @@ export function UsageLedgerScreen({ onBack }: Props) {
           </Text>
         </View>
       ) : (
-        <SectionList
+        <FlashList
           {...SCROLL_PHYSICS}
           showsVerticalScrollIndicator={false}
-          sections={sections}
-          keyExtractor={row => row.session_id}
+          data={flatRows}
+          keyExtractor={item => (typeof item === 'string' ? item : item.session_id)}
+          getItemType={item => (typeof item === 'string' ? 'header' : 'row')}
           contentContainerStyle={[
             styles.scroll,
             { paddingBottom: barOffset },
@@ -298,56 +305,63 @@ export function UsageLedgerScreen({ onBack }: Props) {
               />
             </View>
           }
-          renderSectionHeader={({ section }) => (
-            <Text allowFontScaling style={styles.sectionHeader}>
-              {section.title}
-            </Text>
-          )}
-          renderItem={({ item: row }) => (
-            <View key={row.session_id} style={styles.row} testID={`usage-${row.session_id}`}>
-              {/*
-               * Amit 2026-09-29: filled channel glyph with NO circle container.
-               * The 36dp bg.sunken disc is removed; `active` selects the fill
-               * variant (chat-circle-fill, phone-fill, video-camera-fill).
-               * No circle: the glyph shape already reads as "chat" / "call" /
-               * "video" — the circle is redundant container chrome.
-               */}
-              <Icon
-                name={CHANNEL_GLYPH[row.channel]}
-                active
-                size={TOKENS.icon.md}
-                color={theme.color.text.secondary}
-              />
-              <View style={styles.rowBody}>
-                <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
-                  {/* A member's peer is a provider: first name only (display.ts). */}
-                  {row.i_am_member ? providerFirstName(row.peer_name) || row.peer_name : row.peer_name}
+          renderItem={({ item }) => {
+            if (typeof item === 'string') {
+              return (
+                <Text allowFontScaling style={styles.sectionHeader}>
+                  {item}
                 </Text>
+              );
+            }
+            const row = item;
+            const channel = CHANNEL_GLYPH[row.channel];
+            return (
+              <View style={styles.row} testID={`usage-${row.session_id}`}>
                 {/*
-                 * Amit 2026-09-29: secondary line is elapsed · date only.
-                 * The channel label is dropped — the glyph already names the
-                 * channel, and saying "Chat · 2 min · 27 Aug" names it twice.
+                 * Amit 2026-09-29: filled channel glyph with NO circle
+                 * container. `active` picks the fill variant. The name comes
+                 * from CHANNEL_GLYPH (chat→'chat', audio→'call', video→'video')
+                 * — all three have active fill entries in design/icons.json.
                  */}
-                <Text allowFontScaling style={styles.rowMeta}>
-                  {`${elapsedLabel(row)}${
-                    row.started_at !== null ? ` · ${listStamp(row.started_at)}` : ''
-                  }`}
-                </Text>
-              </View>
-              <View style={styles.amount}>
-                <Text allowFontScaling style={styles.amountValue}>
-                  {`${row.i_am_member ? '-' : '+'}${formatRupees(row.tokens)}`}
-                </Text>
-                {/* Provider only: their share is accrued before it is paid, and
-                    saying so here is cheaper than a support conversation. */}
-                {row.earnings_status !== null && row.earnings_status !== undefined ? (
-                  <Text allowFontScaling style={styles.amountNote}>
-                    {row.earnings_status}
+                {channel === 'call' && (
+                  <Icon name="call" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
+                )}
+                {channel === 'video' && (
+                  <Icon name="video" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
+                )}
+                {channel === 'chat' && (
+                  <Icon name="chat" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
+                )}
+                <View style={styles.rowBody}>
+                  <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
+                    {/* A member's peer is a provider: first name only (display.ts). */}
+                    {row.i_am_member ? providerFirstName(row.peer_name) || row.peer_name : row.peer_name}
                   </Text>
-                ) : null}
+                  {/*
+                   * Amit 2026-09-29: secondary line is elapsed · date only.
+                   * The channel label is dropped — the glyph already names the
+                   * channel, and saying "Chat · 2 min · 27 Aug" names it twice.
+                   */}
+                  <Text allowFontScaling style={styles.rowMeta}>
+                    {`${elapsedLabel(row)}${
+                      row.started_at !== null ? ` · ${listStamp(row.started_at)}` : ''
+                    }`}
+                  </Text>
+                </View>
+                <View style={styles.amount}>
+                  <Text allowFontScaling style={styles.amountValue}>
+                    {`${row.i_am_member ? '-' : '+'}${formatRupees(row.tokens)}`}
+                  </Text>
+                  {/* Provider only: their share is accrued before it is paid. */}
+                  {row.earnings_status !== null && row.earnings_status !== undefined ? (
+                    <Text allowFontScaling style={styles.amountNote}>
+                      {row.earnings_status}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
-            </View>
-          )}
+            );
+          }}
         />
       )}
     </View>
@@ -405,8 +419,7 @@ const makeStyles = (t: Theme) =>
     kpiLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
     /*
      * "SEPTEMBER 2026" style. textSmSemiBold (13.1/17 SemiBold, Bluesky
-     * section-header role) in text.section ink — the same pairing HomeScreen
-     * and ProviderChatsScreen use for their section labels.
+     * section-header role) in text.section ink.
      */
     sectionHeader: {
       ...TOKENS.typography.textSmSemiBold,
