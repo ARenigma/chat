@@ -321,12 +321,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     // be clipped by this wrapper.
     overflow: 'visible',
   },
-  // The rounded disc. overflow:hidden clips the photo to the circle; the dot is
-  // a sibling of this, so it is not clipped.
+  // The rounded disc. The photo clips to the circle via its own borderRadius
+  // (Fresco RoundingParams — a one-time GPU shader, not a per-frame Skia
+  // clipRRect). overflow:hidden is not needed here: the Image self-clips, and
+  // the initial Text is centred and never overflows the disc. The dot is a
+  // sibling of the disc (not a child), so it cannot be clipped here anyway.
   disc: {
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   initial: {
     ...TOKENS.typography.labelMediumEmphasized,
