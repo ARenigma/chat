@@ -1,7 +1,7 @@
 import { moneyDate } from '../lib/datetime';
 import { PAYMENT_STATE_LABEL, paymentState, type PaymentState } from '../lib/paymentStatus';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -209,7 +209,13 @@ export function TransactionHistoryScreen({ onBack }: Props) {
           ListHeaderComponent={
             /* Filter chips: shown only when more than one status is present. */
             visibleFilters.length > 1 ? (
-              <View style={styles.filters}>
+              // One row that scrolls sideways, as a chip rail does, rather
+              // than wrapping "Not completed" onto a second line.
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                {...SCROLL_PHYSICS}
+                contentContainerStyle={styles.filters}>
                 {visibleFilters.map(f => (
                   <FilterChip
                     key={f}
@@ -220,7 +226,7 @@ export function TransactionHistoryScreen({ onBack }: Props) {
                     accessibilityLabel={`Show ${f} payments`}
                   />
                 ))}
-              </View>
+              </ScrollView>
             ) : null
           }
           renderItem={({ item }) => {
@@ -369,7 +375,6 @@ const makeStyles = (t: Theme) =>
     },
     filters: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
       gap: TOKENS.space.xs,
       paddingVertical: TOKENS.space.sm,
     },

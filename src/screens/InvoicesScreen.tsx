@@ -42,7 +42,7 @@ import {
   type InvoiceRecord,
 } from '../api/transactions';
 import { BackButton } from '../components/BackButton';
-import { Icon } from '../components/Icon';
+import { Icon, ICON_SCALE } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Pressable } from '../components/Pressable';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
@@ -461,7 +461,10 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
     },
+    // The download glyph's own box, so an EMPTY slot on a row with no PDF
+    // takes the same width and every amount ends in one column.
     glyphSlot: {
+      width: Math.round(TOKENS.icon.md * ICON_SCALE),
       alignItems: 'center',
       justifyContent: 'center',
     },
