@@ -489,8 +489,11 @@ function FavoriteButton({
       accessibilityLabel={favorite ? 'Remove from favourites' : 'Add to favourites'}
       press="none"
       onColor={LIGHT.color.text.onAccent}
-      size={40}
-      style={styles.favorite}>
+      size={TOKENS.interaction.minTarget}
+      style={styles.favoriteTarget}>
+      {/* The 40dp scrim circle is the look; the Pressable around it is the
+          48dp target TalkBack measures (B7, S22 audit 2026-09-29). */}
+      <View style={styles.favorite}>
       <Animated.View style={[styles.favoriteGlyph, pop]}>
         <Icon
           name="heart"
@@ -499,6 +502,7 @@ function FavoriteButton({
           color={favorite ? accent : LIGHT.color.text.onAccent}
         />
       </Animated.View>
+      </View>
     </Pressable>
   );
 }
@@ -542,11 +546,6 @@ function Hero({
       ? ` ${letter === null ? '' : `${letter}-`}${provider.age}`
       : '';
   const languages = provider.languages.slice(0, 3);
-  const metaParts = [
-    // The same number the card the member tapped was showing — this is its own
-    // component, so it computes it rather than receiving it.
-    `★ ${displayRating(provider).score.toFixed(1)}`,
-  ];
 
   // The gallery when there is one, the single avatar when there is not. Nothing
   // regresses for a provider (or a seed row) who has never opened the photo
@@ -715,7 +714,16 @@ function Hero({
       </View>
       <View style={styles.heroBody}>
         <View style={styles.heroNameRow}>
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.heroName}>
+          <Text
+            maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineMediumEmphasized}
+            allowFontScaling
+            numberOfLines={1}
+            style={styles.heroName}
+            // Presence is spoken here since the meta line went (it only ever
+            // showed the rating, which the Ratings section below already says).
+            accessibilityLabel={[`${providerFirstName(provider.display_name)}${age}`, presenceForSpeech(presence)]
+              .filter(Boolean)
+              .join(', ')}>
             {providerFirstName(provider.display_name)}
             <Text style={styles.heroAge}>{age}</Text>
           </Text>
@@ -733,18 +741,9 @@ function Hero({
             {provider.headline}
           </Text>
         ) : null}
-        <Text
-          allowFontScaling
-          style={styles.heroMeta}
-          accessibilityLabel={[
-            ...metaParts,
-            presenceForSpeech(presence),
-            channelLine,
-          ]
-            .filter(Boolean)
-            .join(', ')}>
-          {metaParts.join('  ·  ')}
-        </Text>
+        {/* No rating line on the photo: the Ratings section below says it,
+            with the stars and the count (Amit, 2026-09-29: "no duplication of
+            information ever"). */}
         {/* M3 AssistChips for languages — same native chip as the directory
             list, onMedia tone over the hero photo. */}
         {languages.length > 0 ? (
@@ -990,10 +989,20 @@ const makeStyles = (t: Theme) =>
       lineHeight: 340,
       color: 'rgba(255,255,255,0.14)',
     },
+    // Pulled out by the target's extra 4dp a side, so the circle sits exactly
+    // where it did at 40dp.
     favoriteSlot: {
       position: 'absolute',
-      top: TOKENS.space.md,
-      right: TOKENS.space.md,
+      top: TOKENS.space.md - (TOKENS.interaction.minTarget - 40) / 2,
+      right: TOKENS.space.md - (TOKENS.interaction.minTarget - 40) / 2,
+    },
+    favoriteTarget: {
+      width: TOKENS.interaction.minTarget,
+      height: TOKENS.interaction.minTarget,
+      // The state layer is the circle, as the scrim is.
+      borderRadius: TOKENS.interaction.minTarget / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     favorite: {
       width: 40,

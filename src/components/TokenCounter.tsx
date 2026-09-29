@@ -68,6 +68,11 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
       onPress={onPress}
       testID="token-badge"
       press="chip"
+      /* The 30dp pill is what shows; the target is the 48dp row it sits in,
+         the same box the search button beside it has. A hitSlop would widen
+         the touch but not the accessibility node, which TalkBack measures
+         (B7, S22 audit 2026-09-29). */
+      style={styles.target}
       accessibilityLabel={
         balance === null
           ? earnings
@@ -136,6 +141,10 @@ export const TokenCounter = memo(TokenCounterView);
 
 const makeStyles = (_t: Theme) =>
   StyleSheet.create({
+    target: {
+      minHeight: TOKENS.interaction.minTarget,
+      justifyContent: 'center',
+    },
     pill: {
       flexDirection: 'row',
       alignItems: 'center',

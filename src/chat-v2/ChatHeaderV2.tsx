@@ -195,7 +195,7 @@ export function ChatHeaderV2({
         accessibilityLabel="Back"
         press="none"
         highlight="dim"
-        size={28}
+        size={TOKENS.interaction.minTarget}
         style={styles.navButton}
       >
         <Icon name="chevronLeft" size={TOKENS.icon.md} />
@@ -240,7 +240,7 @@ export function ChatHeaderV2({
         testID="chat-v2-call-video"
         accessibilityLabel={`Video call ${displayName}`}
         press="none"
-        size={28}
+        size={TOKENS.interaction.minTarget}
         style={[
           styles.navButton,
           (!callsAvailable || !canStartVideo || sessionBusy) &&
@@ -259,7 +259,7 @@ export function ChatHeaderV2({
         testID="chat-v2-call-audio"
         accessibilityLabel={`Voice call ${displayName}`}
         press="none"
-        size={28}
+        size={TOKENS.interaction.minTarget}
         style={[
           styles.navButton,
           (!callsAvailable || !canStartAudio || sessionBusy) &&
@@ -291,7 +291,7 @@ export function ChatHeaderV2({
           accessibilityLabel="End paid session"
           accessibilityHint="Stops the per-minute charge"
           press="none"
-          size={28}
+          size={TOKENS.interaction.minTarget}
           shape="circle"
           style={styles.navButton}
         >
@@ -338,7 +338,7 @@ export function ChatHeaderV2({
             accessibilityLabel="Conversation options"
             press="none"
             highlight="dim"
-            size={28}
+            size={TOKENS.interaction.minTarget}
             style={styles.navButton}
           >
             {/* Wrap in a View so measureInWindow works (Pressable is not a View). */}
@@ -375,8 +375,11 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       // space.xs, not sm: five controls plus the pill in one row, and 12pt gaps
       // leave the name about 60pt on a 360pt screen.
-      gap: TOKENS.space.xs,
-      paddingHorizontal: TOKENS.space.md,
+      // No gap: each 48dp target already carries its own 12dp of air around
+      // the glyph, which is the spacing the 28dp boxes plus an 8dp gap made.
+      gap: 0,
+      // The outer targets' own padding stands in for most of the edge inset.
+      paddingHorizontal: TOKENS.space.xs,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.sm,
       // The M3 small top app bar's container height, stated rather than left to
@@ -386,9 +389,13 @@ const makeStyles = (t: Theme) =>
       borderBottomColor: t.color.border.hairline,
       backgroundColor: t.color.bg.base,
     },
+    // 48dp targets around the unchanged 24dp glyphs: M3's icon button and
+    // Android's minimum touch target (developer.android.com/guide/topics/ui/
+    // accessibility/apps#large-controls). They were 28x40, the smallest
+    // controls on the most-used screen (B8, S22 audit 2026-09-29).
     navButton: {
-      width: 28,
-      height: 40,
+      width: TOKENS.interaction.minTarget,
+      height: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: TOKENS.radius.xs,
