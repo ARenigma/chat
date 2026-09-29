@@ -1560,7 +1560,12 @@ function FeaturedCard({
       style={styles.featured}>
       {heroPhoto !== null ? (
         <>
-          <Image source={heroPhoto} style={styles.featuredPhoto} />
+          {/* fadeDuration={0}: skip Fresco's 300ms cross-fade. The fade forces
+              per-frame GPU composition during the animation; at 0 the bitmap
+              is uploaded once and rendered immediately, matching Avatar's own
+              policy. The Supabase transform already returns the right pixel
+              size, so no decode-time downsampling is needed. */}
+          <Image source={heroPhoto} style={styles.featuredPhoto} fadeDuration={0} />
           {/* A dark scrim under the text so white copy stays legible over any
               photo, not only the coral fallback. */}
           <View style={styles.featuredScrim} />
@@ -1930,7 +1935,9 @@ const makeStyles = (t: Theme) =>
       // the S22 list for this change.
       height: HERO_CARD_HEIGHT,
       justifyContent: 'flex-end',
-      overflow: 'hidden',
+      // overflow: 'hidden' removed — Card already clips its content to its own
+      // borderRadius. An inner rect-clip here was a redundant Skia save/restore
+      // per hero card.
     },
     /*
      * The GRADIENT fallback fills the frame exactly — there is nothing in it to
