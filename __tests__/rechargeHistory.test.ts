@@ -3,40 +3,21 @@ import { join } from 'path';
 import type { TokenTransaction } from '../src/api/transactions';
 
 /**
- * The recharge ledger shows settled money only.
+ * Amit 2026-09-29: every transaction attempt is its own line item.
  *
- * `token_transactions.status` is the Cashfree payment lifecycle, not a display
- * detail. A row is inserted `created` when create-order mints the order;
- * `credit_purchased_recharge` (migration 033) is the only thing that moves it to
- * `succeeded`; cashfree-webhook writes `failed` on PAYMENT_FAILED_WEBHOOK and
- * PAYMENT_USER_DROPPED_WEBHOOK. So a `created` row is a payment still in flight
- * or abandoned at the gateway, and a `failed` row is a declined one — in both
- * cases no money left the member and no token was credited.
+ * The OLD rule (SETTLED_STATUSES) filtered to `succeeded` and `refunded` only,
+ * hiding `created` (pending/abandoned) and `failed` rows. That left members
+ * unable to see why a payment did not clear.
  *
- * A row on this screen renders an amount in ₹ over a credited ₹ line. Showing
- * either of those states tells a member they were charged for something they
- * were not, which is the defect this file gates. It is worth a test rather than
- * a comment for two reasons: an abandoned checkout is the SINGLE most likely row
- * a real wallet accumulates (every back-press out of the Cashfree sheet leaves
- * one), and the wrong version is invisible until a tester actually abandons a
- * payment and then opens Settings.
+ * The NEW rule: show every attempt. The query already returns all statuses and
+ * RLS scopes rows to the signed-in user, so `allTransactions` is a passthrough
+ * — its value is to be a stable export the tests can pin and future editors can
+ * see documented.
  *
- * `refunded` is asserted IN, deliberately. See the sibling case below.
- *
- * The filter is pure and exported, so it is executed here. The JSX around it
- * cannot be — this repo has no renderer in devDependencies — so the WIRING is
- * checked as source text, against a comment-stripped copy for the usual reason:
- * the prose explaining the rule necessarily contains the very strings the
- * `not.toContain` assertions look for.
+ * A filter-chip row on the screen lets members narrow to a single status after
+ * the full list is visible; that chip row is tested as wiring below.
  */
 
-/*
- * Loading the screen means loading the theme, which means loading Reanimated,
- * which needs a native runtime this test has no business standing up. Same
- * self-completing stub as usageLedger.test.ts: nothing below asserts anything
- * about animation, and a named-export list would break the moment an unrelated
- * Reanimated import arrives in the theme.
- */
 jest.mock('react-native-reanimated', () => {
   const chain: unknown = new Proxy(function () {}, {
     get: (_target, prop) => {
@@ -51,7 +32,6 @@ jest.mock('react-native-reanimated', () => {
   return chain;
 });
 
-/** The theme reads a stored light/dark preference; there is no MMKV here. */
 jest.mock('react-native-mmkv', () => ({
   createMMKV: () => ({
     getString: () => undefined,
@@ -60,11 +40,7 @@ jest.mock('react-native-mmkv', () => ({
   }),
 }));
 
-/*
- * Imported after the mocks for readability only — babel-plugin-jest-hoist lifts
- * every `jest.mock` above the requires regardless.
- */
-import { settledTransactions } from '../src/screens/TransactionHistoryScreen';
+import { allTransactions } from '../src/screens/TransactionHistoryScreen';
 
 const ROOT = join(__dirname, '..');
 
@@ -88,53 +64,53 @@ const tx = (over: Partial<TokenTransaction> = {}): TokenTransaction => ({
   ...over,
 });
 
-describe('settledTransactions: only money that actually moved', () => {
-  it('drops a payment the member abandoned at the gateway', () => {
+describe('allTransactions: every status is a line item', () => {
+  it('includes a payment the member abandoned at the gateway', () => {
     /*
-     * `created` is the insert state. It stays `created` forever if the member
-     * back-presses out of the Cashfree sheet and no webhook ever arrives, so
-     * this is not a transient the screen can ignore — it is a permanent row.
+     * `created` is the insert state. Under the old rule it was hidden. Under
+     * the new rule it is its own row so the member can see the payment is
+     * still in flight or was abandoned.
      */
-    const rows = settledTransactions([
+    const rows = allTransactions([
       tx({ id: 'pending', status: 'created' }),
       tx({ id: 'paid', status: 'succeeded' }),
     ]);
-    expect(rows.map(r => r.id)).toEqual(['paid']);
+    expect(rows.map((r: TokenTransaction) => r.id)).toEqual(['pending', 'paid']);
   });
 
-  it('drops a declined payment', () => {
-    const rows = settledTransactions([
+  it('includes a declined payment', () => {
+    /*
+     * `failed` was hidden under the old rule. It is now shown so the member
+     * knows the payment was declined.
+     */
+    const rows = allTransactions([
       tx({ id: 'declined', status: 'failed' }),
       tx({ id: 'paid', status: 'succeeded' }),
     ]);
-    expect(rows.map(r => r.id)).toEqual(['paid']);
+    expect(rows.map((r: TokenTransaction) => r.id)).toEqual(['declined', 'paid']);
   });
 
-  it('shows nothing at all when every recharge failed or is pending', () => {
+  it('shows all four statuses when present', () => {
     /*
-     * The case that decides between the empty state and a hairline over a blank
-     * gap. A wallet with one abandoned checkout and nothing else must come back
-     * EMPTY, not "one row I chose not to draw".
+     * The complete lifecycle: an in-flight attempt, a success, a failure, and
+     * a reversal — all four appear without filtering.
      */
-    expect(
-      settledTransactions([
-        tx({ id: 'a', status: 'created' }),
-        tx({ id: 'b', status: 'failed' }),
-      ]),
-    ).toEqual([]);
+    const rows = allTransactions([
+      tx({ id: 'a', status: 'created' }),
+      tx({ id: 'b', status: 'succeeded' }),
+      tx({ id: 'c', status: 'failed' }),
+      tx({ id: 'd', status: 'refunded' }),
+    ]);
+    expect(rows.map((r: TokenTransaction) => r.id)).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('keeps a refunded recharge, because that money did move', () => {
     /*
-     * `refunded` is neither failed nor pending: it is a recharge that succeeded
-     * and was later reversed. It is also the only non-`succeeded` status that
-     * can carry a GST tax invoice — migration 046 raises the invoice on
-     * `new.status = 'succeeded' and new.kind = 'recharge'`, and 019's numbering
-     * is gapless precisely because a gap invites a scrutiny notice. Filtering it
-     * out would take away a document the member is entitled to download, so
-     * "only successful" must not be read as "status === succeeded".
+     * `refunded` was already shown under the old rule and stays shown. It is
+     * the only non-`succeeded` status that can carry a GST tax invoice, and
+     * hiding it would remove a document the member is entitled to download.
      */
-    const rows = settledTransactions([
+    const rows = allTransactions([
       tx({
         id: 'reversed',
         status: 'refunded',
@@ -150,54 +126,78 @@ describe('settledTransactions: only money that actually moved', () => {
     expect(rows[0]?.invoice?.pdfPath).toBe('u/inv-1.pdf');
   });
 
-  it('judges a row by its status, not its kind', () => {
-    /*
-     * The screen lists three kinds (recharge / refund / adjustment — the `.in()`
-     * in useTransactions). The status rule applies to all of them: a refund line
-     * that never settled is as misleading as a recharge that never settled, and
-     * a manual adjustment defaults to `succeeded` (migration 019) so it stays.
-     */
-    const rows = settledTransactions([
-      tx({ id: 'r', kind: 'refund', status: 'succeeded', tokensDelta: -300 }),
-      tx({ id: 'r-pending', kind: 'refund', status: 'created' }),
-      tx({ id: 'adj', kind: 'adjustment', status: 'succeeded', amountPaise: 0 }),
-      tx({ id: 'adj-failed', kind: 'adjustment', status: 'failed' }),
-    ]);
-    expect(rows.map(r => r.id)).toEqual(['r', 'adj']);
-  });
-
   it('preserves the newest-first order it was given', () => {
-    // The server orders by created_at desc; filtering must not re-sort.
-    const rows = settledTransactions([
+    const rows = allTransactions([
       tx({ id: 'sep-10', createdAt: '2026-09-10T10:00:00.000Z' }),
       tx({ id: 'sep-08', status: 'failed', createdAt: '2026-09-08T10:00:00.000Z' }),
       tx({ id: 'sep-01', createdAt: '2026-09-01T10:00:00.000Z' }),
     ]);
-    expect(rows.map(r => r.id)).toEqual(['sep-10', 'sep-01']);
+    expect(rows.map((r: TokenTransaction) => r.id)).toEqual(['sep-10', 'sep-08', 'sep-01']);
   });
 
   it('treats an unloaded list as empty rather than throwing', () => {
-    // react-query hands back `undefined` before the first fetch resolves.
-    expect(settledTransactions(undefined)).toEqual([]);
+    expect(allTransactions(undefined)).toEqual([]);
   });
 });
 
-describe('the screen renders the filtered rows, not the raw query', () => {
-  it('draws the list from the filter', () => {
-    expect(SCREEN).toContain('useMemo(() => settledTransactions(data), [data])');
-    expect(SCREEN).toContain('rows.map((tx, index)');
-    // The unfiltered list must not reach the list body by any route.
-    expect(SCREEN).not.toContain('data.map(');
+describe('the screen shows all statuses and filters client-side', () => {
+  it('draws the list from allTransactions, not a status filter', () => {
+    expect(SCREEN).toContain('useMemo(() => allTransactions(data), [data])');
+    // The old SETTLED_STATUSES constant must not exist in this file any more.
+    expect(SCREEN).not.toContain('SETTLED_STATUSES');
+    expect(SCREEN).not.toContain('settledTransactions');
   });
 
-  it('chooses the empty state from the filtered count', () => {
+  it('chooses the empty state from the full row count, not the filtered count', () => {
     /*
-     * The whole point of filtering before the branch. `!data || data.length ===
-     * 0` counts rows the screen has already decided not to draw, so a member
-     * whose only checkout was abandoned would get the section hairline and a
-     * blank gap where "No recharges yet" belongs.
+     * The full list empty state ("No recharges yet") branches on `rows.length
+     * === 0` — the unfiltered list. The filter-chip empty state ("No failed
+     * payments") is shown by SectionList's ListEmptyComponent when the
+     * filtered sections have no rows.
      */
     expect(SCREEN).toContain('rows.length === 0 ? (');
-    expect(SCREEN).not.toContain('data.length === 0');
+  });
+
+  it('has a filter chip row for statuses present in the list', () => {
+    /*
+     * Chips: All / Paid / Pending / Failed / Refunded. Only statuses actually
+     * present in the query result get a chip. "All" is always shown.
+     */
+    expect(SCREEN).toContain('FilterChip');
+    expect(SCREEN).toContain('visibleFilters');
+    expect(SCREEN).toContain("'All'");
+  });
+
+  it('shows a status word on each row with the correct colour token', () => {
+    /*
+     * Paid → text/available (green), Pending → text/warning (amber),
+     * Failed → state/danger (garnet), Refunded → text/secondary (neutral).
+     */
+    expect(SCREEN).toContain('statusPaid');
+    expect(SCREEN).toContain('statusPending');
+    expect(SCREEN).toContain('statusFailed');
+    expect(SCREEN).toContain('statusRefunded');
+    // Colours come from tokens, never from raw hex strings.
+    expect(SCREEN).toContain('text.available');
+    expect(SCREEN).toContain('text.warning');
+    expect(SCREEN).toContain('state.danger');
+  });
+
+  it('uses a filled wallet glyph with no circle container', () => {
+    /*
+     * Each row has a leading wallet-fill icon (active prop), not a wallet
+     * inside a 36dp circle.
+     */
+    expect(SCREEN).toContain('name="wallet" active');
+    // No circle container in row styles.
+    const rowStyles = SCREEN.slice(SCREEN.indexOf('makeStyles'));
+    expect(rowStyles).not.toContain('bg.sunken');
+    expect(rowStyles).not.toContain('borderRadius: 18');
+  });
+
+  it('groups rows into month sections', () => {
+    expect(SCREEN).toContain('SectionList');
+    expect(SCREEN).toContain('renderSectionHeader');
+    expect(SCREEN).toContain('groupByMonth');
   });
 });

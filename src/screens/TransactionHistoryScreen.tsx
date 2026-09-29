@@ -1,19 +1,25 @@
-import React, { useCallback, useMemo } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Linking, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { BackButton } from '../components/BackButton';
+import { FilterChip } from '../components/Chip';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { formatPaise, useFetchInvoiceUrl, useTransactions, type TokenTransaction } from '../api/transactions';
-import { formatRupees } from '../lib/rates';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 
 interface Props {
   onBack: () => void;
 }
+
+// Amit 2026-09-29: failed or incomplete payments are their own line items.
+// Show every attempt regardless of status — the query already returns all of
+// them and RLS scopes rows to the signed-in user. Do not filter here.
+// (Previously this screen filtered to SETTLED_STATUSES only, which hid failed
+// and pending rows from members who needed to know their payment didn't clear.)
 
 /** Human-readable label per transaction kind. */
 function kindLabel(kind: TokenTransaction['kind']): string {
@@ -27,82 +33,138 @@ function kindLabel(kind: TokenTransaction['kind']): string {
   }
 }
 
-/**
- * The statuses under which a transaction is money that actually moved.
- *
- * `token_transactions.status` is the payment lifecycle (migration 019):
- * a row is inserted `created` when create-order mints the Cashfree order, and
- * only `credit_purchased_recharge` flips it to `succeeded` — see migration 033,
- * whose `and status = 'created'` guard is what makes the webhook idempotent. The
- * two dead ends are written by cashfree-webhook/index.ts, which sets `failed` on
- * PAYMENT_FAILED_WEBHOOK and PAYMENT_USER_DROPPED_WEBHOOK.
- *
- * So `created` is a payment still in flight or abandoned at the gateway, and
- * `failed` is one that was declined. Neither took the member's money and neither
- * credited a token, and a row on this screen reads as "you were charged this" —
- * it carries an amount in ₹ and a credited line. Listing them is the screen
- * telling a member they paid for something they did not.
- *
- * `refunded` stays IN. It is a recharge that succeeded and was later reversed —
- * real money that moved, and the only status besides `succeeded` that has a GST
- * tax invoice attached (migration 046 raises the invoice on
- * `new.status = 'succeeded' and new.kind = 'recharge'`, and 019's invoice
- * numbering is gapless because a gap invites a GST scrutiny notice). Hiding it
- * would hide a document the member is entitled to download, which is the
- * opposite of the fix.
- */
-const SETTLED_STATUSES: ReadonlySet<TokenTransaction['status']> = new Set([
-  'succeeded',
-  'refunded',
-]);
-
-/**
- * The rows this screen is allowed to show: settled money only.
- *
- * Pure and exported so the rule is executed by a test rather than inferred from
- * the JSX — the screen itself cannot be rendered here (no renderer in
- * devDependencies), so this is the only part of it that can be proven.
- */
-export function settledTransactions(
-  data: readonly TokenTransaction[] | undefined,
-): TokenTransaction[] {
-  return (data ?? []).filter(tx => SETTLED_STATUSES.has(tx.status));
+/** Status display name shown as a coloured word trailing the amount. */
+function statusLabel(status: TokenTransaction['status']): string {
+  switch (status) {
+    case 'succeeded':
+      return 'Paid';
+    case 'created':
+      return 'Pending';
+    case 'failed':
+      return 'Failed';
+    case 'refunded':
+      return 'Refunded';
+  }
 }
 
-/** Short date: "27 Aug 2026" */
-function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-IN', {
+/**
+ * The rows this screen is allowed to show.
+ *
+ * Amit 2026-09-29: every attempt is its own line item — succeeded, created
+ * (pending), failed and refunded. This replaces the old settled-only filter.
+ * RLS (token_transactions: Members read own transactions) already scopes rows
+ * to the signed-in user, so every row returned is one the member initiated.
+ */
+export function allTransactions(
+  data: readonly TokenTransaction[] | undefined,
+): TokenTransaction[] {
+  return (data ?? []).slice();
+}
+
+/** Short date + time: "27 Aug 2026, 10:30 AM" */
+function shortDateTime(iso: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
+  const time = d.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${date}, ${time}`;
 }
+
+/** "SEPTEMBER 2026" from an ISO timestamp. */
+function monthHeader(iso: string): string {
+  const d = new Date(iso);
+  const month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+  return `${month} ${d.getFullYear()}`;
+}
+
+/** Group rows into {title, data} sections by calendar month, preserving order. */
+function groupByMonth(
+  rows: TokenTransaction[],
+): Array<{ title: string; data: TokenTransaction[] }> {
+  const sections: Array<{ title: string; data: TokenTransaction[] }> = [];
+  let currentTitle = '';
+  for (const row of rows) {
+    const title = monthHeader(row.createdAt);
+    if (title !== currentTitle) {
+      sections.push({ title, data: [] });
+      currentTitle = title;
+    }
+    sections[sections.length - 1]!.data.push(row);
+  }
+  return sections;
+}
+
+/** Filter labels in display order. */
+const FILTER_OPTIONS = ['All', 'Paid', 'Pending', 'Failed', 'Refunded'] as const;
+type FilterOption = (typeof FILTER_OPTIONS)[number];
+
+/** The status values that correspond to each filter label. */
+const FILTER_STATUS: Record<FilterOption, TokenTransaction['status'] | null> = {
+  All: null,
+  Paid: 'succeeded',
+  Pending: 'created',
+  Failed: 'failed',
+  Refunded: 'refunded',
+};
 
 /**
  * Recharge history and invoice downloads.
  *
- * Shows the member's SETTLED top-ups, newest first — see SETTLED_STATUSES for
- * why an in-flight or declined payment is not history. When a row has an
- * associated invoice PDF the member gets a 'Download invoice' action that
- * mints a short-lived signed URL and opens it in the system browser.
+ * Shows ALL top-ups, newest first — including pending, failed and refunded
+ * attempts. See allTransactions for why every status is shown.
  *
- * Expected state today: empty list, because PAYMENTS_ENABLED=false means no
- * recharge has ever completed. The empty state is the common path.
+ * A filter chip row at the top lets the member narrow to a single status; only
+ * the chips for statuses that actually appear in the list are rendered.
  */
 export function TransactionHistoryScreen({ onBack }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  // The bottom bar stays up on this pushed screen: the last row clears it.
   const barOffset = useBottomBarOffset(TOKENS.space.xl);
   const { data, isLoading } = useTransactions();
   const fetchInvoiceUrl = useFetchInvoiceUrl();
+  const [activeFilter, setActiveFilter] = useState<FilterOption>('All');
 
-  // Filtered BEFORE the empty-state branch, not inside the list. A member whose
-  // only recharge was declined has `data.length === 1` and zero rows to draw —
-  // branching on `data` would give them a hairline and a blank gap instead of
-  // "No recharges yet".
-  const rows = useMemo(() => settledTransactions(data), [data]);
+  const rows = useMemo(() => allTransactions(data), [data]);
+
+  // Which statuses are present in the full list — only those get a chip.
+  const presentStatuses = useMemo(
+    () => new Set(rows.map(tx => tx.status)),
+    [rows],
+  );
+
+  // Chips to show: "All" always plus whichever status labels have rows.
+  const visibleFilters = useMemo(
+    () =>
+      FILTER_OPTIONS.filter(f => {
+        if (f === 'All') return true;
+        const s = FILTER_STATUS[f];
+        return s !== null && presentStatuses.has(s);
+      }),
+    [presentStatuses],
+  );
+
+  // When a filter is toggled: select it, or return to All if already selected.
+  const handleFilter = useCallback((label: string) => {
+    setActiveFilter(prev =>
+      prev === label ? 'All' : (label as FilterOption),
+    );
+  }, []);
+
+  const filteredRows = useMemo(() => {
+    const status = FILTER_STATUS[activeFilter];
+    if (status === null) return rows;
+    return rows.filter(tx => tx.status === status);
+  }, [rows, activeFilter]);
+
+  const sections = useMemo(() => groupByMonth(filteredRows), [filteredRows]);
 
   const handleDownload = useCallback(
     async (pdfPath: string) => {
@@ -116,7 +178,6 @@ export function TransactionHistoryScreen({ onBack }: Props) {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Header: bare-chevron back + title, same anatomy as BlockedUsersScreen */}
       <View style={styles.bar}>
         <BackButton onPress={onBack} testID="transactions-back" style={styles.barIcon} />
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.barTitle}>
@@ -133,32 +194,58 @@ export function TransactionHistoryScreen({ onBack }: Props) {
       ) : rows.length === 0 ? (
         /* Empty state — expected today with PAYMENTS_ENABLED=false */
         <View style={styles.center}>
-          <Icon name="wallet" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
+          <Icon name="wallet" active size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.emptyTitle}>
             No recharges yet
           </Text>
           <Text allowFontScaling style={styles.emptyBody}>
-            Your top-ups and invoices will appear here.
+            Your top-ups will appear here.
           </Text>
         </View>
       ) : (
-        <ScrollView
+        <SectionList
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
+          sections={sections}
+          keyExtractor={tx => tx.id}
           contentContainerStyle={[
             styles.list,
             { paddingBottom: barOffset },
-          ]}>
-          {/* Inset-grouped style: one hairline at top of section, separator between rows */}
-          <View style={styles.group}>
-            {rows.map((tx, index) => (
-              <React.Fragment key={tx.id}>
-                {index === 0 ? null : <View style={styles.separator} />}
-                <TransactionRow tx={tx} onDownload={handleDownload} />
-              </React.Fragment>
-            ))}
-          </View>
-        </ScrollView>
+          ]}
+          ListHeaderComponent={
+            /* Filter chips: shown only when more than one status is present. */
+            visibleFilters.length > 1 ? (
+              <View style={styles.filters}>
+                {visibleFilters.map(f => (
+                  <FilterChip
+                    key={f}
+                    label={f}
+                    selected={activeFilter === f}
+                    onToggle={handleFilter}
+                    testID={`filter-${f.toLowerCase()}`}
+                    accessibilityLabel={`Show ${f} payments`}
+                  />
+                ))}
+              </View>
+            ) : null
+          }
+          renderSectionHeader={({ section }) => (
+            <Text allowFontScaling style={styles.sectionHeader}>
+              {section.title}
+            </Text>
+          )}
+          renderItem={({ item: tx }) => (
+            <TransactionRow tx={tx} onDownload={handleDownload} />
+          )}
+          ListEmptyComponent={
+            /* Shown when a filter leaves no rows (the full list is non-empty). */
+            <View style={styles.center}>
+              <Text allowFontScaling style={styles.emptyBody}>
+                {`No ${activeFilter.toLowerCase()} payments`}
+              </Text>
+            </View>
+          }
+        />
       )}
     </View>
   );
@@ -176,35 +263,42 @@ function TransactionRow({ tx, onDownload }: RowProps) {
 
   return (
     <View style={styles.row}>
-      {/* Left col: kind + date */}
+      {/*
+       * Amit 2026-09-29: filled wallet glyph with NO circle container.
+       * `active` selects wallet-fill.
+       */}
+      <Icon name="wallet" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
+
+      {/* Left col: kind + date/time */}
       <View style={styles.rowLeft}>
         <Text allowFontScaling style={styles.rowKind}>
           {kindLabel(tx.kind)}
         </Text>
         <Text allowFontScaling style={styles.rowDate}>
-          {shortDate(tx.createdAt)}
+          {shortDateTime(tx.createdAt)}
         </Text>
       </View>
 
-      {/* Right col: amount + token delta */}
+      {/* Right col: amount + status word */}
       <View style={styles.rowRight}>
         <Text allowFontScaling style={styles.rowAmount}>
           {formatPaise(tx.amountPaise)}
         </Text>
-        {/* Rupee-first, one unit: the credited amount reads in ₹ like the amount
-            paid above it (1 token = ₹1), not as a bare "tokens" count. The paid
-            line and this credited line differ by GST. (2026-09-09 audit) */}
-        <Text allowFontScaling style={styles.rowTokens}>
-          {tx.tokensDelta >= 0 ? '+' : '−'}
-          {formatRupees(Math.abs(tx.tokensDelta))}
+        <Text
+          allowFontScaling
+          style={[
+            styles.rowStatus,
+            tx.status === 'succeeded' && styles.statusPaid,
+            tx.status === 'created' && styles.statusPending,
+            tx.status === 'failed' && styles.statusFailed,
+            tx.status === 'refunded' && styles.statusRefunded,
+          ]}>
+          {statusLabel(tx.status)}
         </Text>
       </View>
 
-      {/* Trailing download slot. Reserved on every row so the amounts stay
-          aligned, and filled only when an invoice PDF exists. Icon-only and
-          low-emphasis (secondary ink, no fill) — downloading is a secondary
-          action — at the row's trailing edge, vertically centred, with a 44dp
-          tap target. Placement/emphasis per the list-action UX references. */}
+      {/* Trailing download slot — reserved on every row so amounts stay
+          aligned. Filled only when an invoice PDF exists. */}
       <View style={styles.downloadSlot}>
         {hasPdf ? (
           <Pressable
@@ -214,15 +308,10 @@ function TransactionRow({ tx, onDownload }: RowProps) {
               }
             }}
             testID={`download-invoice-${tx.id}`}
-            accessibilityLabel={`Download invoice for ${formatPaise(tx.amountPaise)} recharge on ${shortDate(tx.createdAt)}`}
+            accessibilityLabel={`Download invoice for ${formatPaise(tx.amountPaise)} recharge on ${shortDateTime(tx.createdAt)}`}
             accessibilityRole="button"
             press="none"
             highlight="dim"
-            // `downloadBtn` sets no radius, so the `dim` fill painted a solid
-            // 48dp square behind an 18pt glyph — at the row's trailing edge, where
-            // it read as a mystery box rather than as this button. Icon-only
-            // controls take borderless (circular) ink.
-            // https://developer.android.com/training/material/animations
             shape="circle"
             style={styles.downloadBtn}>
             <Icon name="download" size={TOKENS.icon.md} color={theme.color.text.secondary} />
@@ -282,23 +371,22 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.xs,
     },
-    // Inset-grouped section: one hairline at top, no bottom, separators between rows.
-    group: {
-      backgroundColor: t.color.bg.base,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.hairline,
+    filters: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: TOKENS.space.xs,
+      paddingVertical: TOKENS.space.sm,
     },
-    separator: {
-      height: StyleSheet.hairlineWidth,
-      marginLeft: TOKENS.space.md,
-      backgroundColor: t.color.border.hairline,
+    sectionHeader: {
+      ...TOKENS.typography.textSmSemiBold,
+      color: t.color.text.section,
+      paddingTop: TOKENS.space.md,
+      paddingBottom: TOKENS.space.xs,
     },
     row: {
       flexDirection: 'row',
-      // Centre so the trailing download icon aligns to the middle of the
-      // two-line amount block rather than its top.
       alignItems: 'center',
-      paddingHorizontal: TOKENS.space.md,
+      gap: TOKENS.space.sm,
       paddingVertical: TOKENS.space.sm,
       minHeight: 52,
     },
@@ -310,15 +398,12 @@ const makeStyles = (t: Theme) =>
       alignItems: 'flex-end',
       gap: TOKENS.space['2xs'],
     },
-    // Reserved trailing slot keeps amounts aligned whether or not a row has an
-    // invoice. Sits to the right of the amount column.
     downloadSlot: {
       width: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
       marginLeft: TOKENS.space.xs,
     },
-    // Low-emphasis icon-only button: no fill, 44dp tap target.
     downloadBtn: {
       width: TOKENS.interaction.minTarget,
       height: TOKENS.interaction.minTarget,
@@ -337,8 +422,27 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
     },
-    rowTokens: {
+    /*
+     * Base style for the status word; each status overrides the color.
+     */
+    rowStatus: {
       ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+    },
+    // Paid — succeeded: existing success / available green
+    statusPaid: {
+      color: t.color.text.available,
+    },
+    // Pending — created: amber warning token (text/warning, Amit 2026-09-29)
+    statusPending: {
+      color: t.color.text.warning,
+    },
+    // Failed — danger ink
+    statusFailed: {
+      color: t.color.state.danger,
+    },
+    // Refunded — secondary ink (money left, then came back)
+    statusRefunded: {
       color: t.color.text.secondary,
     },
   });
