@@ -62,7 +62,7 @@ describe('every surface that names a provider to a member uses it', () => {
     ['src/components/ProviderCard.tsx', /const firstName = providerFirstName\(provider\.display_name\);/],
     ['src/screens/HomeScreen.tsx', /name=\{providerFirstName\(featured\?\.display_name\) \|\| 'Someone for you'\}/],
     ['src/screens/HomeScreen.tsx', /chat\.i_am_member \? providerFirstName\(chat\.peer_display_name\)/],
-    ['src/screens/HomeScreen.tsx', /\{providerFirstName\(provider\.display_name\)\}\s*<Text style=\{styles\.featuredAge\}>/],
+    ['src/screens/HomeScreen.tsx', /style=\{styles\.featuredName\}>\s*\{providerFirstName\(provider\.display_name\)\}\s*<\/Text>/],
     ['src/screens/ChatsListScreen.tsx', /c\.i_am_member \? providerFirstName\(c\.peer_display_name\)/],
     ['src/chat-v2/useChatV2Controller.ts', /isMemberSide\s*\?\s*providerFirstName\(fullName\)/],
     ['src/screens/ProviderDetailScreen.tsx', /\{providerFirstName\(provider\.display_name\)\}\s*<Text style=\{styles\.heroAge\}>/],

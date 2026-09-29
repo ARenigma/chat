@@ -14,6 +14,7 @@ const native = (
       getRefreshRate: () => Promise<number | null>;
       secureModal: (tag: number, secure: boolean) => void;
       setKeepScreenOn: (enabled: boolean) => void;
+      setLightNavigationBars?: (light: boolean) => void;
     };
   }
 ).WindowChrome;
@@ -91,4 +92,13 @@ export async function readRefreshRate(): Promise<number | null> {
 export function setKeepScreenOn(enabled: boolean): void {
   if (Platform.OS !== 'android' || native?.setKeepScreenOn === undefined) return;
   native.setKeepScreenOn(enabled);
+}
+
+/**
+ * Navigation-bar icons follow the in-app theme: dark icons on Light, light on
+ * Dark (WindowChromeModule.setLightNavigationBars). No-op off Android and in Jest.
+ */
+export function setLightNavigationBars(light: boolean): void {
+  if (Platform.OS !== 'android') return;
+  native?.setLightNavigationBars?.(light);
 }

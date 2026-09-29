@@ -103,6 +103,7 @@ import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { SplashScreen } from './src/screens/SplashScreen';
 import { CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
 import { chatRingDeadline } from './src/lib/chatRing';
+import { setLightNavigationBars } from './src/lib/windowChrome';
 import { refetchAfterDecline, useIncomingChatRequests } from './src/api/sessions';
 import { usePresenceHeartbeat } from './src/hooks/usePresenceHeartbeat';
 import { APPLY_INITIAL_STATE, RoutesContainer, stripForRestore } from './src/Navigation';
@@ -1481,6 +1482,11 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
  */
 function Shell() {
   const { isDark } = useThemeMode();
+  // The status bar's icons follow `barStyle` below; the navigation bar's need
+  // their own call, or Light shows pale icons on white (B6, 2026-09-29).
+  useEffect(() => {
+    setLightNavigationBars(!isDark);
+  }, [isDark]);
   return (
     <>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} translucent />

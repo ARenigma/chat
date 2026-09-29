@@ -35,6 +35,7 @@ import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
+import { RatingStars } from '../components/RatingStars';
 import { MetaChip } from '../components/MetaChip';
 import { displayRating, formatReviewCount } from '../lib/systemRating';
 import { ScreenLoader } from '../components/ScreenLoader';
@@ -208,18 +209,19 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
 
   return (
     <View style={styles.root}>
-      <View
-        style={[
-          styles.bar,
-          { paddingTop: (sheet ? 0 : insets.top) + TOKENS.space['2xs'] },
-          sheet && styles.barSheet,
-        ]}>
-        {/* No back arrow on the sheet: its grabber, the swipe down and the
-            system back already close it, and an arrow under the grabber read
-            as a second header (S22, 2026-09-27). The full page keeps it. */}
-        {sheet ? null : <BackButton onPress={onBack} testID="detail-back" style={styles.barIcon} />}
-        <TokenCounter balance={balance} onPress={openWallet} />
-      </View>
+      {/* No bar at all on the sheet. Its back arrow went first (the grabber,
+          the swipe down and system back already close it; S22, 2026-09-27),
+          which left a bar holding only the balance, right under the page's own
+          balance chip that stays visible above the sheet: the same chip twice
+          (S22, 2026-09-29). The full page keeps both. */}
+      {sheet ? (
+        <View style={styles.barSheet} />
+      ) : (
+        <View style={[styles.bar, { paddingTop: insets.top + TOKENS.space['2xs'] }]}>
+          <BackButton onPress={onBack} testID="detail-back" style={styles.barIcon} />
+          <TokenCounter balance={balance} onPress={openWallet} />
+        </View>
+      )}
 
       {isPending ? (
         <ScreenLoader />
@@ -416,28 +418,16 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                 {shownRating.score.toFixed(1)}
               </Text>
               <View style={styles.ratingStars}>
-                {/* FLOOR, not round, and the fill is why it had to change. A
-                    4.7 rounded up put a fifth star in the row directly under
-                    the numerals "4.7"; while both faces were outlines that read
-                    as a tint, but a solid fifth star is the row stating a five
-                    the number beside it denies. Floor never claims more than
-                    the figure above it. The fraction is lost here because this
-                    row is icon.md and `RatingStars` — which does draw the
-                    fraction, by clipping — is fixed at icon.xs by its own
-                    width arithmetic. */}
-                {[1, 2, 3, 4, 5].map(n => (
-                  <Icon
-                    key={n}
-                    name="star"
-                    active={n <= Math.floor(shownRating.score)}
-                    size={TOKENS.icon.md}
-                    color={
-                      n <= Math.floor(shownRating.score)
-                        ? theme.color.text.rating
-                        : theme.color.border.strong
-                    }
-                  />
-                ))}
+                {/* The fraction, drawn: RatingStars at icon.md (B3, 2026-09-29).
+                    Floor drew 4.9 as four stars under a card that shows ~five;
+                    rounding up drew a solid fifth star under "4.7". A clipped
+                    fifth star says exactly the number above it, the way the
+                    card already does. */}
+                <RatingStars
+                  score={shownRating.score}
+                  size={TOKENS.icon.md}
+                  accessibilityLabel={`Rated ${shownRating.score.toFixed(1)} out of 5`}
+                />
               </View>
               <Text allowFontScaling style={styles.ratingCount}>
                 {`${formatReviewCount(shownRating.count)} ${shownRating.count === 1 ? 'review' : 'reviews'}`}
@@ -925,9 +915,9 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // The sheet's bar holds only the balance, on the trailing edge.
+    // The sheet's top gap under the grabber, in place of the bar.
     barSheet: {
-      justifyContent: 'flex-end',
+      height: TOKENS.space.sm,
     },
     scroll: {
       paddingHorizontal: TOKENS.space.md,

@@ -6,6 +6,7 @@ import android.os.Build
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.core.view.WindowInsetsControllerCompat
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -45,6 +46,25 @@ class WindowChromeModule(private val reactContext: ReactApplicationContext) :
             "allowTestPhoneLogin" to BuildConfig.ALLOW_TEST_PHONE_LOGIN,
             "benchmarkReadOnly" to MainActivity.benchmarkReadOnlyLaunch,
         )
+
+    /**
+     * Dark navigation-bar icons on a light app theme, light ones on dark.
+     *
+     * The JS `<StatusBar barStyle>` only sets the STATUS bar's icons; the
+     * navigation bar's come from the window theme at launch and never followed
+     * the in-app Light/Dark choice, so on Light they were pale grey on white
+     * (device check 2026-09-29). This is the platform's own switch:
+     * https://developer.android.com/reference/androidx/core/view/WindowInsetsControllerCompat#setAppearanceLightNavigationBars(boolean)
+     * No-op without a window (the activity not yet attached).
+     */
+    @ReactMethod
+    fun setLightNavigationBars(light: Boolean) {
+        UiThreadUtil.runOnUiThread {
+            val window = reactContext.currentActivity?.window ?: return@runOnUiThread
+            WindowInsetsControllerCompat(window, window.decorView)
+                .isAppearanceLightNavigationBars = light
+        }
+    }
 
     @ReactMethod
     fun setActivityBlur(enabled: Boolean) {

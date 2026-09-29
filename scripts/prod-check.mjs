@@ -312,6 +312,55 @@ const CHECKS = [
           and payload ? 'min_version_code'
       )`,
   },
+  {
+    name: 'a balance moved without its ledger row',
+    /*
+     * THE 2026-09-29 AUDIT (launch hardening, B4). A spendable balance
+     * (promo + purchased, kept in token_balance by the 028 trigger) must equal
+     * the sum of its succeeded ledger rows, provider_accrual excluded (earnings
+     * live in provider_earnings_ledger by design, never in the balance).
+     *
+     * Fifteen accounts carry a historical gap, every one explained and none
+     * from a live path: the pre-ledger 50-token signup grant 028 chose not to
+     * backfill, the pre-097 mock_recharge bug, and balances set by hand in
+     * testing. They are pinned here at their EXACT gap, so this stays quiet
+     * about the past and fires the moment any gap changes, or a new account
+     * gains one. The three ledger-less writers (credit_user_token,
+     * deduct_user_token, settle_call) have no callers and no client grant;
+     * dropping them is filed in .claude/plans/review-followups.md.
+     */
+    sql: `
+      with ledger as (
+        select user_id, sum(tokens_delta) filter (where kind <> 'provider_accrual') as s
+        from public.token_transactions where status = 'succeeded' group by user_id
+      ),
+      known(id, gap) as (values
+('d45435ad-aa2b-42fe-80bf-9ebda826f8c1', 15304),
+        ('67e3c9e0-0c33-41fb-9f09-22bf5db896f9', 1000),
+        ('290ff337-1188-42d9-89af-8de60b94d8a6', 200),
+        ('656a177e-fa95-4d02-b591-27fccb9bc65f', 50),
+        ('11111111-1111-4111-8111-111111111111', 50),
+        ('0e14de6e-2f2d-42d4-a0a3-a3cafb4b55f5', 50),
+        ('44444444-4444-4444-8444-444444444444', 50),
+        ('8e4d3f9f-c629-44ad-9a22-edacfe6b3a7b', 50),
+        ('22222222-2222-4222-8222-222222222222', 50),
+        ('00d188a7-50b5-4aea-b55f-016e1b77e145', 50),
+        ('ef3c4baa-4ccd-4cf9-89ae-9ef4178cd323', 50),
+        ('33333333-3333-4333-8333-333333333333', 50),
+        ('34899555-fe73-40e7-968d-6fb354a4e91a', 49),
+        ('dc842257-519a-46be-8d19-63247bdb5ff6', 44),
+        ('17b10982-f789-4920-9a00-47a497035ec6', -368)
+      ),
+      gaps as (
+        select p.id, p.display_name, p.token_balance - coalesce(l.s, 0) as gap
+        from public.profiles p left join ledger l on l.user_id = p.id
+        where p.token_balance <> coalesce(l.s, 0)
+      )
+      select g.id::text as profile_id, g.display_name, g.gap, k.gap as known_gap
+      from gaps g left join known k on k.id = g.id::text
+      where k.gap is distinct from g.gap
+      order by abs(g.gap) desc`,
+  },
 ];
 
 function query(sql) {

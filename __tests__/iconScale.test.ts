@@ -259,7 +259,7 @@ const EXEMPT: Record<string, string> = {
    * break that guarantee, which would be the gate winning an argument it should
    * lose. Named here so the alias is a decision on record rather than a hole.
    */
-  STAR: 'RatingStars: an alias of TOKENS.icon.xs, shared with the clip width',
+  size: 'RatingStars: its `size` prop, default STAR (TOKENS.icon.xs); the profile passes TOKENS.icon.md (B3, 2026-09-29)',
   CLEAR_GLYPH_SIZE: 'SearchBar: matched to the reference clear mark, 11-12dp',
   /*
    * Two DERIVED sizes on the explore row (2026-09-26), same class as the

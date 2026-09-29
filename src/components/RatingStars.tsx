@@ -55,6 +55,13 @@ export const STARS_HEIGHT = STAR_BOX;
 interface Props {
   /** 0–5. Fractions are drawn as a partially filled star. */
   score: number;
+  /**
+   * Glyph size; default `icon.xs`, the size STARS_WIDTH/STARS_HEIGHT describe.
+   * The profile's big row passes `icon.md` so it draws the fraction too,
+   * instead of flooring 4.9 to four stars beside a card that shows ~five
+   * (B3, 2026-09-29).
+   */
+  size?: number;
   /** Spoken instead of five unlabelled glyphs. */
   accessibilityLabel?: string;
   testID?: string;
@@ -88,7 +95,7 @@ interface Props {
  * an overlay View that accepted touches would carve a dead patch out of the
  * provider row's tap target. Same reason `MetaChip` is `accessible={false}`.
  */
-function RatingStarsView({ score, accessibilityLabel, testID }: Props) {
+function RatingStarsView({ score, size = STAR, accessibilityLabel, testID }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
 
@@ -97,7 +104,9 @@ function RatingStarsView({ score, accessibilityLabel, testID }: Props) {
   // level. A width wider than the host would paint a sixth star's worth of
   // colour past the row.
   const clamped = Math.max(0, Math.min(STAR_COUNT, score));
-  const filledWidth = (clamped / STAR_COUNT) * STARS_WIDTH;
+  const box = Math.round(size * ICON_SCALE);
+  const width = STAR_COUNT * box + (STAR_COUNT - 1) * STAR_GAP;
+  const filledWidth = (clamped / STAR_COUNT) * width;
 
   // `filled` picks Phosphor's `star-fill` glyph (the `active` entry for `star`
   // in design/icons.json), so the overlaid row is genuinely filled stars rather
@@ -112,7 +121,7 @@ function RatingStarsView({ score, accessibilityLabel, testID }: Props) {
           key={`${key}-${i}`}
           name="star"
           active={filled}
-          size={STAR}
+          size={size}
           color={color}
         />
       ))}
@@ -125,7 +134,7 @@ function RatingStarsView({ score, accessibilityLabel, testID }: Props) {
       pointerEvents="none"
       accessible={accessibilityLabel !== undefined}
       accessibilityLabel={accessibilityLabel}
-      style={styles.host}>
+      style={[styles.host, size !== STAR && { width, height: box }]}>
       {row(theme.color.text.tertiary, 'empty', false)}
       {/*
        * The filled row is absolutely positioned so it does not add to the

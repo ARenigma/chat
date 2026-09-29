@@ -1590,10 +1590,18 @@ function FeaturedCard({
           {/* The row's name role (titleMediumEmphasized over a nested bodySmall
               "F-28"), not the old 24dp headline: at 126dp a 24dp name held
               about seven characters. */}
+          {/* Name and age as SIBLINGS, so a long one-word name ("RaviListens")
+              ellipsizes itself and the age tag always shows whole. Nested, the
+              line truncated from its tail, which is the age ("M-…", S22
+              2026-09-29). Baseline-aligned by the row. */}
           <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.featuredName}>
             {providerFirstName(provider.display_name)}
-            <Text style={styles.featuredAge}>{age}</Text>
           </Text>
+          {age === '' ? null : (
+            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.featuredAge}>
+              {age}
+            </Text>
+          )}
         </View>
         {/* The rating AT THE BOTTOM with the name (Amit, 2026-09-26: "name +
             F-28 and rating at the bottom"), so the photo's top corners hold
@@ -2005,11 +2013,14 @@ const makeStyles = (t: Theme) =>
     featuredName: {
       ...TOKENS.typography.titleMediumEmphasized,
       color: '#FFFFFF',
-      flex: 1,
+      // Shrinks (and ellipsizes) before the age does; no `flex: 1`, so a
+      // short name keeps the age right beside it.
+      flexShrink: 1,
     },
     featuredAge: {
       ...TOKENS.typography.bodySmall,
       color: 'rgba(255,255,255,0.82)',
+      flexShrink: 0,
     },
     /*
      * The away state's pill, in the presence dot's slot.
