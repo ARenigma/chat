@@ -37,7 +37,9 @@ export interface SettingsSectionModel {
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionModel[] = [
   { id: 'profile', title: 'Your profile', rows: ['edit-profile', 'photos'] },
-  { id: 'money', title: 'Money', rows: ['get-paid', 'usage', 'transactions', 'invoices'] },
+  // Amit 2026-09-29: usage first (what each session cost/earned), then the
+  // money-in history, then the billing documents, then the payout row.
+  { id: 'money', title: 'Money', rows: ['usage', 'transactions', 'invoices', 'get-paid'] },
   { id: 'app', title: 'App', rows: ['notifications', 'theme', 'blocked'] },
   { id: 'legal', title: 'Legal', rows: ['terms', 'privacy', 'refund'] },
 ];

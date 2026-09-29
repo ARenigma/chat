@@ -66,6 +66,7 @@ export const LIGHT = {
       onAstrologer: '#5B21B6',
       onTokenStrong: '#FFFFFF',
       available: '#10855F',
+      warning: '#8C6200',
     },
     border: {
       hairline: '#C6C6C8',
@@ -773,6 +774,7 @@ export const DARK = {
       onAstrologer: '#E5D4FF',
       onTokenStrong: '#FFFFFF',
       available: '#3FD69B',
+      warning: '#F0A800',
     },
     border: {
       hairline: '#303C4A',

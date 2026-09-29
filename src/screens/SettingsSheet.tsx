@@ -459,7 +459,9 @@ export function SettingsSheet({
       onInvoices === undefined
         ? undefined
         : {
-            icon: 'download',
+            // receipt glyph matches the document theme of the screen it opens.
+            // Amit 2026-09-29: receipt replaces download (design/icons.json).
+            icon: 'receipt',
             title: 'Bills & invoices',
             detail: 'Open or save the bill for any top-up',
             onPress: onInvoices,

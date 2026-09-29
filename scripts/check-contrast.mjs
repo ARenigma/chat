@@ -442,6 +442,23 @@ const PAIRS = [
     target: 4.5,
     what: 'the destructive action in a sheet',
   },
+  /*
+   * Pending-payment status ink (Amit 2026-09-29: all transaction statuses are
+   * their own line items; pending needs a distinct, accessible amber).
+   * Light #8C6200 ~5.4:1 on white; Dark #F0A800 ~8.4:1 on the dark base.
+   */
+  {
+    fg: 'text/warning',
+    bg: 'bg/base',
+    target: 4.5,
+    what: 'pending-payment amber ink on the page',
+  },
+  {
+    fg: 'text/warning',
+    bg: 'bg/raised',
+    target: 4.5,
+    what: 'pending-payment amber ink on a card',
+  },
   {
     fg: 'state/available',
     bg: 'bg/base',
