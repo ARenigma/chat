@@ -4,6 +4,7 @@ import {
   Image,
   Keyboard,
   PixelRatio,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -607,6 +608,22 @@ export function HomeScreen({
     void refetchProviders();
   });
 
+  /*
+   * Pull to refresh (Bluesky's feed does; Amit, 2026-09-29: match its
+   * smoothness). The spinner is the member's own pull only, never the 30 s
+   * background poll. And it is a performance fix as much as a feature:
+   * without it the top edge fell to Android 12+'s stretch overscroll, which
+   * draws the whole 1080x1902 list into an offscreen layer per frame with
+   * every image re-uploaded (S22 trace 2026-09-29: 6 slow draws, 5 bitmap
+   * uploads per pull, Bluesky 0 and 0). RefreshControl takes the pull.
+   * https://reactnative.dev/docs/refreshcontrol
+   */
+  const [pulling, setPulling] = useState(false);
+  const onPullRefresh = useCallback(() => {
+    setPulling(true);
+    void refetchProviders().finally(() => setPulling(false));
+  }, [refetchProviders]);
+
   const loading = convosPending || providersPending;
   const firstUser = balance === 0;
   const tourComplete = tourSeen || !firstUser;
@@ -985,6 +1002,8 @@ export function HomeScreen({
                     onOpenConversation={handleOpenConversation}
                     onRailLongPress={onRailLongPress}
                     onSeeAllChats={onSeeAllChats}
+                    refreshing={pulling}
+                    onRefresh={onPullRefresh}
                   />
                 </View>
               ))}
@@ -1151,6 +1170,8 @@ const DirectoryPage = memo(function ({
   onOpenConversation,
   onRailLongPress,
   onSeeAllChats,
+  refreshing,
+  onRefresh,
 }: {
   category: ProviderCategory;
   /** The settled page. Gates tour anchors and row entrances, never content. */
@@ -1169,6 +1190,9 @@ const DirectoryPage = memo(function ({
   onOpenConversation: (peerId: string) => void;
   onRailLongPress: (peerId: string, anchor: MenuAnchor) => void;
   onSeeAllChats: () => void;
+  /** The member's own pull (HomeScreen's `pulling`), never the background poll. */
+  refreshing: boolean;
+  onRefresh: () => void;
 }) {
   const styles = useStyles(makeStyles);
 
@@ -1388,6 +1412,14 @@ const DirectoryPage = memo(function ({
     <FlashList
       ref={listRef}
       testID={`home-scroll-${category}`}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={[theme.color.text.accent]}
+          progressBackgroundColor={theme.color.bg.raised}
+        />
+      }
       data={rows}
       keyExtractor={p => p.id}
       renderItem={renderExploreRow}
