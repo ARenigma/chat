@@ -258,11 +258,25 @@ describe('the KPIs are wired above the rows', () => {
   });
 
   it('puts them at the top, before the ledger rows', () => {
-    const kpiRow = SCREEN.indexOf('style={styles.kpiRow}');
-    const rowList = SCREEN.indexOf('rows.map(');
-    expect(kpiRow).toBeGreaterThan(-1);
-    expect(rowList).toBeGreaterThan(-1);
-    expect(kpiRow).toBeLessThan(rowList);
+    /*
+     * Amit 2026-09-29: the list is now a SectionList with month headers.
+     * The KPIs live in ListHeaderComponent, which SectionList renders ABOVE all
+     * sections. The source-order check becomes: ListHeaderComponent (the prop
+     * that receives the KPI row) comes before renderItem (the prop that draws
+     * each data row). The prop order in JSX reflects the semantic: header first,
+     * then the per-row renderer.
+     */
+    const headerPos = SCREEN.indexOf('ListHeaderComponent');
+    const renderItemPos = SCREEN.indexOf('renderItem={');
+    expect(headerPos).toBeGreaterThan(-1);
+    expect(renderItemPos).toBeGreaterThan(-1);
+    expect(headerPos).toBeLessThan(renderItemPos);
+    // The kpiRow style is inside ListHeaderComponent, confirming it IS the header.
+    const kpiRowPos = SCREEN.indexOf('style={styles.kpiRow}');
+    expect(kpiRowPos).toBeGreaterThan(headerPos);
+    expect(kpiRowPos).toBeLessThan(renderItemPos);
+    // The old flat-map pattern is gone — rows are rendered through renderItem.
+    expect(SCREEN).not.toContain('rows.map(');
   });
 
   it('renders the KPIs or the empty state, never both', () => {
@@ -291,6 +305,46 @@ describe('the KPIs are wired above the rows', () => {
     expect(kpi).toContain('accessibilityLabel={spoken}');
     expect(SCREEN).toContain('spoken={kpis.sessionsSpoken}');
     expect(SCREEN).toContain('spoken={kpis.tokensSpoken}');
+  });
+
+  it('uses a filled channel glyph with no circle container', () => {
+    /*
+     * Amit 2026-09-29: remove the 36dp bg.sunken disc; pass `active` to Icon
+     * so the fill variant is selected (chat-circle-fill, phone-fill,
+     * video-camera-fill). The glyph shape already names the channel — the
+     * circle was redundant chrome.
+     */
+    const body = SCREEN.slice(SCREEN.indexOf('export function UsageLedgerScreen'));
+    // `active` prop on the channel Icon.
+    expect(body).toContain('<Icon');
+    expect(body).toContain('active');
+    // No 36dp circle container: bg.sunken must not appear in the row styles.
+    const rowStyles = SCREEN.slice(SCREEN.indexOf('makeStyles'));
+    expect(rowStyles).not.toContain('bg.sunken');
+    expect(rowStyles).not.toContain('width: 36');
+  });
+
+  it('drops the channel label from the secondary line', () => {
+    /*
+     * Amit 2026-09-29: secondary is elapsed · date only. The channel label
+     * ("Chat · ", "Voice call · ") is redundant — the icon already names it.
+     * CHANNEL_LABEL is removed from the screen; the meta line reads
+     * `${elapsedLabel(row)} · ${listStamp(...)}` with no channel word.
+     */
+    expect(SCREEN).not.toContain('CHANNEL_LABEL');
+    // The secondary line contains the elapsed label and the date, not a
+    // channel word before them.
+    expect(SCREEN).toContain('elapsedLabel(row)');
+    expect(SCREEN).toContain('listStamp(row.started_at)');
+  });
+
+  it('groups rows into month sections', () => {
+    /*
+     * Amit 2026-09-29: SectionList with "SEPTEMBER 2026" headers.
+     */
+    expect(SCREEN).toContain('SectionList');
+    expect(SCREEN).toContain('renderSectionHeader');
+    expect(SCREEN).toContain('groupByMonth');
   });
 
   it('sets the values in a tabular numeral, on the app spacing scale', () => {

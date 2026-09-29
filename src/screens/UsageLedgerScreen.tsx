@@ -27,7 +27,7 @@
  * reaches this file to be leaked.
  */
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -54,12 +54,6 @@ const CHANNEL_GLYPH: Record<UsageRow['channel'], IconName> = {
   video: 'video',
 };
 
-const CHANNEL_LABEL: Record<UsageRow['channel'], string> = {
-  chat: 'Chat',
-  audio: 'Voice call',
-  video: 'Video call',
-};
-
 /**
  * Duration label for a usage row — actual elapsed time when available (migration
  * 124), otherwise falls back to the billed-minutes approximation.
@@ -69,6 +63,29 @@ function elapsedLabel(row: UsageRow): string {
   const secs = row.elapsed_seconds ?? (row.minutes > 0 ? row.minutes * 60 : 0);
   if (secs <= 0) return row.minutes < 1 ? 'under 1 min' : `${row.minutes} min`;
   return durationWords(secs) || (row.minutes < 1 ? 'under 1 min' : `${row.minutes} min`);
+}
+
+/** "SEPTEMBER 2026" from an ISO timestamp. */
+function monthHeader(iso: string): string {
+  const d = new Date(iso);
+  const month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+  return `${month} ${d.getFullYear()}`;
+}
+
+/** Group rows into {title, data} sections by calendar month, preserving order. */
+function groupByMonth(rows: UsageRow[]): Array<{ title: string; data: UsageRow[] }> {
+  const sections: Array<{ title: string; data: UsageRow[] }> = [];
+  let currentTitle = '';
+  for (const row of rows) {
+    const date = row.started_at ?? null;
+    const title = date !== null ? monthHeader(date) : 'EARLIER';
+    if (title !== currentTitle) {
+      sections.push({ title, data: [] });
+      currentTitle = title;
+    }
+    sections[sections.length - 1]!.data.push(row);
+  }
+  return sections;
 }
 
 /** The two top-level figures, with the words that make each one mean something. */
@@ -214,6 +231,7 @@ export function UsageLedgerScreen({ onBack }: Props) {
   // always sees "Earnings" language, not "Usage" language, even before their
   // first session.
   const earning = kpis?.earning ?? (profile?.role === 'provider');
+  const sections = kpis !== null ? groupByMonth(rows) : [];
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]} testID="usage-ledger">
@@ -249,50 +267,69 @@ export function UsageLedgerScreen({ onBack }: Props) {
           </Text>
         </View>
       ) : (
-        <ScrollView
+        <SectionList
           {...SCROLL_PHYSICS}
           showsVerticalScrollIndicator={false}
+          sections={sections}
+          keyExtractor={row => row.session_id}
           contentContainerStyle={[
             styles.scroll,
             { paddingBottom: barOffset },
-          ]}>
-          {/* Two up, above the rows. Equal `flex: 1` halves rather than a fixed
-              width, so the pair survives every screen width without a
-              breakpoint, and separated by the same space.xs the row list is
-              already gapped by — one rhythm down the screen, not two. */}
-          <View style={styles.kpiRow}>
-            <Kpi
-              value={formatCount(kpis.sessions)}
-              label={kpis.sessionsLabel}
-              spoken={kpis.sessionsSpoken}
-              testID="usage-sessions"
-            />
-            <Kpi
-              value={
-                <RupeeAmount value={kpis.tokens} allowFontScaling style={styles.kpiValue} />
-              }
-              label={kpis.tokensLabel}
-              spoken={kpis.tokensSpoken}
-              testID="usage-total"
-            />
-          </View>
-
-          {rows.map(row => (
+          ]}
+          ListHeaderComponent={
+            /* Two up, above the rows. Equal `flex: 1` halves rather than a fixed
+               width, so the pair survives every screen width without a
+               breakpoint, and separated by the same space.xs the row list is
+               already gapped by — one rhythm down the screen, not two. */
+            <View style={styles.kpiRow}>
+              <Kpi
+                value={formatCount(kpis.sessions)}
+                label={kpis.sessionsLabel}
+                spoken={kpis.sessionsSpoken}
+                testID="usage-sessions"
+              />
+              <Kpi
+                value={
+                  <RupeeAmount value={kpis.tokens} allowFontScaling style={styles.kpiValue} />
+                }
+                label={kpis.tokensLabel}
+                spoken={kpis.tokensSpoken}
+                testID="usage-total"
+              />
+            </View>
+          }
+          renderSectionHeader={({ section }) => (
+            <Text allowFontScaling style={styles.sectionHeader}>
+              {section.title}
+            </Text>
+          )}
+          renderItem={({ item: row }) => (
             <View key={row.session_id} style={styles.row} testID={`usage-${row.session_id}`}>
-              <View style={styles.glyph}>
-                <Icon
-                  name={CHANNEL_GLYPH[row.channel]}
-                  size={TOKENS.icon.md}
-                  color={theme.color.text.secondary}
-                />
-              </View>
+              {/*
+               * Amit 2026-09-29: filled channel glyph with NO circle container.
+               * The 36dp bg.sunken disc is removed; `active` selects the fill
+               * variant (chat-circle-fill, phone-fill, video-camera-fill).
+               * No circle: the glyph shape already reads as "chat" / "call" /
+               * "video" — the circle is redundant container chrome.
+               */}
+              <Icon
+                name={CHANNEL_GLYPH[row.channel]}
+                active
+                size={TOKENS.icon.md}
+                color={theme.color.text.secondary}
+              />
               <View style={styles.rowBody}>
                 <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
                   {/* A member's peer is a provider: first name only (display.ts). */}
                   {row.i_am_member ? providerFirstName(row.peer_name) || row.peer_name : row.peer_name}
                 </Text>
+                {/*
+                 * Amit 2026-09-29: secondary line is elapsed · date only.
+                 * The channel label is dropped — the glyph already names the
+                 * channel, and saying "Chat · 2 min · 27 Aug" names it twice.
+                 */}
                 <Text allowFontScaling style={styles.rowMeta}>
-                  {`${CHANNEL_LABEL[row.channel]} · ${elapsedLabel(row)}${
+                  {`${elapsedLabel(row)}${
                     row.started_at !== null ? ` · ${listStamp(row.started_at)}` : ''
                   }`}
                 </Text>
@@ -310,8 +347,8 @@ export function UsageLedgerScreen({ onBack }: Props) {
                 ) : null}
               </View>
             </View>
-          ))}
-        </ScrollView>
+          )}
+        />
       )}
     </View>
   );
@@ -332,8 +369,8 @@ const makeStyles = (t: Theme) =>
     state: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: TOKENS.space.xs, paddingHorizontal: TOKENS.space.xl },
     emptyTitle: { ...TOKENS.typography.titleMediumEmphasized, color: t.color.text.primary },
     emptyBody: { ...TOKENS.typography.bodyMedium, color: t.color.text.secondary, textAlign: 'center' },
-    scroll: { paddingHorizontal: TOKENS.space.md, gap: TOKENS.space.xs },
-    kpiRow: { flexDirection: 'row', gap: TOKENS.space.xs, marginBottom: TOKENS.space.xs },
+    scroll: { paddingHorizontal: TOKENS.space.md },
+    kpiRow: { flexDirection: 'row', gap: TOKENS.space.xs, marginBottom: TOKENS.space.xs, marginTop: TOKENS.space.xs },
     /*
      * The card interior stays space.lg, which is where design/tokens.json keeps
      * card interiors ("Recharge balance, Provider detail sections, Payment
@@ -366,19 +403,23 @@ const makeStyles = (t: Theme) =>
      */
     kpiValue: { ...TOKENS.typography.numeralLarge, color: t.color.text.primary },
     kpiLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.secondary },
+    /*
+     * "SEPTEMBER 2026" style. textSmSemiBold (13.1/17 SemiBold, Bluesky
+     * section-header role) in text.section ink — the same pairing HomeScreen
+     * and ProviderChatsScreen use for their section labels.
+     */
+    sectionHeader: {
+      ...TOKENS.typography.textSmSemiBold,
+      color: t.color.text.section,
+      paddingTop: TOKENS.space.md,
+      paddingBottom: TOKENS.space.xs,
+    },
     row: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.sm,
       minHeight: TOKENS.layout.rowTwoLine,
-    },
-    glyph: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: t.color.bg.sunken,
+      paddingVertical: TOKENS.space.xs,
     },
     rowBody: { flex: 1, gap: TOKENS.space.hair },
     rowName: { ...TOKENS.typography.bodyLarge, color: t.color.text.primary },
