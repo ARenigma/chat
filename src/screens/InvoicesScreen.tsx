@@ -17,13 +17,14 @@
  * ledger has no reason to distinguish), and it excludes the kinds that can
  * never have a document at all.
  *
- * Nothing here is computed. The number, the document type, the issue date and
- * the total are the columns `record_invoice` wrote; where a document does not
- * exist the screen says so instead of assembling one out of the ledger row. An
- * invented invoice number on a statutory document is not a display bug.
+ * Amit 2026-09-29: failed and pending payments are their own non-tappable rows
+ * rather than a footnote count. A member whose payment failed should see that
+ * explicitly and read why no bill was raised, not discover a footnote that says
+ * "N payments did not go through". The old `unsettledNote` and `billingList`
+ * count are removed.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -62,65 +63,34 @@ const DOCUMENT_LABEL: Record<InvoiceRecord['documentType'], string> = {
   bill_of_supply: 'Bill of supply',
 };
 
-/** What this screen shows, and the one thing it can only say in a sentence. */
-export interface BillingList {
-  /**
-   * Recharges that took money, newest first. `invoice` is null on a row whose
-   * document has not been raised yet — that is a state, not a row to hide.
-   */
-  documents: BillingRow[];
-  /**
-   * Recharges that never took money: `created` (the member left the Cashfree
-   * sheet and no webhook ever came) or `failed`. They are not documents and
-   * never will be, so they are counted rather than listed — 10 of the 23
-   * recharge rows in the live table on 2026-09-13 are in this state, so a
-   * member WILL come here looking for the bill for one of them.
-   */
-  unsettled: number;
+/** "SEPTEMBER 2026" from an ISO timestamp. */
+function monthHeader(iso: string): string {
+  const d = new Date(iso);
+  const month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+  return `${month} ${d.getFullYear()}`;
 }
 
-/**
- * Split the ledger into the documents and the attempts, without dropping either.
- *
- * Pure and exported because it is the only part of this screen that can be
- * executed in this repo (no renderer in devDependencies), and because the rule
- * it encodes — settled status decides, not kind, not the presence of an invoice
- * row — is the one that would silently regress.
- */
-// Module-local on purpose (dead-code sweep 2026-09-27): nothing imports it,
-// the screen below is its one caller.
-function billingList(rows: readonly BillingRow[] | undefined): BillingList {
-  const all = rows ?? [];
-  return {
-    documents: all.filter(row => SETTLED_RECHARGE_STATUSES.has(row.status)),
-    unsettled: all.filter(row => !SETTLED_RECHARGE_STATUSES.has(row.status)).length,
-  };
-}
-
-/**
- * The sentence for the payments that were never billed, or null when there
- * were none.
- *
- * Said plainly rather than shown as a greyed row: a failed payment has no
- * number, no total and no document, so a row for it would be four empty fields
- * and an explanation. One sentence answers the question it is actually asked —
- * "I tried to pay, where is my bill" — and answers it with "that payment did
- * not go through", which is the fact.
- */
-function unsettledNote(count: number): string | null {
-  if (count <= 0) {
-    return null;
+/** Group billing rows by month; the date used is paidAt (created_at). */
+function groupByMonth(
+  rows: BillingRow[],
+): Array<{ title: string; data: BillingRow[] }> {
+  const sections: Array<{ title: string; data: BillingRow[] }> = [];
+  let currentTitle = '';
+  for (const row of rows) {
+    const title = monthHeader(row.paidAt);
+    if (title !== currentTitle) {
+      sections.push({ title, data: [] });
+      currentTitle = title;
+    }
+    sections[sections.length - 1]!.data.push(row);
   }
-  return count === 1
-    ? 'One payment did not go through, so nothing was billed for it.'
-    : `${count} payments did not go through, so nothing was billed for them.`;
+  return sections;
 }
 
 export function InvoicesScreen({ onBack }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  // The bottom bar stays up on this pushed screen: the last row clears it.
   const barOffset = useBottomBarOffset(TOKENS.space.xl);
   const setNotice = useStore(s => s.setNotice);
   const { data, isLoading } = useBills();
@@ -128,18 +98,13 @@ export function InvoicesScreen({ onBack }: Props) {
   /*
    * The document whose URL is being minted, so a second tap cannot mint a
    * second signed URL and launch a second browser window for the same file.
-   *
-   * A re-entry guard rather than `Pressable`'s `busy`: `busy` is the state a
-   * pending MUTATION holds a control in, and it comes with the requirement that
-   * the control say which mutation it is running (contract.test.ts, "narrates
-   * every mutation a button starts"). This row starts no mutation and has no
-   * label to change — it fetches a URL and hands it to Android — so the honest
-   * version is to swallow the second tap and leave the row alone.
    */
   const [opening, setOpening] = useState<string | null>(null);
 
-  const { documents, unsettled } = useMemo(() => billingList(data), [data]);
-  const note = unsettledNote(unsettled);
+  // All billing rows — settled ones get real documents, unsettled ones get an
+  // explanatory row. Amit 2026-09-29: no footnote count; every attempt visible.
+  const allRows = useMemo(() => data ?? [], [data]);
+  const sections = useMemo(() => groupByMonth(allRows), [allRows]);
 
   const openDocument = useCallback(
     async (invoice: InvoiceRecord) => {
@@ -170,9 +135,6 @@ export function InvoicesScreen({ onBack }: Props) {
           setNotice('No app on this phone can open a PDF.');
         });
       } catch {
-        // Backstop: nothing above is expected to throw (fetchInvoiceUrl returns
-        // null on failure), and a rejection escaping an onPress handler is an
-        // unhandled rejection rather than anything the member can see.
         setNotice('Could not open that document just now.');
       } finally {
         setOpening(null);
@@ -197,14 +159,9 @@ export function InvoicesScreen({ onBack }: Props) {
         <View style={styles.state}>
           <LoadingIndicator />
         </View>
-      ) : documents.length === 0 ? (
-        /*
-         * Empty, and the note below it is why this is not one message. A member
-         * with nothing but abandoned checkouts has no documents AND a reason,
-         * and the reason is the half they came for.
-         */
+      ) : allRows.length === 0 ? (
         <View style={styles.state}>
-          <Icon name="wallet" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
+          <Icon name="receipt" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
           <Text
             maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
             allowFontScaling
@@ -215,34 +172,29 @@ export function InvoicesScreen({ onBack }: Props) {
             Every top-up that goes through is billed, and the document is listed
             here for you to open or save.
           </Text>
-          {note === null ? null : (
-            <Text allowFontScaling style={styles.emptyBody} testID="invoices-unsettled">
-              {note}
-            </Text>
-          )}
         </View>
       ) : (
-        <ScrollView
+        <SectionList
           showsVerticalScrollIndicator={false}
           {...SCROLL_PHYSICS}
+          sections={sections}
+          keyExtractor={entry => entry.transactionId}
           contentContainerStyle={[
             styles.list,
             { paddingBottom: barOffset },
-          ]}>
-          <View style={styles.group}>
-            {documents.map((entry, index) => (
-              <React.Fragment key={entry.transactionId}>
-                {index === 0 ? null : <View style={styles.separator} />}
-                <BillRow entry={entry} onOpen={openDocument} />
-              </React.Fragment>
-            ))}
-          </View>
-          {note === null ? null : (
-            <Text allowFontScaling style={styles.note} testID="invoices-unsettled">
-              {note}
+          ]}
+          renderSectionHeader={({ section }) => (
+            <Text allowFontScaling style={styles.sectionHeader}>
+              {section.title}
             </Text>
           )}
-        </ScrollView>
+          renderItem={({ item: entry }) => (
+            <BillRow
+              entry={entry}
+              onOpen={openDocument}
+            />
+          )}
+        />
       )}
     </View>
   );
@@ -254,29 +206,77 @@ interface RowProps {
 }
 
 /**
- * One line of the list, in one of the three states this data actually has.
+ * One line of the list.
  *
- *   1. A document with a stored PDF — the whole row opens it.
- *   2. A document whose PDF has not landed yet. `pdf_path` is set by
- *      `set_invoice_pdf` AFTER the upload, and the Edge Function logs the
- *      failure and returns non-fatally if that RPC fails, so this state is both
- *      transient (seconds) and occasionally permanent. Either way the row keeps
- *      its real number and total and says the PDF is not there — it does not
- *      offer an action that cannot work.
- *   3. A settled recharge with no invoice row at all. Migration 046 raises the
- *      invoice through pg_net and returns quietly when the Vault secrets are
- *      empty, so "paid, never invoiced" is a real state with no user-visible
- *      cause. The row shows what the LEDGER knows (what was paid, and when) and
- *      does not put a number on it.
+ * Amit 2026-09-29: failed and pending payments are their own non-tappable rows
+ * ("Payment failed" / "Payment pending") instead of a footnote count. Real
+ * bills keep their three states (PDF ready, PDF pending, no invoice yet).
+ *
+ * Every row carries a leading filled receipt glyph with no circle container —
+ * `active` picks receipt-fill; the shape already communicates "document".
+ *
+ * States:
+ *   1. Failed payment — non-tappable. "Payment failed" / "No bill: nothing was
+ *      charged" / amount.
+ *   2. Pending payment — non-tappable. "Payment pending" / "Bill follows once
+ *      it clears" / amount.
+ *   3. Settled with no invoice row yet — non-tappable. "Bill pending" /
+ *      "Paid <date>" + generation message / amount.
+ *   4. Settled with invoice, PDF not yet uploaded — non-tappable. Invoice
+ *      number / meta + preparation message / amount.
+ *   5. Settled with invoice and PDF — tappable row, whole row opens PDF.
  */
 function BillRow({ entry, onOpen }: RowProps) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const invoice = entry.invoice;
+  const isSettled = SETTLED_RECHARGE_STATUSES.has(entry.status);
 
-  if (invoice === null) {
+  // State 1: failed payment
+  if (entry.status === 'failed') {
     return (
       <View style={styles.line} testID={`bill-${entry.transactionId}`}>
+        <Icon name="receipt" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
+        <View style={styles.lineBody}>
+          <Text allowFontScaling style={styles.title}>
+            Payment failed
+          </Text>
+          <Text allowFontScaling style={styles.meta}>
+            No bill: nothing was charged
+          </Text>
+        </View>
+        <Text allowFontScaling style={styles.amount}>
+          {formatPaise(entry.amountPaise)}
+        </Text>
+      </View>
+    );
+  }
+
+  // State 2: pending payment (created — in flight or abandoned at gateway)
+  if (entry.status === 'created') {
+    return (
+      <View style={styles.line} testID={`bill-${entry.transactionId}`}>
+        <Icon name="receipt" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
+        <View style={styles.lineBody}>
+          <Text allowFontScaling style={styles.title}>
+            Payment pending
+          </Text>
+          <Text allowFontScaling style={styles.meta}>
+            Bill follows once it clears
+          </Text>
+        </View>
+        <Text allowFontScaling style={styles.amount}>
+          {formatPaise(entry.amountPaise)}
+        </Text>
+      </View>
+    );
+  }
+
+  // State 3: settled with no invoice row
+  if (isSettled && invoice === null) {
+    return (
+      <View style={styles.line} testID={`bill-${entry.transactionId}`}>
+        <Icon name="receipt" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
         <View style={styles.lineBody}>
           <Text allowFontScaling style={styles.title}>
             Bill pending
@@ -295,6 +295,12 @@ function BillRow({ entry, onOpen }: RowProps) {
     );
   }
 
+  // States 4 & 5: settled with invoice (invoice is non-null here)
+  if (invoice === null) {
+    // Unreachable: covered by state 3. Guard satisfies TS.
+    return null;
+  }
+
   const label = DOCUMENT_LABEL[invoice.documentType];
   // A reversed recharge keeps its document — the number was issued and the
   // series is gapless — so the row says what happened to the money instead of
@@ -303,9 +309,11 @@ function BillRow({ entry, onOpen }: RowProps) {
     entry.status === 'refunded' ? ' · Refunded' : ''
   }`;
 
+  // State 4: PDF still being prepared
   if (invoice.pdfPath === null) {
     return (
       <View style={styles.line} testID={`bill-${entry.transactionId}`}>
+        <Icon name="receipt" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
         <View style={styles.lineBody}>
           <Text allowFontScaling style={styles.title}>
             {invoice.invoiceNumber}
@@ -324,6 +332,7 @@ function BillRow({ entry, onOpen }: RowProps) {
     );
   }
 
+  // State 5: PDF ready — whole row is tappable
   return (
     <Pressable
       onPress={() => onOpen(invoice)}
@@ -335,6 +344,7 @@ function BillRow({ entry, onOpen }: RowProps) {
       press="none"
       highlight="dim"
       style={styles.line}>
+      <Icon name="receipt" active size={TOKENS.icon.md} color={theme.color.text.secondary} />
       <View style={styles.lineBody}>
         <Text allowFontScaling style={styles.title}>
           {invoice.invoiceNumber}
@@ -348,9 +358,8 @@ function BillRow({ entry, onOpen }: RowProps) {
       </Text>
       {/* The glyph is the affordance, not a second button: the whole row is the
           target, so a nested pressable here would be a 48dp hole inside a hole.
-          Low-emphasis secondary ink, at the trailing edge, per the list-action
-          references the recharge history already follows. */}
-      <View style={styles.glyph}>
+          Low-emphasis secondary ink, at the trailing edge. */}
+      <View style={styles.glyphSlot}>
         <Icon name="download" size={TOKENS.icon.md} color={theme.color.text.secondary} />
       </View>
     </Pressable>
@@ -401,23 +410,16 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingTop: TOKENS.space.xs,
     },
-    // Inset-grouped section, matching the recharge history: one hairline above
-    // the first line, a separator between lines, nothing below the last.
-    group: {
-      backgroundColor: t.color.bg.base,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderColor: t.color.border.hairline,
-    },
-    separator: {
-      height: StyleSheet.hairlineWidth,
-      marginLeft: TOKENS.space.md,
-      backgroundColor: t.color.border.hairline,
+    sectionHeader: {
+      ...TOKENS.typography.textSmSemiBold,
+      color: t.color.text.section,
+      paddingTop: TOKENS.space.md,
+      paddingBottom: TOKENS.space.xs,
     },
     line: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.sm,
-      paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.sm,
       minHeight: TOKENS.layout.rowTwoLine,
     },
@@ -437,13 +439,8 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.primary,
     },
-    glyph: {
+    glyphSlot: {
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    note: {
-      ...TOKENS.typography.bodySmall,
-      color: t.color.text.secondary,
-      paddingTop: TOKENS.space.md,
     },
   });

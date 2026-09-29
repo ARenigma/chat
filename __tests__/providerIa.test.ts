@@ -67,9 +67,11 @@ describe('the settings list is grouped into sections', () => {
       'edit-profile', 'photos', 'get-paid', 'usage', 'notifications', 'theme', 'blocked',
       'terms', 'privacy', 'refund',
     ]);
+    // Amit 2026-09-29: Money order is usage → transactions → invoices → get-paid.
+    // Provider tree has usage and get-paid; after the reorder usage comes first.
     expect(visibleSections(r => provider.has(r)).map(s => [s.id, s.rows])).toEqual([
       ['profile', ['edit-profile', 'photos']],
-      ['money', ['get-paid', 'usage']],
+      ['money', ['usage', 'get-paid']],
       ['app', ['notifications', 'theme', 'blocked']],
       ['legal', ['terms', 'privacy', 'refund']],
     ]);
