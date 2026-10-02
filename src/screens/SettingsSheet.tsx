@@ -14,7 +14,6 @@ import { useTabPress } from '../lib/routes/useTabPress';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 import { useSearchBack } from '../hooks/useSearchBack';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import { THEME_DEFAULT_MODE } from '../config';
 import { Button } from '../components/Button';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
@@ -25,7 +24,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { beginSignOut, deleteAccount } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
-import { tick } from '../lib/haptics';
 import { useSetClayAvatar } from '../api/provider';
 import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
@@ -58,6 +56,11 @@ interface Props {
    */
   onUsage?: () => void;
   /**
+   * Pushes the Appearance screen (colour mode: System / Light / Dark).
+   * Absent when the host has no stack to push onto; the row is hidden.
+   */
+  onAppearance?: () => void;
+  /**
    * Provider-only controls (availability, what they offer, photos, earnings,
    * stats) rendered between the profile hero and the settings list. This is how
    * the provider's "You" tab is the SAME single settings surface as the member's
@@ -82,42 +85,6 @@ interface Props {
    * left, and one number is all the two remaining cases differ by.
    */
   bottomOffset?: number;
-}
-
-/**
- * Where a row's title starts: the 32 dp icon slot plus the content slot's
- * leading pad. Dividers align to this so a rule never cuts under the icon.
- */
-const ROW_TEXT_INSET = 32 + TOKENS.space.sm;
-
-/**
- * Radio indicator used inside the theme choice sheet.
- *
- * Mirrors Bluesky's Toggle.BaseRadio anatomy exactly:
- *   - Outer 20×20dp circle, full border in our `border.strong` colour when
- *     unselected; filled accent with no border when selected.
- *   - Inner 8×8dp white dot (text.onAccent) visible only when selected.
- *
- * View-based, not icon-based, because Phosphor has no filled-circle glyph.
- * The `dot` icon (Phosphor `circle`) is an OUTLINE ring; using it for both
- * states would require two stacked icons at different sizes and colours, which
- * is more fragile than a pair of Views that can be tested and inspected.
- *
- * https://github.com/bluesky-social/social-app
- * src/components/forms/Toggle/index.tsx  BaseRadio / createSharedToggleStyles
- */
-function RadioDot({ selected }: { selected: boolean }) {
-  const styles = useStyles(makeStyles);
-  return (
-    <View
-      style={[
-        styles.radioDotOuter,
-        selected ? styles.radioDotSelected : styles.radioDotUnselected,
-      ]}
-    >
-      {selected ? <View style={styles.radioDotInner} /> : null}
-    </View>
-  );
 }
 
 /** One navigable row of the list, as data. */
@@ -157,7 +124,8 @@ function openNotificationSettings(): void {
 }
 
 interface SettingsRowContentProps {
-  icon: IconName;
+  /** Omitted in a choice sheet, where every option would wear the same glyph. */
+  icon?: IconName;
   title: string;
   detail?: string;
   detailTone?: 'default' | 'attention';
@@ -215,33 +183,37 @@ function SettingsRowContent({
   const theme = useTheme();
   return (
     <>
-      <View style={[styles.iconBox, danger && styles.iconBoxDanger]}>
-        <Icon
-          name={icon}
-          size={TOKENS.icon.md}
-          color={danger ? theme.color.state.danger : theme.color.text.secondary}
-        />
-      </View>
-      <View style={styles.rowCopy}>
+      {icon === undefined ? null : (
+        <View style={[styles.iconBox, danger && styles.iconBoxDanger]}>
+          <Icon
+            name={icon}
+            size={TOKENS.icon.lg}
+            // Bluesky's ItemIcon takes the text colour, not a muted one.
+            color={danger ? theme.color.state.danger : theme.color.text.primary}
+          />
+        </View>
+      )}
+      {/* Bluesky's SettingsList row is one line: ItemText, then an optional
+          BadgeText value on the right (SettingsList.tsx ItemText/BadgeText).
+          The explanatory second line is gone (owner, 2026-10-03: "copy the
+          bluesky settings exactly"); a value the row needs, like the theme
+          or a payout step to take, rides as the badge. */}
+      <Text
+        allowFontScaling
+        numberOfLines={1}
+        style={[styles.rowTitle, styles.rowCopy, danger && styles.rowTitleDanger]}
+      >
+        {title}
+      </Text>
+      {detail && detailTone === 'attention' ? (
         <Text
           allowFontScaling
-          style={[styles.rowTitle, danger && styles.rowTitleDanger]}
+          numberOfLines={1}
+          style={[styles.rowBadge, styles.rowDetailAttention]}
         >
-          {title}
+          {detail}
         </Text>
-        {detail ? (
-          <Text
-            allowFontScaling
-            numberOfLines={2}
-            style={[
-              styles.rowDetail,
-              detailTone === 'attention' && styles.rowDetailAttention,
-            ]}
-          >
-            {detail}
-          </Text>
-        ) : null}
-      </View>
+      ) : null}
       {trailing ?? null}
       {selected ? (
         <Icon
@@ -283,13 +255,14 @@ export function SettingsSheet({
   onTransactions,
   onInvoices,
   onUsage,
+  onAppearance,
   topSection,
   extraRows,
   bottomOffset,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const { mode, setMode } = useThemeMode();
+  const { mode } = useThemeMode();
   const setNotice = useStore(s => s.setNotice);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -327,12 +300,6 @@ export function SettingsSheet({
   const needle = query.trim().toLowerCase();
   const shows = (rowTitle: string) =>
     needle === '' || rowTitle.toLowerCase().includes(needle);
-  /*
-   * A union of one since 2026-09-17, when the Presence row left this sheet.
-   * Kept as a union rather than a boolean because the next multi-choice setting
-   * joins it here, and because the sheet below already switches on the name.
-   */
-  const [choiceSheet, setChoiceSheet] = useState<'theme' | null>(null);
   const [avatarSheet, setAvatarSheet] = useState(false);
   const [busy, setBusy] = useState(false);
   const { data: profile } = useProfile();
@@ -507,14 +474,19 @@ export function SettingsSheet({
       testID: 'settings-notifications',
       accessibilityLabel: 'Notifications, opens your phone settings',
     },
-    theme: {
-      icon: 'settings',
-      title: 'Theme',
-      detail: themeLabel,
-      onPress: () => setChoiceSheet('theme'),
-      testID: 'settings-theme',
-      accessibilityLabel: `Theme, ${themeLabel}`,
-    },
+    // Pushed screen (Bluesky: "/settings/appearance" LinkItem → AppearanceSettings).
+    // Absent when no host stack is available: the row is hidden, same as `blocked`.
+    theme:
+      onAppearance === undefined
+        ? undefined
+        : {
+            icon: 'appearance',
+            title: 'Appearance',
+            detail: themeLabel,
+            onPress: onAppearance,
+            testID: 'settings-theme',
+            accessibilityLabel: `Appearance, ${themeLabel}`,
+          },
     blocked:
       onBlocked === undefined
         ? undefined
@@ -672,16 +644,13 @@ export function SettingsSheet({
             style={styles.section}
             testID={`settings-section-${section.id}`}
           >
-            {index === 0 ? null : <Divider />}
-            {needle === '' ? (
-              <Text
-                allowFontScaling
-                accessibilityRole="header"
-                style={styles.subheader}
-              >
-                {section.title}
-              </Text>
-            ) : null}
+            {/* Bluesky's root list has no section labels, only a divider
+                between groups (Settings.tsx); ours followed suit 2026-10-03. */}
+            {index === 0 ? null : (
+              <View style={styles.bleedRule}>
+                <Divider />
+              </View>
+            )}
             {section.rows.map(id => {
               const spec = rowSpecs[id];
               return spec === undefined ? null : (
@@ -694,7 +663,9 @@ export function SettingsSheet({
         <View style={styles.groupSpaced}>
           {shows('Sign out') ? (
             <>
-              <Divider />
+              <View style={styles.bleedRule}>
+                <Divider />
+              </View>
               <Pressable
                 onPress={() => {
                   void onSignOutPress();
@@ -770,84 +741,6 @@ export function SettingsSheet({
           </View>
         ) : null}
       </Animated.ScrollView>
-
-      <Sheet
-        visible={choiceSheet === 'theme'}
-        testID="theme-choice-sheet"
-        title="Theme"
-        /*
-         * The copy names the ACTUAL default, so it cannot go stale silently
-         * again: it read "Light is the default" until 2026-09-08, which the
-         * config flip to dark made false in the one place a member goes to
-         * check. Derived from THEME_DEFAULT_MODE rather than written out.
-         */
-        body={`${
-          THEME_DEFAULT_MODE === 'system'
-            ? 'Your device setting'
-            : THEME_DEFAULT_MODE === 'dark'
-            ? 'Dark'
-            : 'Light'
-        } is the default. System follows your device setting.`}
-        onClose={() => setChoiceSheet(null)}
-      >
-        <View style={styles.choiceList}>
-          {(['light', 'dark', 'system'] as const).map((option, index) => {
-            const on = mode === option;
-            const label =
-              option === 'light'
-                ? 'Light'
-                : option === 'dark'
-                ? 'Dark'
-                : 'System';
-            return (
-              <React.Fragment key={option}>
-                {index === 0 ? null : (
-                  <Divider variant="inset" insetStart={ROW_TEXT_INSET} />
-                )}
-                <Pressable
-                  onPress={() => {
-                    // Bluesky's Toggle.Item plays a light haptic on select.
-                    tick();
-                    setMode(option);
-                    setChoiceSheet(null);
-                  }}
-                  testID={`theme-${option}`}
-                  accessibilityRole="radio"
-                  checked={on}
-                  accessibilityLabel={label}
-                  press="none"
-                  highlight="dim"
-                  style={styles.row}
-                >
-                  {/*
-                   * Radio indicator in the trailing slot (Bluesky anatomy).
-                   *
-                   * Previously: `selected={on}` rendered a `check` icon only
-                   * when selected, and nothing when unselected. Bluesky's radio
-                   * rows always show the circle — filled+dot when selected,
-                   * outline ring when not — so the affordance is present before
-                   * the user taps, not only after.
-                   *
-                   * Pass `selected={false}` so SettingsRowContent renders
-                   * neither the check nor the chevron; the RadioDot in `trailing`
-                   * takes the whole trailing slot.
-                   *
-                   * https://github.com/bluesky-social/social-app
-                   * src/components/forms/Toggle/index.tsx  BaseRadio
-                   */}
-                  <SettingsRowContent
-                    icon="settings"
-                    title={label}
-                    selected={false}
-                    chevron={false}
-                    trailing={<RadioDot selected={on} />}
-                  />
-                </Pressable>
-              </React.Fragment>
-            );
-          })}
-        </View>
-      </Sheet>
 
       {/* Avatar picker: a horizontal slider of the bundled DiceBear "clay"
           avatars. No gallery, no remove — one deliberate pick from a set that
@@ -1028,15 +921,15 @@ const makeStyles = (t: Theme) =>
       marginTop: TOKENS.space['2xs'],
     },
     // List section label: Bluesky text_sm font_semi_bold (ADR-0033).
-    subheader: {
-      ...TOKENS.typography.textSmSemiBold,
-      color: t.color.text.secondary,
-      paddingTop: TOKENS.space.xs,
-      paddingBottom: TOKENS.space.xs,
-    },
     // One section of the list: its label, its rows, and a hairline above
     // every section but the first (Bluesky SettingsList.Divider, `my_sm`).
     // No card or tile chrome: the page surface is the list.
+    // Bluesky's SettingsList.Divider runs the full width of the screen, with
+    // my_sm (8dp) above and below it; ours sat inside the 24dp scroll gutter.
+    bleedRule: {
+      marginHorizontal: -TOKENS.space.xl,
+      marginVertical: TOKENS.space.xs,
+    },
     section: {
       backgroundColor: t.color.bg.base,
       paddingTop: TOKENS.space.xs,
@@ -1056,7 +949,11 @@ const makeStyles = (t: Theme) =>
        * still grows past 48 on its own content.
        */
       minHeight: TOKENS.interaction.minTarget,
-      paddingVertical: TOKENS.space.sm,
+      // Bluesky's Item: px_xl (20), py_sm (8), gap_sm (8), on the alf scale
+      // (social-app SettingsList.tsx Item). Measured on the S22 against the
+      // Bluesky app (1.133.0): 48dp rows, text starting 52dp in.
+      paddingVertical: TOKENS.space.xs,
+      gap: TOKENS.space.xs,
       backgroundColor: t.color.bg.base,
       // FULL-BLEED press highlight (Amit, on the S22: the tap read as an inset
       // box, not a full row). The scroll pads content by `xl`; the row cancels
@@ -1065,25 +962,25 @@ const makeStyles = (t: Theme) =>
       // to edge while the icon/text stay inset. `borderRadius: 0` squares the
       // layer so it is a full row strip, not Pressable's default pill.
       marginHorizontal: -TOKENS.space.xl,
-      paddingHorizontal: TOKENS.space.xl,
+      paddingHorizontal: TOKENS.space.lg,
       borderRadius: 0,
     },
+    // Bluesky's ItemIcon: a 24dp glyph, no box around it.
     iconBox: {
-      width: 32,
-      height: 32,
+      width: TOKENS.icon.lg,
+      height: TOKENS.icon.lg,
       alignItems: 'center',
       justifyContent: 'center',
     },
     // Destructive rows get a danger-tinted disc behind the icon so the action
     // reads as dangerous at a glance — the muted maroon ink alone did not.
     iconBoxDanger: {
-      borderRadius: 16,
+      borderRadius: TOKENS.icon.lg / 2,
       backgroundColor: `${t.color.state.danger}1F`,
     },
     rowCopy: {
       flex: 1,
       minWidth: 0,
-      paddingHorizontal: TOKENS.space.sm,
     },
     // Bluesky's roles (ADR-0033): text_md titles, text_sm detail,
     // text_sm semibold section labels.
@@ -1091,19 +988,17 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.textMd,
       color: t.color.text.primary,
     },
-    rowDetail: {
-      ...TOKENS.typography.textSm,
+    // Bluesky's BadgeText: text_md, low-contrast ink, right of the title.
+    rowBadge: {
+      ...TOKENS.typography.textMd,
       color: t.color.text.secondary,
-      marginTop: TOKENS.space.hair,
+      flexShrink: 1,
     },
     rowDetailAttention: {
       color: t.color.state.danger,
     },
     rowTitleDanger: {
       color: t.color.state.danger,
-    },
-    choiceList: {
-      marginTop: TOKENS.space.sm,
     },
     // Bottom-of-settings footer: the wordmark, then the Play Store rate link
     // directly beneath it.
@@ -1132,31 +1027,5 @@ const makeStyles = (t: Theme) =>
     rateFooterText: {
       ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.secondary,
-    },
-    // Bluesky Toggle.BaseRadio anatomy — outer circle, 20×20dp (our icon.md).
-    // https://github.com/bluesky-social/social-app
-    // src/components/forms/Toggle/index.tsx  BaseRadio
-    radioDotOuter: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    radioDotUnselected: {
-      borderWidth: 1.5,
-      borderColor: t.color.border.strong,
-      backgroundColor: 'transparent',
-    },
-    radioDotSelected: {
-      borderWidth: 0,
-      backgroundColor: t.color.bg.accent,
-    },
-    // Inner white dot, visible only in the selected state.
-    radioDotInner: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: t.color.text.onAccent,
     },
   });

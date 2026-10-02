@@ -90,7 +90,8 @@ describe('the settings list is grouped into sections', () => {
     const settings = read('src/screens/SettingsSheet.tsx');
     expect(settings).toContain('visibleSections(');
     expect(settings).toContain('testID={`settings-section-${section.id}`}');
-    expect(settings).toContain('accessibilityRole="header"');
+    // No section labels since 2026-10-03 (Bluesky's root list has none).
+    expect(settings).not.toContain('style={styles.subheader}');
     for (const id of [
       'settings-usage', 'settings-transactions', 'settings-invoices', 'settings-theme',
       'settings-blocked', 'settings-terms', 'settings-privacy', 'settings-refund',

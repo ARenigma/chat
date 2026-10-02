@@ -1030,9 +1030,11 @@ describe('a kind of text reads at one role, screen or sheet', () => {
     // The sectioned list (owner, 2026-09-25, "Option A approved") takes
     // Bluesky's SettingsList typography: text_md titles, text_sm detail and
     // text_sm semibold section labels, where it was bodyLarge / bodySmall.
+    // Since 2026-10-03 the list is Bluesky's exactly: one-line rows and an
+    // optional BadgeText value, no detail line and no section labels.
     expect(roleOf('src/screens/SettingsSheet.tsx', 'rowTitle')).toBe('textMd');
-    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowDetail')).toBe('textSm');
-    expect(roleOf('src/screens/SettingsSheet.tsx', 'subheader')).toBe('textSmSemiBold');
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'rowBadge')).toBe('textMd');
+    expect(roleOf('src/screens/SettingsSheet.tsx', 'subheader')).toBeNull();
   });
 
   it('sets every text button in the bold label face', () => {
@@ -3170,29 +3172,39 @@ describe('recharge-theme: PaymentSheet uses M3 Paper sheet language throughout',
   });
 });
 
-describe('recharge-theme: SettingsSheet Appearance uses three-choice radio picker', () => {
+describe('recharge-theme: Appearance screen uses a three-choice segmented control', () => {
+  // Ported to a pushed screen (Bluesky "/settings/appearance", 2026-10-03):
+  // Bluesky's SegmentedControl (System / Light / Dark) in AppearanceScreen.tsx,
+  // pushed from the You tab's "Appearance" row rather than opened as a sheet.
+  const appearance = read('src/screens/AppearanceScreen.tsx');
   const settings = read('src/screens/SettingsSheet.tsx');
 
   it('has no binary Toggle for dark mode', () => {
     // The binary Toggle expressed only isDark (resolved value), hiding which of
     // light / dark / system the user actually chose. Three radio rows name each
     // choice explicitly.
-    expect(settings).not.toContain('import { Toggle }');
-    expect(settings).not.toContain('<Toggle');
+    expect(appearance).not.toContain('import { Toggle }');
+    expect(appearance).not.toContain('<Toggle');
   });
 
   it('offers Light, Dark and System as named options', () => {
-    // The options are rendered from ['light', 'dark', 'system'] with
-    // template testIDs. The three option values appear in the loop declaration;
-    // the testID template string appears as a single expression rather than
-    // three literals.
-    expect(settings).toContain("'light', 'dark', 'system'");
-    expect(settings).toMatch(/testID=\{`theme-\$\{option\}`\}/);
+    // The options are rendered from COLOR_MODES with template testIDs.
+    // The three option values appear in the array literal; the testID template
+    // string appears as a single expression rather than three literals.
+    expect(appearance).toContain("'system'");
+    expect(appearance).toContain("'light'");
+    expect(appearance).toContain("'dark'");
+    expect(appearance).toContain('<SegmentedControl');
+    expect(appearance).toContain('testID="appearance-mode"');
+    // SettingsSheet routes to the screen via onAppearance, not a local sheet.
+    expect(settings).toContain('onAppearance');
   });
 
-  it('uses radio semantics on the appearance rows', () => {
-    expect(settings).toContain('accessibilityRole="radio"');
-    expect(settings).toContain('checked={on}');
+  it('uses radio semantics on the segments', () => {
+    const control = read('src/components/SegmentedControl.tsx');
+    expect(control).toContain('accessibilityRole="radiogroup"');
+    expect(control).toContain('accessibilityRole="radio"');
+    expect(control).toContain('checked={active}');
   });
 });
 

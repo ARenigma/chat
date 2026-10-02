@@ -94,6 +94,7 @@ import { CALL_BASE } from './screens/CallScreen';
 import { CallRoute } from './screens/routes/CallRoute';
 import { ChatRoute } from './screens/routes/ChatRoute';
 import {
+  AppearanceRoute,
   ApplicationStatusRoute,
   ApplyRoute,
   BlockedRoute,
@@ -220,6 +221,7 @@ function memberScreens(Stack: typeof HomeStack, background: string) {
       <Stack.Screen name="Usage" getComponent={() => UsageRoute} />
       <Stack.Screen name="Invoices" getComponent={() => InvoicesRoute} />
       <Stack.Screen name="Transactions" getComponent={() => TransactionsRoute} />
+      <Stack.Screen name="AppearanceSettings" getComponent={() => AppearanceRoute} />
       <Stack.Screen name="HomeSuggestion" getComponent={() => HomeSuggestionRoute} />
       <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
     </>

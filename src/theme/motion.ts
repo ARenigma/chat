@@ -97,6 +97,13 @@ export const EASE_OUT = Easing.bezier(
   M3.easing.easeOut[3],
 );
 /**
+ * Exponential ease-out, `Easing.out(Easing.exp)`: Bluesky's segmented-control
+ * slider glides between options on this curve (social-app
+ * src/components/forms/SegmentedControl.tsx, `LinearTransition.easing`).
+ * Fast start, long settle, so the pill is "there" at once and finishes softly.
+ */
+export const EASE_OUT_EXPO = Easing.out(Easing.exp);
+/**
  * A genuine sinusoidal breathe, for slow looping pulse animations.
  *
  * `Easing.inOut(Easing.sin)` is the mathematically correct breath curve: sine

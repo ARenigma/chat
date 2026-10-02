@@ -50,6 +50,8 @@ export type MemberScreenParams = CommonParams & {
   Invoices: undefined;
   Transactions: undefined;
   HomeSuggestion: { suggestionId: string };
+  /** Appearance (colour mode) settings, pushed from the You tab. */
+  AppearanceSettings: undefined;
 };
 
 export type ProviderScreenParams = CommonParams & {

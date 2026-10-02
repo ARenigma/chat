@@ -1085,15 +1085,12 @@ describe('device coverage matrix', () => {
     expect(settings).toContain(
       "import { Divider } from '../components/Divider'",
     );
-    // Dividers separate SECTIONS on the root list (Bluesky SettingsList), and
-    // inside the theme sheet they separate rows, aligned to where the title
-    // starts rather than borrowing the avatar list's 72dp.
+    // Dividers separate SECTIONS on the root list (Bluesky SettingsList). The
+    // theme sheet's rows have none, as Bluesky's Toggle.Item rows in a dialog
+    // have none (2026-10-03).
     // https://m3.material.io/components/divider/specs
-    expect(settings).toMatch(/\{index === 0 \? null : <Divider \/>\}/);
-    expect(settings).toContain(
-      '<Divider variant="inset" insetStart={ROW_TEXT_INSET} />',
-    );
-    expect(settings).toMatch(/const ROW_TEXT_INSET = 32 \+ TOKENS\.space\.sm/);
+    expect(settings).toMatch(/\{index === 0 \? null : \(\s*<View style=\{styles\.bleedRule\}>\s*<Divider \/>/);
+    expect(settings).not.toContain('insetStart={ROW_TEXT_INSET}');
     expect(settings).not.toContain('<Divider variant="inset" />');
     expect(settings).toContain('icon="logout"');
     /*
@@ -1106,7 +1103,10 @@ describe('device coverage matrix', () => {
      * two controls saying nearly the same thing while meaning different things.
      */
     expect(settings).not.toContain("choiceSheet === 'presence'");
-    expect(settings).toContain("choiceSheet === 'theme'");
+    // Theme is now a pushed screen (Bluesky: "/settings/appearance" pattern):
+    // the choice sheet is gone; the row navigates via onAppearance callback.
+    expect(settings).not.toContain("choiceSheet === 'theme'");
+    expect(settings).toContain('onAppearance');
   });
 
   /**

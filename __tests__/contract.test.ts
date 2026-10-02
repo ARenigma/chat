@@ -9316,6 +9316,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'Usage',
       'Invoices',
       'Transactions',
+      'AppearanceSettings',
       'HomeSuggestion',
       'StoryViewer',
     ]);
