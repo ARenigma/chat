@@ -51,7 +51,8 @@ import {
   parseChatV2Url,
   parsePeerUrl,
 } from './src/lib/routes/links';
-import { initSentry } from './src/lib/sentry';
+import * as Sentry from '@sentry/react-native';
+import { initSentry, logEvent } from './src/lib/sentry';
 import { sweepExpiredOutbox } from './src/lib/outboxStore';
 import { isUuid } from './src/lib/ids';
 import { track } from './src/lib/telemetry';
@@ -88,6 +89,7 @@ import {
   setVideoResolution,
 } from './src/api/callMedia/profile';
 import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat';
+import { useProviderPresenceStream } from './src/api/presenceStream';
 import { useRole } from './src/api/provider';
 import { resetStore, useStore } from './src/store/useStore';
 import { PolicyGateScreen } from './src/screens/PolicyGateScreen';
@@ -447,6 +449,9 @@ function Root() {
     clearIntents();
     setIntentOwner(null);
     setBoot({ phase: 'signedOut' });
+    // Clear the Sentry user context so no further events carry the previous
+    // account's id after sign-out.
+    Sentry.setUser(null);
   }, []);
   /*
    * Closes a gap in the provider-intent boot skip (2026-09-17 audit).
@@ -607,6 +612,10 @@ function Root() {
         // Adopt any BOOT-tagged intents (cold-start taps) for this account
         // and allow the queue to flush once the navigator applier is set.
         setIntentOwner(session.user.id);
+        // Attach opaque user id to all subsequent Sentry events. Only the id
+        // is sent — sendDefaultPii is false and the scrubber enforces it.
+        // https://docs.sentry.io/platforms/react-native/enriching-events/identify-user/
+        Sentry.setUser({ id: session.user.id });
         // "Become a partner" before auth → provider onboarding, and it SKIPS the
         // member first-run (username/age/policy) entirely. Member and provider are
         // separate worlds (Amit, 2026-09-03): a provider sets up their OWN profile
@@ -634,6 +643,7 @@ function Root() {
         setBoot(nextBoot);
         if (nextBoot.phase === 'ready') {
           track('app_open');
+          logEvent('cold_start_complete', { status: 'ready' });
         }
       } catch (err) {
         if (!cancelled) {
@@ -1392,6 +1402,14 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
    * (`leaveDevice` in src/api/auth.ts).
    */
   usePresenceHeartbeat(role === 'provider');
+  /*
+   * Members receive pushed provider-presence events via postgres_changes on
+   * `provider_presence` (migration 182). The hook patches the three caches
+   * that carry online/last_seen_at so the UI updates sub-second. Polls on
+   * those caches are relaxed to 60 s and kept as a safety net (push-primary,
+   * poll-fallback). Providers do not receive their own presence here.
+   */
+  useProviderPresenceStream(role === 'member');
 
   /*
    * A Decline pressed on a chat-request notification has landed.
@@ -1502,7 +1520,11 @@ function Shell() {
   );
 }
 
-export default function App() {
+// Sentry.wrap adds touch-event breadcrumbs and finalises the TTFD epoch
+// started by reactNavigationIntegration. Wrapping is safe here because
+// initSentry() runs before this component mounts.
+// https://docs.sentry.io/platforms/react-native/tracing/instrumentation/automatic-instrumentation/#wrap
+function App() {
   useFrameWatch();
   return (
     /**
@@ -1611,3 +1633,5 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingHorizontal: TOKENS.space['2xl'],
   },
 });
+
+export default Sentry.wrap(App);

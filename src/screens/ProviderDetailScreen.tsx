@@ -33,7 +33,7 @@ import { fadeSwapOutFast, springTo } from '../theme/motion';
 import { useReduceMotion } from '../hooks/useReduceMotion';
 import { BackButton } from '../components/BackButton';
 import { Icon } from '../components/Icon';
-import { Pressable } from '../components/Pressable';
+import { Pressable, PressLayer } from '../components/Pressable';
 import { TokenCounter } from '../components/TokenCounter';
 import { RatingStars } from '../components/RatingStars';
 import { MetaChip } from '../components/MetaChip';
@@ -490,10 +490,13 @@ function FavoriteButton({
       press="none"
       onColor={LIGHT.color.text.onAccent}
       size={TOKENS.interaction.minTarget}
+      // Light belongs on the 40dp scrim circle, not the 48dp target box.
+      layer="child"
       style={styles.favoriteTarget}>
       {/* The 40dp scrim circle is the look; the Pressable around it is the
           48dp target TalkBack measures (B7, S22 audit 2026-09-29). */}
       <View style={styles.favorite}>
+        <PressLayer />
       <Animated.View style={[styles.favoriteGlyph, pop]}>
         <Icon
           name="heart"
@@ -1008,6 +1011,8 @@ const makeStyles = (t: Theme) =>
       width: 40,
       height: 40,
       borderRadius: 20,
+      // Clips the PressLayer to the scrim circle.
+      overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: 'rgba(0,0,0,0.24)',

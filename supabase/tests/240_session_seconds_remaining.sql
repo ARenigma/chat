@@ -126,8 +126,20 @@ select is(
   '3. the second lease activates the paid session'
 );
 
+-- Since 181 a chat session bills nothing at activation: minute 1 is debited,
+-- and next_bill_at set, by the provider's first in-session message. Send it
+-- (claims are still the provider's) so the arithmetic below runs on a billed
+-- session.
+do $$
+begin
+  perform public.send_message(
+    (select v from test.fixture where k = 'conv062'),
+    'first in-session reply'
+  );
+end$$;
+
 -- ---------------------------------------------------------------------------
--- 4. Member: exact arithmetic. At activation next_bill_at = now() + 1 min and
+-- 4. Member: exact arithmetic. At the first bill next_bill_at = now() + 1 min and
 --    minute 1 is prepaid, so the member is owed 60 s plus every whole minute
 --    the remaining balance buys.
 -- ---------------------------------------------------------------------------

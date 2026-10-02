@@ -24,6 +24,7 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { pushName } from '../_shared/names.ts';
+import { withSentry } from '../_shared/sentry.ts';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -308,7 +309,7 @@ async function send(
   return 'retry';
 }
 
-Deno.serve(async request => {
+Deno.serve(withSentry('send-push', async request => {
   const url = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const rawSa = Deno.env.get('FCM_SERVICE_ACCOUNT');
@@ -451,4 +452,4 @@ Deno.serve(async request => {
     dead: deadTokens.size,
     settled: settled.length,
   });
-});
+}));

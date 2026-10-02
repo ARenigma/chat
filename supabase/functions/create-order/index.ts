@@ -24,6 +24,7 @@
  * ADR-0022: India User Choice Billing
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { withSentry } from '../_shared/sentry.ts';
 
 // ---------------------------------------------------------------------------
 // GST — mirrors gstOnTop in src/lib/rates.ts (ADR-0029: exclusive model).
@@ -129,7 +130,7 @@ async function createCashfreeOrder(opts: {
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
-Deno.serve(async (request: Request) => {
+Deno.serve(withSentry('create-order', async (request: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -351,4 +352,4 @@ Deno.serve(async (request: Request) => {
     console.error('create-order error:', err);
     return Response.json({ error: String(err) }, { status: 500 });
   }
-});
+}));

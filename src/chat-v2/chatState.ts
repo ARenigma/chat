@@ -112,8 +112,6 @@ export interface ChatV2ComposerInput {
   conversationResolved: boolean;
   openError: boolean;
   chatClosed: boolean;
-  awaitingMemberConsent: boolean;
-  offerExplicitStart: boolean;
   peerName: string;
 }
 
@@ -132,8 +130,10 @@ export interface ChatV2ComposerState {
  * field that could never send.
  *
  * The order is by specificity, not by likelihood. `openError` first because it
- * is the only one the member can act on by retrying; the consent pair last
- * because the controls above the field already say the same thing.
+ * is the only one the member can act on by retrying.
+ *
+ * Consent no longer disables the field (Amit, 2026-10-03): the member reads
+ * and types freely, and the session-start dialog appears when they send.
  */
 export function chatV2ComposerState(
   input: ChatV2ComposerInput,
@@ -149,12 +149,6 @@ export function chatV2ComposerState(
       disabled: true,
       placeholder: `${input.peerName} is not taking chats right now`,
     };
-  }
-  if (input.offerExplicitStart) {
-    return { disabled: true, placeholder: 'Start a session to keep talking' };
-  }
-  if (input.awaitingMemberConsent) {
-    return { disabled: true, placeholder: 'Say yes above when you are ready' };
   }
   // Still resolving: off, but with nothing to explain yet.
   return { disabled: !input.conversationResolved, placeholder: 'Message' };
@@ -250,4 +244,50 @@ export function chatV2Arrival(
     return { action: 'pin', peerArrivals };
   }
   return { action: scrolledAway ? 'count' : 'pin', peerArrivals };
+}
+
+/**
+ * The FlashList index to scroll to when the chat first opens with unread
+ * messages from the peer.
+ *
+ * Returns the index of the 'unread-divider' row in the newest-first `rows`
+ * array, or `null` when there is no divider (all messages read, or the anchor
+ * has not resolved yet). The caller scrolls once, then marks the action done
+ * so subsequent row rebuilds do not re-trigger it.
+ *
+ * Pure so the policy can be unit-tested without a mounted FlashList.
+ */
+export function chatV2InitialIndex(rows: readonly ChatV2Row[]): number | null {
+  const i = rows.findIndex(r => r.id === 'unread-divider');
+  return i === -1 ? null : i;
+}
+
+/* -------------------------------------------------------------------------- */
+/* The scroll thumb (ChatScrollThumbV2)                                         */
+/* -------------------------------------------------------------------------- */
+
+/** Android ViewConfiguration's scrollbar delay and fade, in ms. */
+export const SCROLL_BAR_DEFAULT_DELAY_MS = 300;
+export const SCROLL_BAR_FADE_DURATION_MS = 250;
+const THUMB_MIN = 32;
+
+/** Pure, and a worklet: where the thumb sits and how long it is, in dp. */
+export function chatV2ThumbGeometry(input: {
+  offset: number;
+  content: number;
+  viewport: number;
+  track: number;
+}): { length: number; top: number } | null {
+  'worklet';
+  const { offset, content, viewport, track } = input;
+  if (content <= viewport || track <= 0) {
+    return null;
+  }
+  const length = Math.max(
+    THUMB_MIN,
+    Math.min(track, (track * viewport) / content),
+  );
+  const travel = Math.max(0, Math.min(1, offset / (content - viewport)));
+  // Inverted: no offset is the bottom of the track.
+  return { length, top: (track - length) * (1 - travel) };
 }

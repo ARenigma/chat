@@ -7,7 +7,7 @@ import { formatRupees, walletTone, type WalletTone } from '../lib/rates';
 import { springTo } from '../theme/motion';
 import { Icon } from './Icon';
 import { RupeeAmount } from './RupeeAmount';
-import { Pressable } from './Pressable';
+import { Pressable, PressLayer } from './Pressable';
 
 interface Props {
   /** The token balance (members) or earnings total (providers). Null while loading. */
@@ -73,6 +73,8 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
          the touch but not the accessibility node, which TalkBack measures
          (B7, S22 audit 2026-09-29). */
       style={styles.target}
+      // The light belongs on the pill, not on the 48dp row around it.
+      layer="child"
       accessibilityLabel={
         balance === null
           ? earnings
@@ -90,6 +92,7 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
             : 'Opens Recharge and explains rates'
       }>
       <Animated.View style={[styles.pill, pillStyle(tone, theme), animated]}>
+        <PressLayer />
         <Icon name="wallet" active size={TOKENS.icon.xs} color={ink} />
         {balance === null ? null : (
           <RupeeAmount
@@ -157,6 +160,8 @@ const makeStyles = (_t: Theme) =>
       // radius.xs, not a capsule: a filled pill in a header band is a Material chip.
       borderRadius: TOKENS.radius.xs,
       borderCurve: 'continuous',
+      // Clips the press layer to the pill.
+      overflow: 'hidden',
     },
     label: {
       ...TOKENS.typography.numeralMedium,

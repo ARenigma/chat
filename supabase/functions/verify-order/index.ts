@@ -27,6 +27,7 @@
  * ADR-0022: India User Choice Billing
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { withSentry } from '../_shared/sentry.ts';
 
 function cashfreeBaseUrl(): string {
   const env = Deno.env.get('CASHFREE_ENV') ?? 'sandbox';
@@ -52,7 +53,7 @@ async function fetchCashfreeOrder(orderId: string): Promise<{ order_status: stri
   return res.json() as Promise<{ order_status: string }>;
 }
 
-Deno.serve(async (request: Request) => {
+Deno.serve(withSentry('verify-order', async (request: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -183,4 +184,4 @@ Deno.serve(async (request: Request) => {
     console.error('verify-order error:', err);
     return Response.json({ error: String(err) }, { status: 500 });
   }
-});
+}));

@@ -61,6 +61,16 @@ interface Props {
   onClose: () => void;
   /** Window-space rect of the long-pressed row/face. Menu and hole use it. */
   anchor: MenuAnchor | null;
+  /**
+   * `pressed` (default): the anchor is a long-pressed row or bubble, kept clear
+   * of the scrim so you can see what the menu is about. `trigger`: the anchor
+   * is the button that opened the menu (the chat header's ⋯). Then the scrim is
+   * whole, so the button shows no clear rectangle around its pressed circle
+   * (Amit, S22 2026-10-03: "touch makes a circle and a square at the same
+   * time"), and a second tap on it lands on the scrim and closes the menu, the
+   * toggle Bluesky's menus have.
+   */
+  anchorKind?: 'pressed' | 'trigger';
   testID?: string;
 }
 
@@ -78,7 +88,14 @@ const HOLE_PAD = 6;
  * https://m3.material.io/components/menus/guidelines
  * https://developer.android.com/reference/kotlin/androidx/compose/material3/DropdownMenu.composable
  */
-export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
+export function PaperMenu({
+  visible,
+  items,
+  onClose,
+  anchor,
+  anchorKind = 'pressed',
+  testID,
+}: Props) {
   const styles = useStyles(makeStyles);
   const { width: winW, height: winH } = useWindowDimensions();
   // Register with the active-element registry. nav-migration §3.
@@ -119,7 +136,7 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
   // it opens below the trigger, from the bottom when it flipped above it.
   const originEdge = (layout as { above?: boolean }).above === true ? 'bottom' : 'top';
 
-  const hole = layout.hole;
+  const hole = anchorKind === 'trigger' ? null : layout.hole;
 
   return (
     <Modal
@@ -159,7 +176,12 @@ export function PaperMenu({ visible, items, onClose, anchor, testID }: Props) {
             />
             <View style={[styles.bandRow, { height: hole.height }]}>
               <RNPressable style={[styles.dim, { width: hole.x }]} onPress={onClose} />
-              <View style={{ width: hole.width, height: hole.height }} />
+              {/* The pressed row shows through; a tap on it closes too. */}
+              <RNPressable
+                style={{ width: hole.width, height: hole.height }}
+                onPress={onClose}
+                accessibilityLabel="Close menu"
+              />
               <RNPressable style={[styles.dim, styles.fill]} onPress={onClose} />
             </View>
             <RNPressable style={[styles.dim, styles.fill]} onPress={onClose} />

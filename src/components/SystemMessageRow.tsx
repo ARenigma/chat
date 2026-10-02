@@ -19,10 +19,13 @@ import { Icon, ICON_SCALE, type IconName } from './Icon';
  */
 function SystemMessageRowView({
   text,
+  tone = 'notice',
   icon,
   emoji,
 }: {
   text: string;
+  /** Session boundary (green) or a notice about the chat (yellow). */
+  tone?: 'session' | 'notice';
   icon?: IconName;
   /**
    * A literal emoji character, rendered at the same box the vector icon would
@@ -34,18 +37,19 @@ function SystemMessageRowView({
   emoji?: string;
 }) {
   const styles = useStyles(makeStyles);
+  const ink = tone === 'session' ? styles.session : styles.notice;
   return (
     <View style={styles.row}>
       <View style={styles.pill}>
         {icon !== undefined ? (
-          <Icon name={icon} size={TOKENS.icon.xs} color={styles.text.color as string} />
+          <Icon name={icon} size={TOKENS.icon.xs} color={ink.color as string} />
         ) : null}
         {emoji !== undefined ? (
           <Text allowFontScaling={false} style={styles.emoji}>
             {emoji}
           </Text>
         ) : null}
-        <Text allowFontScaling style={styles.text}>
+        <Text allowFontScaling style={[styles.text, ink]}>
           {text}
         </Text>
       </View>
@@ -77,21 +81,32 @@ const makeStyles = (t: Theme) =>
       gap: TOKENS.space['2xs'],
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: TOKENS.space['2xs'],
-      borderRadius: TOKENS.radius.pill,
+      // A card on the wallpaper, as WhatsApp draws it: raised fill and a soft
+      // corner rather than a capsule, so a two-line notice still reads as one
+      // block.
+      borderRadius: TOKENS.radius.sm,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.raised,
       // Long notices wrap and stay centered rather than run edge to edge.
       maxWidth: '100%',
       alignSelf: 'center',
     },
     text: {
       ...TOKENS.typography.bodySmall,
-      color: t.color.text.tertiary,
       textAlign: 'center',
       // Row flex children refuse to shrink below their intrinsic text width
       // unless told to — without this the pill ignores maxWidth and the
       // string paints past the screen edge.
       flexShrink: 1,
+    },
+    // WhatsApp's split (Amit, 2026-10-03). Both clear 4.5:1 on bg/raised:
+    // text/available 4.62:1 light; text/warning 5.4:1 light, 7.4:1 dark
+    // (design/tokens.json); dark green on the dark card is higher still.
+    session: {
+      color: t.color.text.available,
+    },
+    notice: {
+      color: t.color.text.warning,
     },
     // Matches the box an Icon at `TOKENS.icon.xs` actually renders — Icon.tsx
     // multiplies `size` by its own `ICON_SCALE` before it becomes a fontSize,

@@ -1316,7 +1316,7 @@ describe('Chats rail unread badge', () => {
   it('is anchored low enough that the whole pill sits inside the scroller', () => {
     const badge = read('src/components/Badge.tsx');
     const home = read('src/screens/HomeScreen.tsx');
-    const overhang = Number(/pill:\s*\{[^}]*?top:\s*(-?\d+)/.exec(badge)?.[1]);
+    const overhang = Number(/corner:\s*\{[^}]*?top:\s*(-?\d+)/.exec(badge)?.[1]);
     const anchorTop = Number(/railBadge:\s*\{[^}]*?top:\s*(-?\d+)/.exec(home)?.[1]);
     expect(Number.isFinite(overhang)).toBe(true);
     expect(Number.isFinite(anchorTop)).toBe(true);

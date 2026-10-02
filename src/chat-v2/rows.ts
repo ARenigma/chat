@@ -99,6 +99,11 @@ interface ChatV2SystemRow {
   id: string;
   sortAt: string;
   text: string;
+  /**
+   * WhatsApp's two system inks (Amit, 2026-10-03): a session boundary reads
+   * green, a notice about the chat (notified, joined, a refusal) reads yellow.
+   */
+  tone: 'session' | 'notice';
   icon?: IconName;
   /** A literal emoji, for the one mark that is an emoji rather than a glyph. */
   emoji?: string;
@@ -379,6 +384,7 @@ export function buildChatV2Rows(input: ChatV2RowInput): ChatV2Row[] {
       id: `session-${e.id}`,
       sortAt: e.ended_at,
       text: sessionEndedLabel(e.minutes_billed, e.ended_at, e.started_at ?? undefined),
+      tone: 'session',
       emoji: '🧡',
       opensDay: false,
     }));
@@ -392,6 +398,7 @@ export function buildChatV2Rows(input: ChatV2RowInput): ChatV2Row[] {
             id: CHAT_V2_NOTICE_ID,
             sortAt: notice.at,
             text: notice.text,
+            tone: 'notice',
             icon: notice.icon,
             opensDay: false,
           },

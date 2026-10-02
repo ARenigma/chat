@@ -161,6 +161,8 @@ const makeStyles = (t: Theme) =>
       minHeight: 40,
       paddingHorizontal: TOKENS.space.md,
       justifyContent: 'center',
+      // Rounded state layer so Skip/Next dims a pill shape, not a square block.
+      borderRadius: TOKENS.radius.xs,
     },
     skipLabel: {
       ...TOKENS.typography.labelLargeEmphasized,

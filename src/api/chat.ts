@@ -171,20 +171,17 @@ export function useProviders() {
     },
     staleTime: 30_000,
     /*
-     * Polling, because a provider coming online cannot be pushed here.
-     * `provider_directory` is a VIEW, which `postgres_changes` cannot
-     * replicate, and `profiles` is neither in the `supabase_realtime`
-     * publication nor member-readable (004 dropped that policy deliberately and
-     * made this definer view the privacy boundary), so a subscription would
-     * deliver zero rows. Without the interval a member sitting on Home never
-     * re-reads the directory at all.
-     *
-     * The pause while backgrounded and the refetch on return both depend on
-     * AppState being wired to `focusManager` in App.tsx: React Native has no
-     * window-focus event, so TanStack cannot know either on its own.
+     * Push-primary / poll-fallback (migration 182). `useProviderPresenceStream`
+     * patches this cache in place on every provider_presence transition, so a
+     * 30 s poll is no longer needed for freshness. 60 s is kept as the
+     * safety-net: a missed realtime event heals within one cycle, and members
+     * who switch tabs or background the app get a fresh read on return via
+     * `refetchOnWindowFocus`. `provider_directory` is still a VIEW so
+     * postgres_changes cannot replicate it directly — the poll is the only
+     * path to non-presence column changes (name, avatar, expertise, etc.).
      * https://tanstack.com/query/latest/docs/framework/react/react-native
      */
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
@@ -212,11 +209,29 @@ export function useConversations() {
       return data;
     },
     staleTime: 10_000,
+    /*
+     * Push-primary / poll-fallback (migration 182). `useProviderPresenceStream`
+     * patches peer_online / peer_last_seen_at in this cache on every
+     * provider_presence transition, so sub-30 s polling is no longer needed
+     * for presence freshness. 60 s matches `useProviders`; a missed event
+     * heals within one cycle. The interval is still required: `peer_online` in
+     * `conversation_summaries` is a derived value that lapses without any row
+     * changing (155), so the poll remains the fallback when realtime is absent.
+     */
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 }
 
-/** How often an open chat re-reads its provider peer's presence. */
-const PEER_PRESENCE_POLL_MS = 15_000;
+/**
+ * How often an open chat re-reads its provider peer's presence.
+ *
+ * Push-primary / poll-fallback (migration 182): `useProviderPresenceStream`
+ * patches the peer-presence cache on every provider_presence event, so the
+ * 15 s poll is no longer load-bearing for freshness. 60 s is kept as the
+ * safety net; a missed event heals within one cycle.
+ */
+const PEER_PRESENCE_POLL_MS = 60_000;
 
 /** The two presence columns of one thread's peer row (migration 155). */
 export type PeerPresenceRow = Pick<ConversationPeer, 'peer_online' | 'peer_last_seen_at'>;

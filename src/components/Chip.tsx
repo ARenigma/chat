@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { Icon } from './Icon';
-import { Pressable } from './Pressable';
+import { Pressable, PressLayer } from './Pressable';
 
 interface Props {
   label: string;
@@ -216,8 +216,11 @@ function FilterChipView({
       press="none"
       highlight="dim"
       style={styles.filterTarget}
+      // The 48dp row is the target; the light belongs on the 32dp chip.
+      layer="child"
     >
       <View style={[styles.filterChip, selected && styles.filterChipSelected]}>
+        <PressLayer />
         {showSlot ? (
           <View style={styles.filterIconSlot}>
             {selected ? (
@@ -319,6 +322,10 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   filterTarget: {
     minHeight: TOKENS.interaction.minTarget,
     justifyContent: 'center',
+    // Clip the state layer to the chip's own rounded shape (radius.xs = 8dp,
+    // matching filterChip below). Without this the Pressable's overflow:hidden
+    // clips to a square and the state layer paints a rectangle behind the pill.
+    borderRadius: TOKENS.radius.xs,
   },
   /*
    * The chip itself: 32dp minimum, 8dp corner, 8dp start / 10dp end, 1dp
@@ -338,6 +345,8 @@ const makeStyles = (t: Theme) => StyleSheet.create({
    * stroke; see `filterChipSelected`.
    */
   filterChip: {
+    // Clips the press layer (layer="child") to the chip's corner.
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: FILTER_CHIP_MIN_HEIGHT,

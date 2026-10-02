@@ -58,12 +58,12 @@ describe('generated theme', () => {
     // sit on this directly, divided by border/hairline. A grouped grey with
     // nothing to group is just dirty white.
     expect(LIGHT.color.bg.base).toBe('#FFFFFF');
-    // Dark base is WhatsApp charcoal #0B141A — a deep blue-black that places
-    // tonal elevation above it as lightening steps. Explicit departure from M3's
-    // neutral-grey #121212 recommendation: a blue-tinted base makes the tonal
-    // steps more perceptible and matches the product's chat-centric character.
-    // Docs: docs/android-audit.md dark-theme section. https://m3.material.io/styles/color/dark-theme
-    expect(DARK.color.bg.base).toBe('#151E27');
+    // Dark base is WhatsApp's current neutral charcoal, colour-picked from it
+    // (Amit, 2026-10-03: "our coral on dark navy blue dark mode looks awful..
+    // make it exactly as whatsapp charcoal/grey"). Neutral, like M3's #121212
+    // recommendation, which the navy base had departed from.
+    // https://m3.material.io/styles/color/dark-theme
+    expect(DARK.color.bg.base).toBe('#1E1E1E');
   });
 
   it('keeps the row separator visible on the page it now sits on', () => {
@@ -1398,7 +1398,6 @@ describe('component heights come from tokens', () => {
   // Rows/bars still holding a raw container height, migrated to layout tokens in
   // the component-heights pass. Grandfathered by style-block name per file.
   const ALLOW: Record<string, string[]> = {
-    'src/components/TopAppBar.tsx': ['slot'],
     'src/screens/PaymentSheet.tsx': ['row', 'webRow'],
     'src/screens/ProfileSetupScreen.tsx': ['avatarCell'],
     'src/screens/ProviderApplicationScreen.tsx': ['avatarCell'],
@@ -2037,6 +2036,15 @@ describe('accent budget is enforced in code, not just documented', () => {
        * it appears in.
        */
       'ChatSessionBarV2.tsx',
+      /*
+       * The chat wallpaper's blush wash uses bg.accentTint — the softest tint,
+       * reserved for warm atmospheric surfaces (the same token behind Avatar's
+       * warm mark). It gives the transcript its requested pink hue (user
+       * 2026-08-31). An atmospheric field, same class as the hero surfaces, laid
+       * UNDER the bubbles as ambience — not chrome, a header or a divider.
+       * Restored 2026-10-03 (the v2 chat had shipped without it).
+       */
+      'ChatWallpaper.tsx',
       // ChatsListScreen.tsx no longer has a hand-rolled accent pill; Badge owns it.
       'Chip.tsx',
       /*
@@ -2959,6 +2967,25 @@ describe('chat-visuals: SpotlightCard is a bottom-anchored M3 sheet', () => {
 });
 
 
+describe('chat-visuals: the chat wallpaper carries no hue in dark mode', () => {
+  const wallpaper = read('src/components/ChatWallpaper.tsx');
+
+  it('washes with the blush tint only in light, and not at all in dark', () => {
+    // User 2026-09-01: no pink wash in dark mode. Since 2026-10-03 the dark JPG
+    // is baked on bg/base charcoal, so dark needs no wash; the old 85% wash is
+    // what hid the doodles.
+    expect(wallpaper).toMatch(/\{isDark \? null : \(/);
+    expect(wallpaper).toMatch(/backgroundColor: theme\.color\.bg\.accentTint/);
+    expect(wallpaper).not.toContain('DARK_WASH_OPACITY');
+  });
+
+  it('is mounted behind the v2 transcript', () => {
+    // v2 shipped without it and 73af7b8 deleted it as unused (2026-10-03).
+    const screen = read('src/chat-v2/ChatScreenV2.tsx');
+    expect(screen).toMatch(/<ChatWallpaper \/>\s*<ChatListV2/);
+  });
+});
+
 describe('chat-visuals: typing indicator uses conveyor dots, not breathing', () => {
   const typing = read('src/components/TypingIndicator.tsx');
   const calling = read('src/components/CallingDots.tsx');
@@ -3162,7 +3189,7 @@ describe('recharge-theme: SettingsSheet Appearance uses three-choice radio picke
   });
 });
 
-describe('dark theme: the reference app midnight-blue palette, and it still passes contrast', () => {
+describe('dark theme: WhatsApp charcoal since 2026-10-03 (was the reference app midnight-blue), and it still passes contrast', () => {
   /*
    * The dark palette follows the reference app Android's darkblue.attheme - the "midnight
    * blue" theme - read as FACTS and re-expressed in design/tokens.json (Amit,
@@ -3176,9 +3203,26 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
    * grey was lifted by the smallest step that passes - +11 - rather than the
    * gate being lowered.
    */
-  it('dark base and surface are the reference app windowBackgroundGray / windowBackgroundWhite', () => {
-    expect(DARK.color.bg.base).toBe('#151E27');
-    expect(DARK.color.bg.raised).toBe('#1D2733');
+  // Superseded 2026-10-03: the reference app's navy greys gave way to
+  // WhatsApp's neutral charcoal at Amit's request; see design/tokens.json.
+  it('dark base and surface are WhatsApp charcoal, with no blue in them', () => {
+    expect(DARK.color.bg.base).toBe('#1E1E1E');
+    expect(DARK.color.bg.raised).toBe('#242626');
+    for (const hex of [
+      DARK.color.bg.base,
+      DARK.color.bg.raised,
+      DARK.color.bg.sunken,
+      DARK.color.bubble.theirs,
+      DARK.color.bubble.wallpaper,
+      DARK.color.text.secondary,
+      DARK.color.text.tertiary,
+      DARK.color.border.hairline,
+    ]) {
+      const channels = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+      // Neutral: no channel more than 2 above the others (#242626 is the
+      // most tinted, WhatsApp's own incoming bubble).
+      expect(Math.max(...channels) - Math.min(...channels)).toBeLessThanOrEqual(2);
+    }
   });
 
   it('dark incoming bubble is neutral; outgoing bubble is the brand coral', () => {
@@ -3198,9 +3242,9 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
      * bg/sunken is still asserted, because it still surfaces search fields and
      * disabled fills — it simply is not the peer bubble any more.
      */
-    expect(DARK.color.bubble.theirs).toBe('#232E3B');
+    expect(DARK.color.bubble.theirs).toBe('#242626');
     expect(DARK.color.bubble.mine).toBe('#C2401F');
-    expect(DARK.color.bg.sunken).toBe('#232E3B');
+    expect(DARK.color.bg.sunken).toBe('#282828');
   });
 
   it('dark accent is Sunset Coral, and branding crosses both modes', () => {
@@ -3231,7 +3275,7 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
   });
 
   it('dark secondary text passes AA on base, raised AND the peer bubble', () => {
-    expect(DARK.color.text.secondary).toBe('#8896A4');
+    expect(DARK.color.text.secondary).toBe('#949494');
     for (const bg of [
       DARK.color.bg.base,
       DARK.color.bg.raised,
@@ -3244,14 +3288,14 @@ describe('dark theme: the reference app midnight-blue palette, and it still pass
   });
 
   it('dark hairline separator passes the non-text minimum on dark base', () => {
-    expect(DARK.color.border.hairline).toBe('#303C4A');
+    expect(DARK.color.border.hairline).toBe('#3D3D3D');
     expect(
       contrast(DARK.color.border.hairline, DARK.color.bg.base),
     ).toBeGreaterThan(1.5);
   });
 
   it('dark inverse surface is the reference app chats_nameMessage, primary button passes AAA', () => {
-    expect(DARK.color.bg.inverse).toBe('#E9EEF4');
+    expect(DARK.color.bg.inverse).toBe('#E9E9E9');
     expect(
       contrast(DARK.color.text.onInverse, DARK.color.bg.inverse),
     ).toBeGreaterThanOrEqual(7);

@@ -43,6 +43,7 @@ import { supabase } from '../lib/supabase';
 import { track } from '../lib/telemetry';
 import { currentVersionCode } from '../lib/appUpdate';
 import { CASHFREE_SANDBOX_CHECKOUT } from '../config';
+import { logEvent } from '../lib/sentry';
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -364,6 +365,7 @@ export function useCashfreeCheckout() {
                 // here because a payment surface that fails silently in the
                 // telemetry as well as on screen is how the Cashfree web
                 // checkout crash went unnoticed.
+                logEvent('payment_failed', { reason: 'gateway_error' });
                 track('cashfree_checkout_error', {
                   orderId: orderID,
                   method,
@@ -395,6 +397,7 @@ export function useCashfreeCheckout() {
           .catch(reject);
       }),
     onSuccess: () => {
+      logEvent('payment_verified', { status: 'paid' });
       void queryClient.invalidateQueries({ queryKey: ['profile'] });
       // A credited recharge is the one event that changes the answer to "is
       // this your first?" — invalidated alongside the balance so the price on

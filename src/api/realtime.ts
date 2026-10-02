@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import type { Message } from '../lib/database.types';
+import type { ConversationSummary, Message } from '../lib/database.types';
 import {
   applyReadReceipt,
   mergeIncoming,
@@ -348,14 +348,47 @@ export function useMarkRead(
       if (!focusedRef.current) {
         return;
       }
-      const list = queryClient.getQueryData<TranscriptMessage[]>(key) ?? [];
+      const list = queryClient.getQueryData<TranscriptMessage[]>(key);
+      if (list === undefined) {
+        return;
+      }
       const ids = unreadFromPeer(list, selfId).filter(
         id => visibleRef.current.has(id) && !inFlightRef.current.has(id),
       );
+      ids.forEach(id => inFlightRef.current.add(id));
+      /*
+       * The badge goes the moment the message is seen, not after a round trip:
+       * WhatsApp and Bluesky both clear unread on view, locally, and let the
+       * server agree afterwards. What is left is whatever peer message has not
+       * scrolled into view yet, which is the honest count, and it also corrects
+       * a stored counter that drifted (the open chat is the truth). A failed
+       * write puts it back through the invalidation below.
+       */
+      const left = unreadFromPeer(list, selfId).filter(
+        id => !inFlightRef.current.has(id),
+      ).length;
+      queryClient.setQueryData<ConversationSummary[]>(keys.conversationList, rows => {
+        const row = rows?.find(r => r.conversation_id === conversationId);
+        if (rows === undefined || row === undefined) {
+          return rows;
+        }
+        const stored = Number(
+          row.i_am_member ? row.unread_count_member : row.unread_count_provider,
+        );
+        if (stored === left) {
+          return rows;
+        }
+        return rows.map(r =>
+          r !== row
+            ? r
+            : r.i_am_member
+              ? { ...r, unread_count_member: left }
+              : { ...r, unread_count_provider: left },
+        );
+      });
       if (ids.length === 0) {
         return;
       }
-      ids.forEach(id => inFlightRef.current.add(id));
       void supabase
         .from('messages')
         .update({ read_at: new Date().toISOString() })
@@ -365,6 +398,7 @@ export function useMarkRead(
             // Left out of `inFlight` so a transient failure retries on the next
             // cache change rather than being swallowed for the session.
             ids.forEach(id => inFlightRef.current.delete(id));
+            void queryClient.invalidateQueries({ queryKey: keys.conversationList });
           } else {
             // Dissolve the unread badge in the conversation list. The DB update
             // above changes `unread_count_provider` on the server but the

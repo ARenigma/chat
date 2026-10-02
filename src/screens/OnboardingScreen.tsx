@@ -52,7 +52,7 @@ import { BloomField } from '../components/BloomField';
 import { OnboardingStep } from '../components/OnboardingStep';
 import { WordColumn, type Word } from '../components/WordColumn';
 import { Icon } from '../components/Icon';
-import { Pressable } from '../components/Pressable';
+import { Pressable, PressLayer } from '../components/Pressable';
 import { CodeField } from '../components/CodeField';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { CompletionRow } from '../components/CompletionRow';
@@ -1643,6 +1643,8 @@ export function OnboardingScreen({ onDone }: Props) {
                       testID="onboard-send-code"
                       accessibilityLabel="Send code"
                       press="button"
+                      // Light belongs on the disc, not on the 48dp target box.
+                      layer="child"
                       style={styles.go}
                     >
                       {/*
@@ -1660,6 +1662,7 @@ export function OnboardingScreen({ onDone }: Props) {
                         */}
                       <View
                         style={[styles.goDisc, canSend ? null : styles.goIdle]}>
+                        <PressLayer />
                         {state === 'loading' ? (
                           <LoadingIndicator size={20} color={theme.color.text.onAccent} containerColor="transparent" />
                         ) : (
@@ -2358,6 +2361,8 @@ const makeStyles = (t: Theme) =>
       height: SOURCE_METRICS.submitDisc,
       borderRadius: TOKENS.radius.pill,
       borderCurve: 'continuous',
+      // Clips the PressLayer to the disc.
+      overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
       /*

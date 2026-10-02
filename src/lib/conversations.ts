@@ -1,4 +1,4 @@
-import { NativeModules } from 'react-native';
+import { AppState, NativeModules, type NativeEventSubscription } from 'react-native';
 import { isUuid } from './ids';
 
 /**
@@ -271,22 +271,54 @@ export async function clearCall(callId: string): Promise<void> {
  * puts a full "Incoming call / Decline / Answer" heads-up over the caller's own
  * call screen, offering to answer a call they are placing.
  */
+/*
+ * A start asked for while the app is in the background, waiting for it to come
+ * to the foreground. Android 12+ refuses a foreground-service start from the
+ * background, and Android 14 refuses the microphone and camera types there
+ * outright, so a ring routed to the call screen while backgrounded must not
+ * start the service: it crashed the app (Sentry 150792524, 2026-10-01).
+ * https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start
+ * https://developer.android.com/about/versions/14/changes/fgs-types-required
+ * The backgrounded ring is the CallStyle notification the push already posted;
+ * answering or opening it brings the app forward, which is when this runs.
+ * Only the latest request is kept: each call re-posts the same notification.
+ */
+let pendingStart: NativeEventSubscription | null = null;
+
+function cancelPendingStart(): void {
+  pendingStart?.remove();
+  pendingStart = null;
+}
+
 export function startCallForegroundService(
   peerName: string,
   isIncoming: boolean,
   includeMicrophone = false,
   includeCamera = false,
 ): void {
-  native?.startCallForegroundService(
-    peerName,
-    isIncoming,
-    includeMicrophone,
-    includeCamera,
-  );
+  cancelPendingStart();
+  const start = () =>
+    native?.startCallForegroundService(
+      peerName,
+      isIncoming,
+      includeMicrophone,
+      includeCamera,
+    );
+  if (AppState.currentState === 'active') {
+    start();
+    return;
+  }
+  pendingStart = AppState.addEventListener('change', state => {
+    if (state === 'active') {
+      cancelPendingStart();
+      start();
+    }
+  });
 }
 
 /** Stop the call foreground service when the server call/session ends. */
 export function stopCallForegroundService(): void {
+  cancelPendingStart();
   native?.stopCallForegroundService();
 }
 

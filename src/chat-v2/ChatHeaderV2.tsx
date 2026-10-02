@@ -195,6 +195,7 @@ export function ChatHeaderV2({
         accessibilityLabel="Back"
         press="none"
         highlight="dim"
+        shape="circle"
         size={TOKENS.interaction.minTarget}
         style={styles.navButton}
       >
@@ -240,6 +241,7 @@ export function ChatHeaderV2({
         testID="chat-v2-call-video"
         accessibilityLabel={`Video call ${displayName}`}
         press="none"
+        shape="circle"
         size={TOKENS.interaction.minTarget}
         style={[
           styles.navButton,
@@ -259,6 +261,7 @@ export function ChatHeaderV2({
         testID="chat-v2-call-audio"
         accessibilityLabel={`Voice call ${displayName}`}
         press="none"
+        shape="circle"
         size={TOKENS.interaction.minTarget}
         style={[
           styles.navButton,
@@ -338,6 +341,7 @@ export function ChatHeaderV2({
             accessibilityLabel="Conversation options"
             press="none"
             highlight="dim"
+            shape="circle"
             size={TOKENS.interaction.minTarget}
             style={styles.navButton}
           >
@@ -349,6 +353,7 @@ export function ChatHeaderV2({
           <PaperMenu
             visible={menuVisible}
             anchor={menuAnchor}
+            anchorKind="trigger"
             onClose={() => setMenuVisible(false)}
             items={([] as PaperMenuItem[]).concat(
               onRename !== undefined
@@ -398,7 +403,9 @@ const makeStyles = (t: Theme) =>
       height: TOKENS.interaction.minTarget,
       alignItems: 'center',
       justifyContent: 'center',
-      borderRadius: TOKENS.radius.xs,
+      // No borderRadius here: icon-only callers pass shape="circle" so the
+      // Pressable paints a circle state layer. A radius here would override
+      // shapeStyle (see Pressable.tsx, where innerStyle follows shapeStyle).
     },
     // The M3 disabled container opacity, which is what a control that is drawn
     // and cannot fire has to look like.

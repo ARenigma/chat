@@ -1,4 +1,11 @@
-import React, { memo, useEffect, type ReactNode } from 'react';
+import React, {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  type ReactNode,
+} from 'react';
 import {
   Pressable as RNPressable,
   StyleSheet,
@@ -158,6 +165,44 @@ interface Props {
    * second, overlapping TalkBack target.
    */
   accessible?: boolean;
+  /**
+   * Where the state layer paints. `self` (default) is the whole touch box.
+   * `child` paints it inside whatever the caller marks with `<PressLayer />`,
+   * for a control whose painted shape is SMALLER than its 48dp target: the
+   * header wallet pill (30dp in a 48dp row) lit a 48dp square around itself
+   * (Amit, S22 2026-10-03: "check wallet for example"). The target stays 48dp,
+   * which a hitSlop could not give TalkBack (reference: hitSlop vs the a11y
+   * node); only the light moves, onto the shape the finger is actually on, the
+   * way Bluesky's Button tints its own fill rather than a box around it.
+   */
+  layer?: 'self' | 'child';
+}
+
+/**
+ * The press state layer for `layer="child"`: put it first inside the painted
+ * shape, which must carry `overflow: 'hidden'` and its own radius so the layer
+ * is clipped to it. Renders nothing outside a `layer="child"` Pressable.
+ */
+/** M3's icon-button state layer, inside its 48dp target. */
+const ICON_PRESS_DIAMETER = 40;
+
+const PressLayerContext = createContext<{
+  color: string;
+  style: ReturnType<typeof useAnimatedStyle>;
+} | null>(null);
+
+export function PressLayer() {
+  const styles = useStyles(makeStyles);
+  const layer = useContext(PressLayerContext);
+  if (layer === null) {
+    return null;
+  }
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.layer, { backgroundColor: layer.color }, layer.style]}
+    />
+  );
 }
 
 /**
@@ -221,6 +266,7 @@ function PressableView({
   selected,
   checked,
   accessible,
+  layer: layerAt = 'self',
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -306,6 +352,10 @@ function PressableView({
   });
 
   const layer = useAnimatedStyle(() => ({ opacity: p.value * layerOpacity }));
+  const childLayer = useMemo(
+    () => (layerAt === 'child' ? { color: layerColor, style: layer } : null),
+    [layerAt, layerColor, layer],
+  );
 
   // Derived from the target in every case, not only when `size` is passed. The
   // old default of a flat 8 was a guess that happened to rescue the two controls
@@ -432,11 +482,19 @@ function PressableView({
             caller set, including one that is currently animating. Giving the
             layer its own radius would mean the same number in two places and
             getting it wrong on the circles. */}
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.layer, { backgroundColor: layerColor }, layer]}
-        />
-        {children}
+        {layerAt === 'self' ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              shape === 'circle' ? styles.circleLayer : styles.layer,
+              { backgroundColor: layerColor },
+              layer,
+            ]}
+          />
+        ) : null}
+        <PressLayerContext.Provider value={childLayer}>
+          {children}
+        </PressLayerContext.Provider>
       </Animated.View>
     </RNPressable>
   );
@@ -500,5 +558,26 @@ const makeStyles = (_t: Theme) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  /*
+   * An icon button lights a 40dp circle centred in its 48dp target, never the
+   * target itself (Amit, S22 2026-10-03: the ⋯ press "still pulls that square
+   * on touch target"). Material's icon button is exactly this, a 40dp state
+   * layer in a 48dp target
+   * (https://m3.material.io/components/icon-buttons/specs), and it is
+   * Bluesky's model: its round ghost Button tints its own small circle and
+   * reaches further with hitSlop, so the finger's area and the lit area are
+   * different sizes on purpose (social-app src/components/Button.tsx). On a
+   * box smaller than 40dp the clip view's circle trims it to the box.
+   */
+  circleLayer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: ICON_PRESS_DIAMETER,
+    height: ICON_PRESS_DIAMETER,
+    marginTop: -ICON_PRESS_DIAMETER / 2,
+    marginLeft: -ICON_PRESS_DIAMETER / 2,
+    borderRadius: ICON_PRESS_DIAMETER / 2,
   },
 });

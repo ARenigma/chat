@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { clearConversation, type ConversationPush } from './conversations';
 
@@ -72,15 +72,41 @@ const uncoverListeners = new Set<() => void>();
  */
 export function coverViewing(): () => void {
   covers += 1;
+  notifyCoverChange();
   let released = false;
   return () => {
     if (released) return;
     released = true;
     covers = Math.max(0, covers - 1);
+    notifyCoverChange();
     if (covers === 0) {
       for (const listener of [...uncoverListeners]) listener();
     }
   };
+}
+
+/** Every change to whether anything covers the screen, for `useViewingCovered`. */
+const coverChangeListeners = new Set<() => void>();
+
+function notifyCoverChange(): void {
+  for (const listener of [...coverChangeListeners]) listener();
+}
+
+function subscribeCoverChange(listener: () => void): () => void {
+  coverChangeListeners.add(listener);
+  return () => {
+    coverChangeListeners.delete(listener);
+  };
+}
+
+/**
+ * `isViewingCovered` as React state. The chat reads it to stop following the
+ * IME while a sheet is over it: the keyboard a sheet's field opens is not the
+ * composer's, and a chat that lifted its list and dock for it moved behind
+ * the sheet's blur on every tap into the field (Sauce E2E 2026-09-29).
+ */
+export function useViewingCovered(): boolean {
+  return useSyncExternalStore(subscribeCoverChange, isViewingCovered);
 }
 
 /** The conversation on screen, or `null` when no chat is being looked at. */

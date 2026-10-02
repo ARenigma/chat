@@ -84,7 +84,11 @@ export const makeStyles = (t: Theme) =>
     },
     // The icon's own box: vertically centred in the pill, and the anchor the
     // badge is placed against (M3 BadgedBox measures from the icon, not the slot).
+    // Explicit width so the badge's `left: '50%'` resolves to the icon centre
+    // rather than an undefined container width.
+    // https://m3.material.io/components/badges/specs (BadgedBox offset)
     iconBox: {
+      width: TOKENS.icon.md,
       height: INDICATOR_HEIGHT,
       justifyContent: 'center',
     },

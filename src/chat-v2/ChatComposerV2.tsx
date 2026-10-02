@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { Icon } from '../components/Icon';
@@ -27,7 +34,18 @@ import {
   type ChatV2ComposerMode,
 } from './cells';
 
+/**
+ * Lets the screen finish a send it held back. A member's first reply in a
+ * conversation with no session waits for the session-start dialog (the send
+ * returns false, so the text or recording stays put); once they say yes the
+ * screen calls `resend()`, which sends whatever the composer is holding.
+ */
+export interface ChatComposerV2Handle {
+  resend: () => void;
+}
+
 interface Props {
+  ref?: Ref<ChatComposerV2Handle>;
   bottomInset: number;
   /** Benchmark route may exercise layout but cannot invoke mutations. */
   readOnly?: boolean;
@@ -36,8 +54,11 @@ interface Props {
    * precheck): the text stays in the field, where the sender can edit it.
    */
   onSend: (text: string) => boolean;
-  /** A finished recording, ready to upload. */
-  onSendVoice: (draft: VoiceDraft) => void;
+  /**
+   * A finished recording, ready to upload. False keeps it in review, the same
+   * contract as `onSend`.
+   */
+  onSendVoice: (draft: VoiceDraft) => boolean;
   /** Persists the draft across a process death, and is cleared on send. */
   conversationId: string | undefined;
   /**
@@ -66,6 +87,7 @@ interface Props {
 }
 
 export function ChatComposerV2({
+  ref,
   bottomInset,
   readOnly = false,
   onSend,
@@ -300,10 +322,19 @@ export function ChatComposerV2({
     if (readOnly || draft === null) {
       return;
     }
-    onSendVoice(draft);
+    if (!onSendVoice(draft)) {
+      return;
+    }
     setDraft(null);
     setMode('idle');
   }, [draft, onSendVoice, readOnly]);
+
+  // A held recording is in review; anything else held is the typed text.
+  useImperativeHandle(
+    ref,
+    () => ({ resend: draft !== null ? sendVoice : send }),
+    [draft, send, sendVoice],
+  );
 
   const control = chatV2TrailingControl({ mode, text, disabled });
 

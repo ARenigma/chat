@@ -4,10 +4,13 @@
  */
 
 import {
+  _resetEndedCallIds,
   _setIntentOwnerBoot,
   clearIntents,
+  endedCallIds,
   enqueueIntent,
   flushIntents,
+  markCallEnded,
   routedCalls,
   setIntentApplier,
   setIntentOwner,
@@ -31,6 +34,7 @@ beforeEach(() => {
   // Reset owner to BOOT so each test starts in the cold-start state.
   _setIntentOwnerBoot();
   routedCalls.clear();
+  _resetEndedCallIds();
 });
 
 // ---------------------------------------------------------------------------
@@ -260,5 +264,52 @@ describe('clearIntents', () => {
     const { calls, fn } = makeApplier();
     setIntentApplier(fn);
     expect(calls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B-BS-4: stale activeCall cleared by markCallEnded backstop
+// ---------------------------------------------------------------------------
+
+describe('markCallEnded backstop (B-BS-4)', () => {
+  it('routes a second ring normally after the first call ends unanswered with activeCall stuck', () => {
+    setIntentOwner('user-1');
+    const { calls, fn } = makeApplier();
+    setIntentApplier(fn);
+
+    // First ring arrives and is routed normally.
+    enqueueIntent({ type: 'incomingCall', peerId: 'p1', callId: 'c1', medium: 'voice' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.type).toBe('incomingCall');
+    // activeCall is now set (beginCall was called by flushIntents).
+    expect(useStore.getState().activeCall).not.toBeNull();
+    expect(useStore.getState().activeCall!.callId).toBe('c1');
+
+    // Simulate: ring times out, CallScreen.finish() calls markCallEnded, but
+    // CallRoute.endActiveCall is never reached (nav race / usePreventRemove).
+    // activeCall is intentionally left set to reproduce the stuck state.
+    markCallEnded('c1');
+    expect(useStore.getState().activeCall).not.toBeNull(); // still stuck
+
+    // Second ring with a different callId arrives.
+    enqueueIntent({ type: 'incomingCall', peerId: 'p2', callId: 'c2', medium: 'voice' });
+
+    // The backstop should have cleared the stale activeCall and routed the new ring.
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.type).toBe('incomingCall');
+    expect((calls[1] as NavIntent & { callId: string }).callId).toBe('c2');
+    // endedCallIds should contain the cleared callId.
+    expect(endedCallIds.has('c1')).toBe(true);
+  });
+
+  it('does NOT bypass glare when activeCall.callId is not in endedCallIds', () => {
+    setIntentOwner('user-1');
+    useStore.getState().beginCall({ direction: 'in', peerId: 'p1', callId: 'c1' });
+    const { calls, fn } = makeApplier();
+    setIntentApplier(fn);
+
+    // Second ring, but the first call has NOT been marked ended — real glare.
+    enqueueIntent({ type: 'incomingCall', peerId: 'p2', callId: 'c2', medium: 'voice' });
+    expect(calls).toHaveLength(0); // busy-declined, not routed
   });
 });

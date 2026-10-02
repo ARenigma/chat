@@ -242,7 +242,8 @@ function StoryReplySheetView({ visible, story, selfId, onClose }: Props) {
                 accessibilityLabel={mine ? `Remove ${emoji}` : `React ${emoji}`}
                 selected={mine}
                 press="chip"
-                testID={`story-react-${emoji}`}>
+                testID={`story-react-${emoji}`}
+                style={styles.chipHit}>
                 {chip}
               </Pressable>
             ) : (
@@ -382,6 +383,11 @@ const makeStyles = (t: Theme) =>
       flexWrap: 'wrap',
       gap: TOKENS.space.xs,
       marginBottom: TOKENS.space.md,
+    },
+    // Only the shape, so the state-layer clip matches the pill inside without
+    // re-applying padding or background from `chip` onto the Pressable wrapper.
+    chipHit: {
+      borderRadius: TOKENS.radius.pill,
     },
     chip: {
       flexDirection: 'row',

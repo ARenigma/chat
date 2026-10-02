@@ -69,6 +69,35 @@ export const PHONE_AUTH_ENABLED: boolean =
   (NativeModules.WindowChrome?.getConstants?.() as { allowTestPhoneLogin?: boolean } | undefined)
     ?.allowTestPhoneLogin === true;
 
+/**
+ * Sentry environment tag, set per build variant via BuildConfig.SENTRY_ENVIRONMENT.
+ *
+ * Never derived from APP_ENV or __DEV__: `internal` and `closedTest` are release
+ * builds where __DEV__ is false, so those flags cannot distinguish them from
+ * production. The native constant is the only reliable per-variant signal.
+ *
+ * debug → "development", internal → "internal",
+ * closedTest → "alpha", release → "production".
+ *
+ * https://docs.sentry.io/platforms/react-native/configuration/options/#environment
+ */
+export const SENTRY_ENVIRONMENT: string =
+  (
+    NativeModules.WindowChrome?.getConstants?.() as
+      | { sentryEnvironment?: string }
+      | undefined
+  )?.sentryEnvironment ?? 'development';
+
+/**
+ * Build identity for Sentry release tagging.
+ * Format: com.companionchat@<versionName>+<versionCode>
+ */
+const _wc = NativeModules.WindowChrome?.getConstants?.() as
+  | { versionName?: string; versionCode?: number }
+  | undefined;
+export const SENTRY_VERSION_NAME: string = _wc?.versionName ?? '0.0.0';
+export const SENTRY_VERSION_CODE: number = _wc?.versionCode ?? 0;
+
 
 /**
  * Which theme a FRESH INSTALL opens in.

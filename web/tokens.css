@@ -113,7 +113,7 @@
   --radius-presssend: 9px;
   --radius-field: 10px;
   --radius-alert: 14px;
-  --radius-bubble: 9px;
+  --radius-bubble: 20px;
   --radius-thread: 24px;
   --radius-sheet: 28px;
 
@@ -151,16 +151,16 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-  --bg-base: #151E27;
-  --bg-raised: #1D2733;
-  --bg-sunken: #232E3B;
-  --bg-hover: #2D3843;
-  --bg-grouped: #151E27;
-  --bg-chrome: rgba(36,45,57,0.85);
-  --bg-glass: rgba(33,45,59,0.55);
-  --bg-pressed: #354251;
-  --bg-selected: #26303D;
-  --bg-inverse: #E9EEF4;
+  --bg-base: #1E1E1E;
+  --bg-raised: #242626;
+  --bg-sunken: #282828;
+  --bg-hover: #2E2E2E;
+  --bg-grouped: #1E1E1E;
+  --bg-chrome: rgba(30,30,30,0.85);
+  --bg-glass: rgba(40,40,40,0.55);
+  --bg-pressed: #363636;
+  --bg-selected: #363636;
+  --bg-inverse: #E9E9E9;
   --bg-scrim: #000000;
   --bg-accent: #C2401F;
   --bg-accent-strong: #C2401F;
@@ -174,16 +174,16 @@
   --bg-token-healthy: #0E7A45;
   --bg-token-critical: #8C1D18;
   --text-primary: #FFFFFF;
-  --text-secondary: #8896A4;
-  --text-tertiary: #687788;
-  --text-section: #8896A4;
-  --text-muted: #5C6B7A;
+  --text-secondary: #949494;
+  --text-tertiary: #757575;
+  --text-section: #949494;
+  --text-muted: #696969;
   --text-accent: #DF9481;
   --text-nav-selected: #D26E55;
   --text-on-accent: #FFFFFF;
   --text-on-accent-tint: #DF9481;
   --text-on-state: #0A1F14;
-  --text-on-inverse: #151E27;
+  --text-on-inverse: #1E1E1E;
   --text-positive: #A8D8C8;
   --text-rating: #F6C453;
   --text-on-listener: #CFE4FF;
@@ -191,8 +191,8 @@
   --text-astrologer: #A78BFA;
   --text-on-astrologer: #E5D4FF;
   --text-on-token-strong: #FFFFFF;
-  --border-hairline: #303C4A;
-  --border-strong: #3A4A5C;
+  --border-hairline: #3D3D3D;
+  --border-strong: #484848;
   --border-accent: #C2401F;
   --state-available: #3FD69B;
   --text-available: #3FD69B;
@@ -206,11 +206,11 @@
   --mark-unwind: #0F7F62;
   --mark-verified: #4291FF;
   --bubble-mine: #C2401F;
-  --bubble-theirs: #232E3B;
+  --bubble-theirs: #242626;
   --bubble-text: #FFFFFF;
   --bubble-meta: rgba(255,255,255,0.8);
   --bubble-tick-read: #FFFFFF;
-  --bubble-wallpaper: #151E27;
+  --bubble-wallpaper: #0A0A0A;
   --media-scrim: rgba(0,0,0,0.55);
   --media-meta: rgba(255,255,255,0.72);
   --media-uploading: rgba(0,0,0,0.28);

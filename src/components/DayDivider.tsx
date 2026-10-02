@@ -25,19 +25,17 @@ function DayDividerView({ iso }: { iso: string }) {
   const { label, date } = dividerParts(iso);
   return (
     <View style={styles.host}>
-      {/* Sweprek layout: a centred white pill flanked by hairline rules that run
-          to the edges, so the day-break reads as a deliberate marker. The rules
-          are `border.hairline`, NOT coral — the reference tints them pink but our
-          palette reserves hue for meaning (coral = act), so chrome stays neutral
-          (user 2026-08-31, "neutral white"). */}
-      <View style={styles.rule} />
+      {/* WhatsApp's day chip (Amit, 2026-10-03: "date dividers prominent"): a
+          raised pill in bold primary ink on the wallpaper, no rules. Was a
+          secondary-ink pill between hairlines, which read as chrome. */}
       <View style={styles.pill}>
-        <Text allowFontScaling style={styles.day}>
-          {label}
-          {date ? <Text style={styles.date}>, {date}</Text> : null}
+        {/* One string in one style. A nested Text in the same bold face was
+            measured short on Android and clipped "Yesterday, 2 October" to
+            "Yesterday, 2" (S22, 2026-10-03). */}
+        <Text allowFontScaling numberOfLines={1} style={styles.day}>
+          {date ? `${label}, ${date}` : label}
         </Text>
       </View>
-      <View style={styles.rule} />
     </View>
   );
 }
@@ -46,16 +44,9 @@ export const DayDivider = memo(DayDividerView);
 
 const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: TOKENS.space.sm,
     paddingVertical: TOKENS.space.md,
     paddingHorizontal: TOKENS.space.lg,
-  },
-  rule: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: t.color.border.hairline,
   },
   pill: {
     paddingHorizontal: TOKENS.space.sm,
@@ -67,10 +58,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   },
   day: {
     ...TOKENS.typography.labelMediumEmphasized,
-    color: t.color.text.secondary,
-  },
-  date: {
-    ...TOKENS.typography.bodySmall,
-    color: t.color.text.secondary,
+    color: t.color.text.primary,
   },
 });

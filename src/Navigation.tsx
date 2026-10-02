@@ -127,6 +127,7 @@ import { MemberShell, ProviderShell } from './shell';
 import { useStore } from './store/useStore';
 import { useTheme, useThemeMode } from './theme/ThemeProvider';
 import { TOKENS } from './theme/tokens';
+import { registerSentryNavigation } from './lib/sentry';
 
 type MemberStackParams = MemberScreenParams & {
   Home: undefined;
@@ -485,6 +486,10 @@ export function RoutesContainer({ role, actions, initialState, onStateChange }: 
     lastKind.current = kind;
     trackScreenOpened(kind);
     setIntentApplier(applyIntent);
+    // Register with Sentry's react-navigation integration so TTID and screen
+    // spans are attached to the correct route name.
+    // https://docs.sentry.io/platforms/react-native/tracing/instrumentation/react-navigation/
+    registerSentryNavigation(navigationRef);
   }, []);
 
   const handleStateChange = useCallback(

@@ -376,7 +376,27 @@ class CallForegroundService : Service() {
             }
             // Handles the API 26 startForegroundService boundary for minSdk 24.
             // https://developer.android.com/develop/background-work/services/fgs/launch
-            ContextCompat.startForegroundService(context, intent)
+            //
+            // From the background on API 31+ this throws
+            // ForegroundServiceStartNotAllowedException (an IllegalStateException):
+            // "Apps that target Android 12 (API level 31) or higher can't start
+            // foreground services while the app is running in the background"
+            // https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start
+            // It was fatal (Sentry 150792524: Pixel 8, Android 14, a ring that
+            // reached a backgrounded app, 2026-10-01). The JS side now waits for
+            // the foreground before asking (src/lib/conversations.ts); this catch
+            // is the backstop, so a start that slips through costs the service,
+            // not the app. The ring itself is the CallStyle notification
+            // Conversations.notifyCall already posted, which needs no service.
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: IllegalStateException) {
+                android.util.Log.w(
+                    "CallForegroundService",
+                    "start refused while backgrounded; deferring to the foreground",
+                    e,
+                )
+            }
         }
 
         fun stop(context: Context) {

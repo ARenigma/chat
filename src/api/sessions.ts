@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { reportSwallowed } from '../lib/sentry';
+import { logEvent, reportSwallowed } from '../lib/sentry';
 import { track } from '../lib/telemetry';
 import { keys, useConversationId } from './chat';
 import { useStore } from '../store/useStore';
@@ -42,7 +42,11 @@ export interface PaidSession {
   started_at: string | null;
   ended_at: string | null;
   last_activity_at: string | null;
-  /** Whole minutes Postgres has deducted so far; 1 at activation (minute 1 is prepaid). */
+  /**
+   * Whole minutes Postgres has deducted so far. Calls: 1 at activation (minute
+   * 1 is prepaid). Chat: 0 until the provider's first reply, which bills
+   * minute 1 (migration 181), so a chat nobody answered costs nothing.
+   */
   minutes_billed: number;
   /** When the next minute is due; the cron deducts at its first tick at or after this. */
   next_bill_at: string | null;
@@ -829,6 +833,7 @@ export function useConfirmChatSession() {
         p_request_id: requestId,
       });
       if (error) throw error;
+      logEvent('chat_session_confirmed', { channel: 'chat' });
       return data;
     },
     onSuccess: (_id, { conversationId }) => {
@@ -895,6 +900,7 @@ export function useEndSession() {
       });
       if (error) throw error;
       track('session_ended', { reason });
+      logEvent('session_ended', { reason });
     },
     onSuccess: () => {
       // Invalidate all session queries; client clears transcript.
@@ -924,8 +930,24 @@ export function useActiveSession(conversationId: string | undefined) {
     // the countdown is aged from `dataUpdatedAt`, so while billing is live it
     // also re-anchors on its own every 30 s: a socket that drops for a while
     // must not leave the clock drifting from the server's figure.
-    refetchInterval: query =>
-      query.state.data?.next_bill_at != null && query.state.data.ended_at == null ? 30_000 : false,
+    //
+    // Before billing, realtime was the ONLY path, and one missed event left a
+    // side stuck: the provider accepted, the member confirmed a second later,
+    // the provider's lease landed and the session went active, but the Sauce
+    // Pixel's socket missed the flip and its chat stayed pre-session for the
+    // whole session (E2E 2026-09-29). `pending_leases` is seconds long, so it
+    // is polled tightly; no session at all is polled slowly, which bounds the
+    // wait after an accept whose confirm event was missed. Focus-scoped and
+    // paused in the background like every query here (App.tsx focusManager).
+    refetchInterval: query => {
+      const session = query.state.data;
+      if (session == null) return 15_000;
+      if (session.ended_at != null) return false;
+      if (session.status === 'pending_leases') return 3_000;
+      // An active chat before the provider's first reply has no bill time yet
+      // (181); keep a slow read so the member's clock appears when it starts.
+      return session.next_bill_at != null ? 30_000 : 15_000;
+    },
     queryFn: async () => {
       if (!conversationId) return null;
       const { data, error } = await supabase.rpc('get_active_session', {

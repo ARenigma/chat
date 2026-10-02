@@ -545,6 +545,10 @@ COLUMN provider_photos.id uuid null=NO default=gen_random_uuid()
 COLUMN provider_photos.is_primary boolean null=NO default=false
 COLUMN provider_photos.provider_id uuid null=NO default=-
 COLUMN provider_photos.url text null=NO default=-
+COLUMN provider_presence.last_seen_at timestamp with time zone null=YES default=-
+COLUMN provider_presence.online boolean null=NO default=false
+COLUMN provider_presence.provider_id uuid null=NO default=-
+COLUMN provider_presence.updated_at timestamp with time zone null=NO default=now()
 COLUMN provider_review_queue.about text null=YES default=-
 COLUMN provider_review_queue.created_at timestamp with time zone null=YES default=-
 COLUMN provider_review_queue.date_of_birth date null=YES default=-
@@ -893,6 +897,8 @@ CONSTRAINT provider_payout_batches.provider_payout_batches_total_tokens_check CH
 CONSTRAINT provider_photos.provider_photo_url_is_an_avatar CHECK ((url ~ '^https://[^/]+/storage/v1/object/public/avatars/.+'::text))
 CONSTRAINT provider_photos.provider_photos_pkey PRIMARY KEY (id)
 CONSTRAINT provider_photos.provider_photos_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
+CONSTRAINT provider_presence.provider_presence_pkey PRIMARY KEY (provider_id)
+CONSTRAINT provider_presence.provider_presence_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT provider_tax_profile.provider_tax_profile_pkey PRIMARY KEY (provider_id)
 CONSTRAINT provider_tax_profile.provider_tax_profile_provider_id_fkey FOREIGN KEY (provider_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT provider_tax_profile.provider_tax_profile_status_check CHECK ((status = ANY (ARRAY['not_provided'::text, 'pending'::text, 'verified'::text, 'failed'::text])))
@@ -1389,6 +1395,7 @@ FUNCTION enums_are(name, name[], text) returns text security=invoker
 FUNCTION enums_are(name[]) returns text security=invoker
 FUNCTION enums_are(name[], text) returns text security=invoker
 FUNCTION expertise_list_is_sane(p text[]) returns boolean security=invoker
+FUNCTION expire_provider_presence() returns void security=definer
 FUNCTION expire_stale_session_requests() returns integer security=definer
 FUNCTION extensions_are(name, name[]) returns text security=invoker
 FUNCTION extensions_are(name, name[], text) returns text security=invoker
@@ -2171,7 +2178,9 @@ FUNCTION submit_provider_application(p_display_name text, p_gender text, p_date_
 FUNCTION submit_report(p_conversation_id uuid, p_message_id uuid, p_reason report_reason, p_detail text) returns uuid security=definer
 FUNCTION submit_review(p_conversation_id uuid, p_rating smallint, p_comment text) returns void security=definer
 FUNCTION submit_session_review(p_session_id uuid, p_rating smallint, p_comment text) returns void security=definer
+FUNCTION sync_provider_presence_on_availability() returns trigger security=definer
 FUNCTION sync_token_balance() returns trigger security=invoker
+FUNCTION sync_unread_on_read() returns trigger security=definer
 FUNCTION table_owner_is(name, name) returns text security=invoker
 FUNCTION table_owner_is(name, name, name) returns text security=invoker
 FUNCTION table_owner_is(name, name, name, text) returns text security=invoker
@@ -2353,6 +2362,7 @@ INDEX provider_payout_batches_pkey CREATE UNIQUE INDEX provider_payout_batches_p
 INDEX provider_photos_one_primary CREATE UNIQUE INDEX provider_photos_one_primary ON public.provider_photos USING btree (provider_id) WHERE is_primary
 INDEX provider_photos_pkey CREATE UNIQUE INDEX provider_photos_pkey ON public.provider_photos USING btree (id)
 INDEX provider_photos_provider CREATE INDEX provider_photos_provider ON public.provider_photos USING btree (provider_id, is_primary DESC, created_at)
+INDEX provider_presence_pkey CREATE UNIQUE INDEX provider_presence_pkey ON public.provider_presence USING btree (provider_id)
 INDEX provider_tax_profile_pkey CREATE UNIQUE INDEX provider_tax_profile_pkey ON public.provider_tax_profile USING btree (provider_id)
 INDEX push_tokens_pkey CREATE UNIQUE INDEX push_tokens_pkey ON public.push_tokens USING btree (token)
 INDEX push_tokens_user_idx CREATE INDEX push_tokens_user_idx ON public.push_tokens USING btree (user_id)
@@ -2425,6 +2435,7 @@ POLICY public.provider_photos.provider_photos_delete_own cmd=DELETE roles=authen
 POLICY public.provider_photos.provider_photos_insert_own cmd=INSERT roles=authenticated
 POLICY public.provider_photos.provider_photos_select cmd=SELECT roles=authenticated
 POLICY public.provider_photos.provider_photos_update_own cmd=UPDATE roles=authenticated
+POLICY public.provider_presence.authenticated can see unblocked provider presence cmd=SELECT roles=authenticated
 POLICY public.provider_tax_profile.provider_tax_profile_select_own cmd=SELECT roles=authenticated
 POLICY public.push_tokens.Own tokens are removable cmd=DELETE roles=public
 POLICY public.reports.Reporter reads own reports cmd=SELECT roles=public
@@ -2475,6 +2486,7 @@ RLS provider_earnings_ledger enabled=true
 RLS provider_payout_accounts enabled=true
 RLS provider_payout_batches enabled=true
 RLS provider_photos enabled=true
+RLS provider_presence enabled=true
 RLS provider_tax_profile enabled=true
 RLS push_tokens enabled=true
 RLS refund_reviews enabled=true
@@ -2502,6 +2514,7 @@ TRIGGER messages.guard_message_retention_columns
 TRIGGER messages.guard_message_session_and_dedup_columns
 TRIGGER messages.message_push_on_insert
 TRIGGER messages.messages_touch_session_activity
+TRIGGER messages.sync_unread_count_on_read
 TRIGGER moderation_actions.moderation_actions_no_update
 TRIGGER paid_sessions.paid_sessions_accrue_on_end
 TRIGGER paid_sessions.paid_sessions_clear_chat_consent
@@ -2511,6 +2524,7 @@ TRIGGER profiles.guard_profile_pii_columns
 TRIGGER profiles.guard_profile_presence_columns
 TRIGGER profiles.guard_profile_privileged_columns
 TRIGGER profiles.guard_profile_provider_avatar
+TRIGGER profiles.sync_provider_presence_after_availability_change
 TRIGGER profiles.sync_token_balance
 TRIGGER provider_applications.guard_application_transitions
 TRIGGER provider_photos.guard_provider_photo_columns

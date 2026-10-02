@@ -13,6 +13,7 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { pushName } from '../_shared/names.ts';
+import { reportEdgeFailure, withSentry } from '../_shared/sentry.ts';
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -181,7 +182,7 @@ async function send(
   return 'retry';
 }
 
-Deno.serve(async request => {
+Deno.serve(withSentry('send-call', async request => {
   const url = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const rawSa = Deno.env.get('FCM_SERVICE_ACCOUNT');
@@ -264,6 +265,8 @@ Deno.serve(async request => {
     console.error(
       `push-failure send-call rang no device for ${pending.length} pending row(s)`,
     );
+    // The "the phone never rang" case, which had no trace beyond the log line.
+    await reportEdgeFailure('send-call', 'rang no device', { pending: pending.length });
   }
 
   if (notified.size > 0) {
@@ -292,4 +295,4 @@ Deno.serve(async request => {
     notified: notified.size,
     dead: deadTokens.size,
   });
-});
+}));

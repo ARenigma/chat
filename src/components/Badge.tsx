@@ -52,7 +52,13 @@ function BadgeView({ count, max = 9, testID, placement = 'corner' }: Props) {
   const label = count > max ? `${max}+` : String(count);
 
   return (
-    <View testID={testID} accessibilityLabel={`${count} unread`} style={[styles.pill, placement === 'badgedBox' ? styles.badgedBox : null]}>
+    <View
+      testID={testID}
+      accessibilityLabel={`${count} unread`}
+      style={[
+        styles.pill,
+        placement === 'badgedBox' ? styles.badgedBox : styles.corner,
+      ]}>
       {/* The pill is a fixed 16dp height with a fixed lineHeight; unbounded font
           scaling clips the count. The geometry is deliberate, so the count does
           not scale with it. (2026-09-09 audit) */}
@@ -93,8 +99,6 @@ const makeStyles = (t: Theme) =>
      */
     pill: {
       position: 'absolute',
-      top: -4,
-      right: -6,
       minWidth: 16,
       height: 16,
       borderRadius: TOKENS.radius.pill,
@@ -103,11 +107,27 @@ const makeStyles = (t: Theme) =>
       justifyContent: 'center',
       backgroundColor: t.color.bg.accentStrong,
     },
-    // M3 BadgedBox placement, see `placement`. `right` is cleared so the
-    // corner overhang above does not also pin the far edge.
+    /*
+     * `corner`: top-right overhang for every anchor that is NOT a BadgedBox
+     * (rail avatars, chat list rows). The anchor is a zero-size absolute
+     * at the desired corner; the pill sits 4dp above and 6dp right of it so
+     * the visible count overshoots the icon ring slightly, matching M3.
+     */
+    corner: {
+      top: -4,
+      right: -6,
+    },
+    /*
+     * `badgedBox`: M3 BadgedBox placement for a badge on a 24dp icon.
+     * androidx places the badge's START at the icon centre and its top
+     * 2dp above the icon (Badge.kt BadgeWithContentHorizontalOffset /
+     * BadgeWithContentVerticalOffset). No `right` key — adding one via
+     * StyleSheet.create with `undefined` does not clear the inherited value
+     * in React Native's flattenStyle; using a separate style object avoids
+     * the inheritance entirely.
+     */
     badgedBox: {
       top: -TOKENS.space.hair,
-      right: undefined,
       left: '50%',
     },
     label: {

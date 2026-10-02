@@ -1,7 +1,7 @@
 import React, { memo, useCallback } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { CallRecord } from '../api/chat';
-import { Icon } from '../components/Icon';
+import { Icon, ICON_SCALE } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -40,10 +40,12 @@ function ChatCallRowV2View({ call, permissions, onCallBack }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const model = chatV2CallModel(call, permissions);
+  // A call is a session, so it takes the session row's green (Amit,
+  // 2026-10-03: "have it just like chat session"); a missed one stays danger.
   const tint =
     model.tone === 'danger'
       ? theme.color.state.danger
-      : theme.color.text.tertiary;
+      : theme.color.text.available;
 
   const callBack = useCallback(() => {
     onCallBack(model.medium);
@@ -51,7 +53,16 @@ function ChatCallRowV2View({ call, permissions, onCallBack }: Props) {
 
   const body = (
     <View style={styles.pill}>
-      <Icon name={model.icon} size={TOKENS.icon.xs} color={tint} />
+      {/* A call that connected was a session, so it carries the session
+          heart, as a chat session's row does (Amit, 2026-10-03). One that
+          never connected keeps its glyph, in danger ink. */}
+      {model.tone === 'danger' ? (
+        <Icon name={model.icon} size={TOKENS.icon.xs} color={tint} />
+      ) : (
+        <Text allowFontScaling={false} style={styles.emoji}>
+          🧡
+        </Text>
+      )}
       <Text
         testID="chat-v2-call"
         allowFontScaling
@@ -109,24 +120,30 @@ const makeStyles = (t: Theme) =>
     target: {
       minHeight: ROW_MIN_HEIGHT,
       justifyContent: 'center',
-      borderRadius: TOKENS.radius.pill,
+      borderRadius: TOKENS.radius.sm,
       borderCurve: 'continuous',
     },
-    // The label sits on `bg/sunken`, a known background, rather than on the
+    // The label sits on `bg/raised`, a known background, rather than on the
     // patterned wallpaper — which is what the contrast figures are measured on.
+    // The same card as SystemMessageRow, so the two read as one kind of row.
     pill: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space['2xs'],
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: TOKENS.space['2xs'],
-      borderRadius: TOKENS.radius.pill,
+      borderRadius: TOKENS.radius.sm,
       borderCurve: 'continuous',
-      backgroundColor: t.color.bg.sunken,
+      backgroundColor: t.color.bg.raised,
+    },
+    // Same box as SystemMessageRow's emoji, so the two hearts match.
+    emoji: {
+      fontSize: Math.round(TOKENS.icon.xs * ICON_SCALE),
+      lineHeight: Math.round(TOKENS.icon.xs * ICON_SCALE * 1.2),
     },
     label: {
       ...TOKENS.typography.bodySmall,
-      color: t.color.text.tertiary,
+      color: t.color.text.available,
     },
     // 7.25:1 light / 6.14:1 dark on bg/sunken.
     labelDanger: {

@@ -305,7 +305,10 @@ describe('the card in the chat', () => {
   it('sends through the chat’s own send path, the precheck included', () => {
     const screen = read('src/chat-v2/ChatScreenV2.tsx');
     const sheet = read('src/chat-v2/BirthDetailsSheet.tsx');
-    expect(screen).toMatch(/<BirthDetailsSheet[\s\S]*?onSend=\{onSend\}/);
+    // Through `onSendBirthDetails`, which holds the card for the session-start
+    // dialog and otherwise calls `onSend`.
+    expect(screen).toMatch(/<BirthDetailsSheet[\s\S]*?onSend=\{onSendBirthDetails\}/);
+    expect(screen).toMatch(/return onSend\(body\);/);
     expect(sheet).toMatch(/if \(onSend\(body\)\) \{\s*onClose\(\);/);
     expect(sheet).toContain('pickBirthDate(date)');
     expect(sheet).toContain('pickBirthTime(time)');

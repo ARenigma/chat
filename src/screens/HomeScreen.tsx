@@ -1125,15 +1125,18 @@ const RailItem = memo(function ({
             online={presence.here}
           />
         </View>
-        {unread ? (
-          <View style={styles.railBadge}>
-            <Badge count={unreadCount} testID={`rail-badge-${chat.peer_id}`} />
-          </View>
-        ) : null}
         <Text allowFontScaling numberOfLines={1} style={styles.railName}>
           {name}
         </Text>
       </Pressable>
+      {/* Badge lives OUTSIDE the Pressable so the Pressable's overflow:hidden
+          does not clip the pill's -4dp top overhang. The outer View has no
+          overflow constraint, giving the badge a clear path to the screen. */}
+      {unread ? (
+        <View style={styles.railBadge}>
+          <Badge count={unreadCount} testID={`rail-badge-${chat.peer_id}`} />
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -1816,6 +1819,8 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       minHeight: TOKENS.interaction.minTarget,
+      // State layer clips to a rounded shape instead of a raw rectangle.
+      borderRadius: TOKENS.radius.xs,
     },
     seeAllText: {
       ...TOKENS.typography.textSmSemiBold,
@@ -1854,13 +1859,12 @@ const makeStyles = (t: Theme) =>
     },
     // Anchor only — M3 Badge owns fill, size, and “9+”.
     //
-    // `top` is 4, not 0, because Badge's pill sits 4dp ABOVE its anchor
-    // (`top: -4` in Badge.tsx) and this item is the first thing in a horizontal
-    // ScrollView, which always clips its children on Android. At `top: 0` the
-    // top quarter of every unread count was cut off (Amit, on device,
-    // 2026-09-26). At 4 the pill's top edge meets the item's top edge and the
-    // ring's, so the badge still reads as sitting on the ring's corner and the
-    // rail's height, which railEmpty reserves, is unchanged.
+    // Positioned in the outer wrapper View (NOT inside the Pressable) so the
+    // Pressable's overflow:hidden does not clip the pill's -4dp top overhang.
+    // `top: 4` against the pill's -4 overhang puts the pill's top edge on the
+    // item's top edge, inside the horizontal ScrollView's clip (Android clips
+    // it in both axes). No padding on railScroll: that would make a populated
+    // rail taller than `railEmpty` and shift Explore between tabs.
     railBadge: {
       position: 'absolute',
       top: 4,

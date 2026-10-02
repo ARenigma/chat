@@ -114,6 +114,8 @@ const makeStyles = (t: Theme) =>
       minHeight: 48,
       alignItems: 'center',
       justifyContent: 'center',
+      // Round the state layer so Cancel does not flash a square behind the label.
+      borderRadius: TOKENS.radius.xs,
     },
     cancel: {
       ...TOKENS.typography.labelLargeEmphasized,

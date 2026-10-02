@@ -276,6 +276,12 @@ android {
         // Closed by default; only debug and `internal` open it, never a Play
         // build (release, closedTest), where phone codes stay off (2026-09-24).
         buildConfigField "boolean", "ALLOW_TEST_PHONE_LOGIN", "false"
+        // Sentry environment tag — consumed by WindowChromeModule.getConstants() →
+        // JS config.ts SENTRY_ENVIRONMENT.  Never read from APP_ENV or __DEV__:
+        // internal and closedTest are release builds where __DEV__ is false, so
+        // those flags cannot distinguish them from production.
+        // https://docs.sentry.io/platforms/react-native/configuration/options/#environment
+        buildConfigField "String", "SENTRY_ENVIRONMENT", '"development"'
 
         // https://developer.android.com/training/testing/instrumented-tests
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -313,6 +319,7 @@ android {
             signingConfig signingConfigs.debug
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
             buildConfigField "boolean", "ALLOW_TEST_PHONE_LOGIN", "true"
+            buildConfigField "String", "SENTRY_ENVIRONMENT", '"development"'
         }
         release {
             // Never the debug key: an APK signed with the shared debug keystore
@@ -327,6 +334,7 @@ android {
             // tracing the inheritance chain.
             buildConfigField "boolean", "ALLOW_DEV_CAPTURE", "false"
             buildConfigField "boolean", "ALLOW_BENCHMARK_ROUTES", "false"
+            buildConfigField "String", "SENTRY_ENVIRONMENT", '"production"'
         }
 
         /**
@@ -348,6 +356,7 @@ android {
             matchingFallbacks = ["release"]
             signingConfig hasReleaseKeystore ? signingConfigs.release : null
             buildConfigField "boolean", "BLOCK_SCREENSHOTS", "false"
+            buildConfigField "String", "SENTRY_ENVIRONMENT", '"alpha"'
         }
 
         /**
@@ -409,6 +418,7 @@ android {
             // This variant is the non-debuggable, minified benchmark target.
             // Release inherits false and repeats it explicitly above.
             buildConfigField "boolean", "ALLOW_BENCHMARK_ROUTES", "true"
+            buildConfigField "String", "SENTRY_ENVIRONMENT", '"internal"'
         }
     }
 }

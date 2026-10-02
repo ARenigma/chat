@@ -28,6 +28,7 @@ import { trackSheetClosed } from '../lib/perfTelemetry';
 import { Pressable } from './Pressable';
 import { coverViewing } from '../lib/viewingConversation';
 import { useActiveElement } from '../lib/activeElements';
+import { KeyboardStickyView } from 'react-native-keyboard-controller';
 
 // Where the sheet starts its entry slide: safely below the tallest sheet, so it
 // begins off-screen and springs up into view. Only the last stretch is visible.
@@ -124,6 +125,20 @@ function SheetView({
   // Always cap so a tall form cannot become a full-page sheet. `large` is the
   // 90% Material expanded detent; `auto` wraps content and only uses the cap
   // when the stack would otherwise overflow.
+  // The keyboard. The sheet is a Modal, and under edge-to-edge its window keeps
+  // its size while only the IME inset changes, so nothing moved and the
+  // keyboard covered the review field and its Send button (Sauce E2E
+  // 2026-09-29; https://developer.android.com/develop/ui/views/layout/insets#ime-animations).
+  // react-native-keyboard-controller attaches its per-frame IME callback to
+  // every Modal window it sees open (ModalAttachedWatcher), so the sheet rides
+  // the keyboard in a KeyboardStickyView below, the component the chat dock
+  // uses, frame by frame on the UI thread.
+  //
+  // The cap does NOT subtract the keyboard. It did for a day, and on a Pixel 8
+  // on Android 14 (BrowserStack, 2026-10-01) the call-upgrade sheet came out
+  // 251 dp tall with its Switch button cut to 17 dp at the window edge, which
+  // is that formula fed a keyboard height while no keyboard was up. A text
+  // sheet here is short enough to clear the keyboard inside the plain cap.
   const sheetMaxHeight = windowHeight * (detents === 'large' ? 0.9 : 0.72);
   // Gesture nav / 3-button bar: keep sticky CTAs above the system inset.
   // Fixed `3xl` alone clipped the Leave button on ConfirmDialog (S22 Ultra).
@@ -295,102 +310,112 @@ function SheetView({
           accessibilityLabel="Dismiss"
           accessibilityState={{ disabled: !dismissOnScrim }}
         />
-        <GestureDetector gesture={pan}>
-          {/*
-           * W5#5 — `renderToHardwareTextureAndroid` NOT added to this container,
-           * and that is a recorded decision.
-           *
-           * The sheet slides in/out with a Reanimated translateY. During that
-           * animation the subtree is visually static, so a hardware texture would
-           * let the compositor handle the slide as a matrix multiply rather than
-           * re-drawing children — the right use case on paper.
-           *
-           * Two problems prevent doing it correctly:
-           *
-           *   1. "Never left on." A texture that persists while the sheet is open
-           *      and settled pays real GPU memory for no benefit. Toggling requires
-           *      knowing when `y.value` has settled at 0 — i.e. an `onSettled`
-           *      callback from the spring/timing animation — which would add
-           *      complexity to every animation path in this file.
-           *
-           *   2. No real-hardware measurement yet. `scripts/framestats.mjs` exists
-           *      but has not been run against sheet open/close on the S22. Without
-           *      a number that shows frames over budget during the 400 ms slide,
-           *      adding a GPU memory allocation is speculative.
-           *
-           * Revisit after a `framestats.mjs` run on the S22 confirms sheet open/
-           * close frames exceed the 8.33 ms budget.
-           * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
-           */}
-          <Animated.View
-            testID={testID}
-            onLayout={measure}
-            style={[
-              styles.sheet,
-              sheetStyle,
-              { paddingBottom: sheetBottomPad },
-              { maxHeight: sheetMaxHeight },
-            ]}>
-            <SheetGrabber />
+        {/*
+         * `opened: insets.bottom`: the keyboard is drawn over the navigation
+         * bar, whose inset `sheetBottomPad` already reserves, so translating
+         * by the whole IME height would leave that inset as a gap above it.
+         * The chat dock takes the same offset for the same reason.
+         */}
+        <KeyboardStickyView offset={{ opened: insets.bottom }}>
+          <GestureDetector gesture={pan}>
             {/*
-              * The actions sit on their own row ABOVE the title, not beside it.
-              *
-              * They used to share a row with it, with the title at `flex: 1`, and
-              * on a sheet that has a leading action and no trailing one that
-              * rendered as "Not Now  50 Tokens Left" with the two texts touching.
-              * Caught on the emulator, where it read as one broken line rather
-              * than as a bar and a heading.
-              *
-              * This is also the iOS structure it was reaching for: a bar carries
-              * the actions, and a large title sits underneath it. The row is
-              * rendered only when there is an action to put in it, so a sheet with
-              * neither does not pay for an empty strip.
-              */}
-        {onCancel !== undefined || onDone !== undefined ? (
-              <View style={styles.barRow}>
-                {onCancel !== undefined ? (
-                  <Pressable
-                    onPress={onCancel}
-                    testID="sheet-cancel"
-                    accessibilityLabel={cancelLabel}
-                    press="button">
-                    <Text allowFontScaling style={styles.action}>
-                      {cancelLabel}
-                    </Text>
-                  </Pressable>
-                ) : null}
-                <View style={styles.barSpacer} />
-                {onDone !== undefined ? (
-                  <Pressable
-                    onPress={onDone}
-                    testID="sheet-done"
-                    accessibilityLabel={doneLabel}
-                    press="button">
-                    <Text allowFontScaling style={styles.action}>
-                      {doneLabel}
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : null}
-            <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
-              testID="sheet-title"
-              allowFontScaling
-              numberOfLines={2}
-              style={styles.title}>
-              {title}
-            </Text>
-            {body ? (
-              <Text allowFontScaling style={styles.body}>
-                {body}
+             * W5#5 — `renderToHardwareTextureAndroid` NOT added to this container,
+             * and that is a recorded decision.
+             *
+             * The sheet slides in/out with a Reanimated translateY. During that
+             * animation the subtree is visually static, so a hardware texture would
+             * let the compositor handle the slide as a matrix multiply rather than
+             * re-drawing children — the right use case on paper.
+             *
+             * Two problems prevent doing it correctly:
+             *
+             *   1. "Never left on." A texture that persists while the sheet is open
+             *      and settled pays real GPU memory for no benefit. Toggling requires
+             *      knowing when `y.value` has settled at 0 — i.e. an `onSettled`
+             *      callback from the spring/timing animation — which would add
+             *      complexity to every animation path in this file.
+             *
+             *   2. No real-hardware measurement yet. `scripts/framestats.mjs` exists
+             *      but has not been run against sheet open/close on the S22. Without
+             *      a number that shows frames over budget during the 400 ms slide,
+             *      adding a GPU memory allocation is speculative.
+             *
+             * Revisit after a `framestats.mjs` run on the S22 confirms sheet open/
+             * close frames exceed the 8.33 ms budget.
+             * https://reactnative.dev/docs/view-style-props#rendertohardwaretextureandroid
+             */}
+            <Animated.View
+              testID={testID}
+              onLayout={measure}
+              style={[
+                styles.sheet,
+                sheetStyle,
+                { paddingBottom: sheetBottomPad },
+                { maxHeight: sheetMaxHeight },
+              ]}>
+              <SheetGrabber />
+              {/*
+                * The actions sit on their own row ABOVE the title, not beside it.
+                *
+                * They used to share a row with it, with the title at `flex: 1`, and
+                * on a sheet that has a leading action and no trailing one that
+                * rendered as "Not Now  50 Tokens Left" with the two texts touching.
+                * Caught on the emulator, where it read as one broken line rather
+                * than as a bar and a heading.
+                *
+                * This is also the iOS structure it was reaching for: a bar carries
+                * the actions, and a large title sits underneath it. The row is
+                * rendered only when there is an action to put in it, so a sheet with
+                * neither does not pay for an empty strip.
+                */}
+          {onCancel !== undefined || onDone !== undefined ? (
+                <View style={styles.barRow}>
+                  {onCancel !== undefined ? (
+                    <Pressable
+                      onPress={onCancel}
+                      testID="sheet-cancel"
+                      accessibilityLabel={cancelLabel}
+                      press="button"
+                      style={styles.barAction}>
+                      <Text allowFontScaling style={styles.action}>
+                        {cancelLabel}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  <View style={styles.barSpacer} />
+                  {onDone !== undefined ? (
+                    <Pressable
+                      onPress={onDone}
+                      testID="sheet-done"
+                      accessibilityLabel={doneLabel}
+                      press="button"
+                      style={styles.barAction}>
+                      <Text allowFontScaling style={styles.action}>
+                        {doneLabel}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
+                testID="sheet-title"
+                allowFontScaling
+                numberOfLines={2}
+                style={styles.title}>
+                {title}
               </Text>
-            ) : null}
-            <View style={[styles.actions, styles.actionsScroll]}>{children}</View>
-            {footer !== undefined ? (
-              <View style={styles.footer}>{footer}</View>
-            ) : null}
-          </Animated.View>
-        </GestureDetector>
+              {body ? (
+                <Text allowFontScaling style={styles.body}>
+                  {body}
+                </Text>
+              ) : null}
+              <View style={[styles.actions, styles.actionsScroll]}>{children}</View>
+              {footer !== undefined ? (
+                <View style={styles.footer}>{footer}</View>
+              ) : null}
+            </Animated.View>
+          </GestureDetector>
+        </KeyboardStickyView>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -454,6 +479,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingTop: TOKENS.space.xs,
+  },
+  // Clip the Pressable state layer to a rounded shape instead of the raw text
+  // bounding box. Without this the Cancel/Done press shows a square flash.
+  barAction: {
+    borderRadius: TOKENS.radius.xs,
+    paddingHorizontal: TOKENS.space['2xs'],
   },
   // Pushes a lone trailing action to the edge and a lone leading action away
   // from it, without either needing to know whether the other exists.

@@ -71,7 +71,7 @@ describe('chatV2RecentOwnTexts', () => {
       row('peer', ago(3000), { mine: false }),
       row(null, ago(4000)),
       row('deleted', ago(5000), { deleted: true }),
-      { kind: 'system', id: 's1', sortAt: ago(6000), text: 'Session started', opensDay: false },
+      { kind: 'system', id: 's1', sortAt: ago(6000), text: 'Session started', tone: 'session', opensDay: false },
       row('kept', ago(7000)),
     ];
     expect(chatV2RecentOwnTexts(rows, NOW)).toEqual(['kept']);

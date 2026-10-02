@@ -2505,9 +2505,11 @@ describe('the redesign holds its own invariants', () => {
      * median 25.0px at 2.75px/dp. Was 22. See radius.$bubbleNote for the
      * caveats — the curve is a squircle, so 8dp is within a dp of the data.
      */
-    expect(TOKENS.radius.bubble).toBe(9);
+    // 20 since 2026-10-03: the corner matches the composer's capsule (Amit,
+    // "not squarish"). The 9dp measurement above stays as the record.
+    expect(TOKENS.radius.bubble).toBe(20);
     // Concentric inner radius: outer minus the 3dp media inset.
-    expect(TOKENS.radius.bubble - 3).toBe(6);
+    expect(TOKENS.radius.bubble - 3).toBe(17);
     // The consumer exists now, and derives the inner corner from the outer one
     // rather than carrying a second number that can drift.
     expect(turn).toContain('const MEDIA_INSET = 3;');
@@ -2783,7 +2785,8 @@ describe('the chat restyle is wired, not just drawn', () => {
       api.indexOf('export function usePeerPresence('),
       api.indexOf('export function useConversationId('),
     );
-    expect(api).toContain('const PEER_PRESENCE_POLL_MS = 15_000;');
+    // 182: relaxed from 15_000 to 60_000 — push-primary, poll-fallback.
+    expect(api).toContain('const PEER_PRESENCE_POLL_MS = 60_000;');
     expect(hook).toContain(".from('conversation_peers')");
     expect(hook).toContain(".select('peer_online, peer_last_seen_at')");
     expect(hook).toContain(".eq('conversation_id', conversationId as string)");
@@ -7699,10 +7702,12 @@ describe('the member always starts the session, whoever wrote first', () => {
     expect(create).toContain("errcode = 'P0003'");
   });
 
-  it('names the member chat sheet Start session / Decline', () => {
+  // "Not now" since 2026-10-03: the sheet opens on the member's send, and
+  // dismissing it refuses nothing (the next send asks again).
+  it('names the member chat sheet Start session / Not now', () => {
     expect(chat).toContain('testID="chat-v2-consent"');
     expect(chat).toContain('confirmLabel="Start session"');
-    expect(chat).toContain('cancelLabel="Decline"');
+    expect(chat).toContain('cancelLabel="Not now"');
     expect(chat).toContain('wants to have a chat with you');
     // Was 'Hey — ${name} is here' until 2026-09-17 ("never use emdash anywhere
     // in app"). The comma is not a downgrade: it is what the sibling title on
@@ -8334,15 +8339,17 @@ describe('rename chat — private per-user conversation labels', () => {
 });
 
 describe('system messages — centered session/notice rows in the transcript', () => {
-  it('the SystemMessageRow is a muted centered pill, not a bubble', () => {
+  it('the SystemMessageRow is a centered card in WhatsApp\'s two inks, not a bubble', () => {
     const src = read('src/components/SystemMessageRow.tsx');
-    // Centered pill on the sunken surface with muted caption text — the spec's
-    // visual weight, matching CallLogRow and DayDivider.
+    // Amit, 2026-10-03, from a WhatsApp screenshot: a raised card on the
+    // wallpaper, session rows in green and notices in yellow. Was a muted
+    // sunken pill in tertiary ink.
     expect(src).toContain("alignItems: 'center'");
-    expect(src).toContain('radius.pill');
-    expect(src).toContain('bg.sunken');
+    expect(src).toContain('radius.sm');
+    expect(src).toContain('bg.raised');
     expect(src).toContain('typography.bodySmall');
-    expect(src).toContain('text.tertiary');
+    expect(src).toContain('color: t.color.text.available');
+    expect(src).toContain('color: t.color.text.warning');
     // Long notices wrap inside the pill instead of running past the screen
     // edge (provider chat, both trees share this cell).
     expect(src).toContain('flexShrink: 1');

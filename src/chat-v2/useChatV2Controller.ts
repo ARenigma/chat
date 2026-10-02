@@ -58,7 +58,6 @@ import {
   useAnnounceChatOpen,
   useChatConsent,
   useConfirmChatSession,
-  useDeclineSessionRequest,
   useEndSession,
   usePendingSessionRequest,
   useResumeChatConsent,
@@ -220,14 +219,16 @@ export interface ChatV2Controller {
 
   /* ---- session / consent / composer ------------------------------------ */
   activeSession: PaidSession | null;
-  awaitingMemberConsent: boolean;
-  offerExplicitStart: boolean;
+  /**
+   * The member's next send must first pass the session-start dialog: there is
+   * no session, and the provider is waiting (a pending request they joined)
+   * or the member once said not now (082's decline). Nothing opens on its
+   * own; the screen asks when the member sends (Amit, 2026-10-03).
+   */
+  consentBeforeSend: boolean;
   chatClosed: boolean;
   composerDisabled: boolean;
   composerPlaceholder: string;
-  /** The way back in after a decline. No-op until the thread exists. */
-  startSession: () => void;
-  startingSession: boolean;
   canStartAudio: boolean;
   canStartVideo: boolean;
   /** A non-chat session is live, so a second call cannot start. */
@@ -236,10 +237,12 @@ export interface ChatV2Controller {
   /* ---- the pending consent prompt -------------------------------------- */
   /** The other person opened this chat, which changes what is being agreed to. */
   theyOpenedTheChat: boolean;
-  /** Accept the pending request and start billing. Reports its own failure. */
-  acceptConsent: () => void;
-  /** Refuse, for this CONVERSATION rather than for this one request (082). */
-  declineConsent: () => void;
+  /**
+   * Start the session: confirm the provider's request, or resume after a
+   * decline. `onStarted` runs once it is safe to send the held message;
+   * `onFailed` after the failure has been reported (notice, recharge sheet).
+   */
+  acceptConsent: (onStarted: () => void, onFailed: () => void) => void;
   consentBusy: boolean;
 
   /* ---- the countdown --------------------------------------------------- */
@@ -385,7 +388,6 @@ export function useChatV2Controller(
   const { data: chatConsent } = useChatConsent(conversationId);
   const resumeConsent = useResumeChatConsent();
   const confirmChat = useConfirmChatSession();
-  const declineRequest = useDeclineSessionRequest();
   const { mutate: endSessionMutate, isPending: endingSession } = useEndSession();
   /*
    * The provider's wallet. Fetched on both sides because the hook is
@@ -622,16 +624,20 @@ export function useChatV2Controller(
       setNotifiedAt(new Date().toISOString());
     }
   }, [openAlert?.alerted, notifiedAt]);
+  // The ping's promise is kept once the other person is here: a live session
+  // means they joined, and "They'll join you here soon" above it read as still
+  // waiting (provider side, BrowserStack E2E 2026-10-01).
+  const peerJoined = activeSession?.status === 'active';
   const notice: ChatV2Notice | null = useMemo(
     () =>
-      notifiedAt === null || displayName === ''
+      notifiedAt === null || displayName === '' || peerJoined
         ? null
         : {
             at: notifiedAt,
             text: `${displayName} has been notified. They'll join you here soon.`,
             icon: 'bell',
           },
-    [notifiedAt, displayName],
+    [notifiedAt, displayName, peerJoined],
   );
   /** Whether a push really went out, which is what the header bar renders. */
   const peerNotified = openAlert?.alerted === true;
@@ -877,6 +883,7 @@ export function useChatV2Controller(
     activeSession == null;
   const offerExplicitStart =
     isMemberSide && consentDeclined && activeSession == null;
+  const consentBeforeSend = awaitingMemberConsent || offerExplicitStart;
   const chatClosed =
     isMemberSide &&
     !peerOffersChat &&
@@ -890,44 +897,12 @@ export function useChatV2Controller(
       conversationResolved: conversationId !== undefined,
       openError,
       chatClosed,
-      awaitingMemberConsent,
-      offerExplicitStart,
       peerName: displayName,
     });
   const composerDisabled = domainComposerDisabled;
   const composerPlaceholder = benchmarkReadOnly
     ? 'Benchmark read-only'
     : domainComposerPlaceholder;
-  /*
-   * The way back in after a decline — and it has to SAY something when it
-   * fails. A mutation with no `onError` is a button that looks like it did
-   * nothing, and the commonest failure here is the one the member can actually
-   * fix: an empty balance, which opens the recharge sheet. Which of the two it
-   * is comes from `chatV2ConsentFailure`, asserted as values.
-   */
-  const startSession = useCallback(() => {
-    if (benchmarkReadOnly || conversationId === undefined) {
-      return;
-    }
-    resumeConsent.mutate(
-      { conversationId },
-      {
-        onError: error => {
-          const failure = chatV2ConsentFailure(error);
-          setNotice(failure.notice);
-          if (failure.refill) {
-            openRefill();
-          }
-        },
-      },
-    );
-  }, [
-    benchmarkReadOnly,
-    conversationId,
-    resumeConsent,
-    setNotice,
-  ]);
-
   /* ---- the pending consent prompt --------------------------------------- */
   const theyOpenedTheChat =
     pendingRequest != null &&
@@ -938,45 +913,44 @@ export function useChatV2Controller(
    * share `chatV2ConsentFailure`: an empty balance names the action and opens
    * the sheet that performs it, anything else says so plainly. A mutation with
    * no `onError` is a button that looks like it did nothing.
+   *
+   * A pending request the provider joined is confirmed, which activates the
+   * session at once: they are already here. After a decline (082) the resume
+   * RPC clears it and confirms whatever request is waiting; with none waiting
+   * the held message goes out as an ordinary member first send.
    */
-  const acceptConsent = useCallback(() => {
-    if (
-      benchmarkReadOnly ||
-      conversationId === undefined ||
-      pendingRequest == null
-    ) {
-      return;
-    }
-    confirmChat.mutate(
-      { requestId: pendingRequest.id, conversationId },
-      {
-        onSuccess: () => setNotice('You are in', 'confirm'),
-        onError: error => {
-          const failure = chatV2ConsentFailure(error);
-          setNotice(failure.notice);
-          if (failure.refill) {
-            openRefill();
-          }
-        },
-      },
-    );
-  }, [
-    benchmarkReadOnly,
-    confirmChat,
-    conversationId,
-    pendingRequest,
-    setNotice,
-  ]);
-  const declineConsent = useCallback(() => {
-    if (
-      benchmarkReadOnly ||
-      conversationId === undefined ||
-      pendingRequest == null
-    ) {
-      return;
-    }
-    declineRequest.mutate({ requestId: pendingRequest.id, conversationId });
-  }, [benchmarkReadOnly, conversationId, declineRequest, pendingRequest]);
+  const acceptConsent = useCallback(
+    (onStarted: () => void, onFailed: () => void) => {
+      if (benchmarkReadOnly || conversationId === undefined) {
+        return;
+      }
+      const onError = (error: unknown) => {
+        const failure = chatV2ConsentFailure(error);
+        setNotice(failure.notice);
+        onFailed();
+        if (failure.refill) {
+          openRefill();
+        }
+      };
+      if (awaitingMemberConsent && pendingRequest != null) {
+        confirmChat.mutate(
+          { requestId: pendingRequest.id, conversationId },
+          { onSuccess: onStarted, onError },
+        );
+        return;
+      }
+      resumeConsent.mutate({ conversationId }, { onSuccess: onStarted, onError });
+    },
+    [
+      awaitingMemberConsent,
+      benchmarkReadOnly,
+      confirmChat,
+      conversationId,
+      pendingRequest,
+      resumeConsent,
+      setNotice,
+    ],
+  );
 
   /* ---- the countdown ---------------------------------------------------- */
   /*
@@ -1152,20 +1126,16 @@ export function useChatV2Controller(
     markVisible,
     purgeDraft,
     activeSession,
-    awaitingMemberConsent: benchmarkReadOnly ? false : awaitingMemberConsent,
-    offerExplicitStart: benchmarkReadOnly ? false : offerExplicitStart,
+    consentBeforeSend: benchmarkReadOnly ? false : consentBeforeSend,
     chatClosed,
     composerDisabled,
     composerPlaceholder,
-    startSession,
-    startingSession: benchmarkReadOnly ? false : resumeConsent.isPending,
     canStartAudio: benchmarkReadOnly ? false : canStartAudio,
     canStartVideo: benchmarkReadOnly ? false : canStartVideo,
     sessionBusy,
     theyOpenedTheChat,
     acceptConsent,
-    declineConsent,
-    consentBusy: confirmChat.isPending || declineRequest.isPending,
+    consentBusy: confirmChat.isPending || resumeConsent.isPending,
     sessionIsActive,
     sessionRemaining,
     sessionElapsedClock,

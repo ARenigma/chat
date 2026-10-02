@@ -14,6 +14,7 @@ import {
   CHAT_V2_PAGE_DOWN_THRESHOLD,
   chatV2Arrival,
   chatV2ComposerState,
+  chatV2InitialIndex,
   chatV2LoadState,
   chatV2MutationInputs,
   chatV2RowIds,
@@ -745,21 +746,9 @@ describe('the V2 shell renders real rows', () => {
     // The quoted parent rides with the send, and the reply bar clears first so
     // a failed send does not leave the strip pointing at a message that went.
     expect(screen).toMatch(
-      /setReplyTo\(null\);[\s\S]{0,120}void sendText\(text, parent\?\.messageId \?\? null\);[\s\S]{0,80}\[guardMode, replyTo, sendText, setNotice\]/,
+      /setReplyTo\(null\);[\s\S]{0,120}void sendText\(text, parent\?\.messageId \?\? null\);[\s\S]{0,80}\[guardMode, holdForConsent, replyTo, sendText, setNotice\]/,
     );
     expect(screen).not.toMatch(/\[chat\],\s*\);/);
-  });
-
-  it('renders the consent and start-session controls the composer copy names', () => {
-    // The placeholder says "Say yes above when you are ready" and "Start a
-    // session to keep talking". Shipping that copy with nothing above the
-    // field to say yes to is the app pointing at a control that is not there.
-    expect(screen).toContain('chat.awaitingMemberConsent');
-    expect(screen).toContain('chat.offerExplicitStart');
-    expect(screen).toContain('chat.startSession');
-    expect(screen).toContain('chat.startingSession');
-    expect(screen).toContain('testID="chat-v2-consent"');
-    expect(screen).toContain('testID="chat-v2-start-session"');
   });
 
   it('gates read receipts on the viewport rather than on arrival', () => {
@@ -957,8 +946,6 @@ describe('V2 composer state', () => {
     conversationResolved: true,
     openError: false,
     chatClosed: false,
-    awaitingMemberConsent: false,
-    offerExplicitStart: false,
     peerName: 'Asha',
   } as const;
 
@@ -974,12 +961,6 @@ describe('V2 composer state', () => {
       disabled: true,
       placeholder: 'Asha is not taking chats right now',
     });
-    expect(
-      chatV2ComposerState({ ...OPEN, offerExplicitStart: true }).placeholder,
-    ).toBe('Start a session to keep talking');
-    expect(
-      chatV2ComposerState({ ...OPEN, awaitingMemberConsent: true }).placeholder,
-    ).toBe('Say yes above when you are ready');
   });
 
   it('names the failure when the conversation could not be created', () => {
@@ -1155,6 +1136,53 @@ describe('V2 scroll policy', () => {
   });
 });
 
+describe('chatV2InitialIndex', () => {
+  /*
+   * `chatV2InitialIndex` is the pure function the screen uses once to decide
+   * whether to position at the unread divider or stay at offset 0 (newest).
+   * Tests cover the two cases the screen branches on.
+   */
+  it('returns null when there is no unread divider (all read or no messages)', () => {
+    const rows = buildChatV2Rows({
+      ...EMPTY,
+      messages: newestFirst([message({ sender_id: ME }), message()]),
+      unreadAnchorId: null,
+    });
+    expect(chatV2InitialIndex(rows)).toBeNull();
+  });
+
+  it('returns the divider index when an unread anchor is present', () => {
+    /*
+     * The divider is inserted one index after the oldest unread message in the
+     * newest-first rows array — so scrolling to that index on an inverted list
+     * shows the divider at the top with the oldest unread just below it.
+     */
+    const older = message({ read_at: new Date(BASE).toISOString() });     // read
+    const oldest_unread = message({ created_at: new Date(BASE + 1_000).toISOString() }); // unread peer msg
+    const newer_unread = message({ created_at: new Date(BASE + 2_000).toISOString() }); // unread peer msg
+    const rows = buildChatV2Rows({
+      ...EMPTY,
+      messages: newestFirst([newer_unread, oldest_unread, older]),
+      unreadAnchorId: oldest_unread.id,
+    });
+    const dividerIndex = rows.findIndex(r => r.id === 'unread-divider');
+    expect(dividerIndex).toBeGreaterThan(-1);
+    expect(chatV2InitialIndex(rows)).toBe(dividerIndex);
+  });
+
+  it('returns null on an empty row array', () => {
+    expect(chatV2InitialIndex([])).toBeNull();
+  });
+
+  it('the screen imports and uses chatV2InitialIndex for its one-shot unread scroll', () => {
+    const screen = read('src/chat-v2/ChatScreenV2.tsx');
+    expect(screen).toContain('chatV2InitialIndex');
+    expect(screen).toContain('scrollToIndex');
+    // The ref that prevents re-triggering after the first scroll.
+    expect(screen).toContain('unreadScrollDone');
+  });
+});
+
 describe('V2 retry routing', () => {
   const failed = (overrides: Partial<TranscriptMessage>) =>
     buildChatV2Rows({
@@ -1220,5 +1248,43 @@ describe('V2 retry routing', () => {
 
     expect(chatV2RetryKind(healthy)).toBe('none');
     expect(chatV2RetryKind(failed({ body: null }))).toBe('none');
+  });
+});
+
+/*
+ * Amit, 2026-10-03: a provider's message just arrives, with no dialog; the
+ * member reads and types freely, and the session-start dialog appears when
+ * they send. Yes delivers the held message; not now keeps it in the field.
+ */
+describe('session start is asked at send time, never on its own', () => {
+  const screen = read('src/chat-v2/ChatScreenV2.tsx');
+  const controller = read('src/chat-v2/useChatV2Controller.ts');
+  const composer = read('src/chat-v2/ChatComposerV2.tsx');
+
+  it('opens the dialog from the send, not from a pending request', () => {
+    expect(screen).toMatch(/visible=\{askConsent\}/);
+    expect(screen).not.toMatch(/visible=\{chat\.awaitingMemberConsent\}/);
+    expect(screen).toMatch(/if \(holdForConsent\(\)\) \{\s*return false;/);
+  });
+
+  it('never refuses on not now, and offers no Start session pill', () => {
+    expect(screen).toContain('cancelLabel="Not now"');
+    expect(screen).not.toContain('chat-v2-start-session');
+    expect(controller).not.toContain('useDeclineSessionRequest');
+  });
+
+  it('keeps the field usable while consent is outstanding', () => {
+    expect(chatV2ComposerState({
+      conversationResolved: true,
+      openError: false,
+      chatClosed: false,
+      peerName: 'Asha',
+    })).toEqual({ disabled: false, placeholder: 'Message' });
+  });
+
+  it('holds a refused send in the composer and resends it on yes', () => {
+    expect(composer).toMatch(/if \(!onSendVoice\(draft\)\) \{\s*return;/);
+    expect(composer).toMatch(/resend: draft !== null \? sendVoice : send/);
+    expect(screen).toContain('composerRef.current?.resend()');
   });
 });

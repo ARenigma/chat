@@ -207,6 +207,9 @@ const MIGRATIONS = [
   'supabase/migrations/159_contact_guard_review.sql',
   'supabase/migrations/170_delete_account_ends_every_live_session.sql',
   'supabase/migrations/180_provider_edits_own_profile.sql',
+  'supabase/migrations/181_chat_billing_deferred_to_first_provider_reply.sql',
+  'supabase/migrations/182_provider_presence_push.sql',
+  'supabase/migrations/183_unread_count_sync_on_read.sql',
 ];
 
 /**
@@ -1042,9 +1045,24 @@ const suites = [
       'a moderator strikes a reported story once, the ladder fills the removal and human review queues, and clear, suspend and ban resolve them, audited',
   },
   {
+    file: join(ROOT, 'supabase/tests/181_chat_billing_deferred.sql'),
+    label:
+      'chat session billing is deferred to the first provider reply: no debits on an unanswered session, minute 1 on first reply, stale lease ends without extra billing, manual end flushes correctly',
+  },
+  {
     file: join(ROOT, 'supabase/tests/600_provider_edits_own_profile.sql'),
     label:
       "a live provider edits their own headline, about and languages through one RPC, inside the columns' rules and the contact guard, and a member cannot",
+  },
+  {
+    file: join(ROOT, 'supabase/tests/610_provider_presence_push.sql'),
+    label:
+      'provider_presence is written only on transitions, an explicit offline pushes immediately, availability toggle fires the trigger, the cron sweeper flips stale rows, RLS hides blocked pairs, anon is refused, and the table is in the realtime publication',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/620_unread_count_sync_on_read.sql'),
+    label:
+      'unread_count_member/provider resets to the true message count when read_at is set on any message, including out-of-session messages, and hidden messages are excluded from the count',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

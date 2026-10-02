@@ -1,10 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlashList, type FlashListProps } from '@shopify/flash-list';
+import { FlashList } from '@shopify/flash-list';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  useAnimatedScrollHandler,
-  useSharedValue,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
@@ -23,7 +19,6 @@ import { Pressable } from '../components/Pressable';
 import { ChatStartHint } from '../components/ChatStartHint';
 import { ConversationMenu } from '../components/ConversationMenu';
 import type { MenuAnchor } from '../components/PaperMenu';
-import { TopAppBar } from '../components/TopAppBar';
 import { Badge } from '../components/Badge';
 import { Divider } from '../components/Divider';
 import { compareConversations, visibleOnList } from '../lib/railPrefs';
@@ -34,12 +29,6 @@ interface Props {
   onBack: () => void;
   onOpenConversation: (peerId: string) => void;
 }
-
-// Reanimated wrapper so the list's scroll offset can drive the medium app bar's
-// collapse on the UI thread (a plain onScroll would run this every frame on JS).
-const AnimatedFlashList = Animated.createAnimatedComponent(
-  FlashList as React.ComponentType<FlashListProps<ConversationSummary>>,
-);
 
 function summaryLabel(conversation: ConversationSummary): string {
   if (conversation.last_session_status === 'active') return 'Active session';
@@ -87,11 +76,6 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
     [conversations, blocked, railPrefs],
   );
 
-  const scrollY = useSharedValue(0);
-  const onScroll = useAnimatedScrollHandler(e => {
-    scrollY.value = e.contentOffset.y;
-  });
-
   const openMenu = useCallback((peerId: string, anchor: MenuAnchor) => {
     setMenuAnchor(anchor);
     setMenuPeer(peerId);
@@ -111,21 +95,27 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <TopAppBar
-        variant="medium"
-        title="Chats"
-        subtitle={rows.length > 0 ? `${rows.length} ${rows.length === 1 ? 'conversation' : 'conversations'}` : undefined}
-        leading={<BackButton onPress={onBack} testID="chatslist-back" />}
-        scrollY={scrollY}
-        testID="chatslist-bar"
-      />
+      {/*
+       * One row, back beside the title: the bar every pushed screen in the app
+       * uses (Usage, Transactions, Invoices, Blocked users). This was the only
+       * one on the two-row medium bar, whose back arrow sat a row above its own
+       * headline (Amit, 2026-09-29: "similar app bar ... like other screens").
+       */}
+      <View style={styles.bar} testID="chatslist-bar">
+        <BackButton onPress={onBack} testID="chatslist-back" />
+        <Text
+          maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight}
+          allowFontScaling
+          accessibilityRole="header"
+          style={styles.barTitle}>
+          Chats
+        </Text>
+      </View>
       {rows.length > 0 ? (
-        <AnimatedFlashList
+        <FlashList
           data={rows}
           keyExtractor={c => c.conversation_id}
           showsVerticalScrollIndicator={false}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
           {...SCROLL_PHYSICS}
           contentContainerStyle={{ paddingBottom: barOffset }}
           renderItem={renderRow}
@@ -256,6 +246,15 @@ function ChatListRow({
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: t.color.bg.base },
+    // As UsageLedgerScreen's bar, so every pushed screen's title sits the same.
+    bar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.md,
+      paddingBottom: TOKENS.space.xs,
+    },
+    barTitle: { ...TOKENS.typography.textLgSemiBoldTight, color: t.color.text.primary },
     row: {
       flexDirection: 'row',
       alignItems: 'center',

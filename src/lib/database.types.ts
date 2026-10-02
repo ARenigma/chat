@@ -553,6 +553,20 @@ export type ProviderSummary = {
 };
 
 /**
+ * One row of `public.provider_presence` (migration 182): the pushable shadow
+ * of a provider's derived online flag, written only on transitions.
+ * Subscribed via postgres_changes; polls are the fallback only.
+ */
+export type ProviderPresenceChange = {
+  provider_id: string;
+  /** True when is_available AND presence_online AND last_active_at within 75 s. */
+  online: boolean;
+  /** date_trunc('minute', last_active_at) at write time. Null while never seen. */
+  last_seen_at: string | null;
+  updated_at: string;
+};
+
+/**
  * One row of `provider_busy_waits` (migration 154): a listed provider who is in
  * a live paid session, and nothing about the member they are with.
  */
@@ -1378,6 +1392,16 @@ export type Database = {
       /** Public as far as the comment is (148). Written by react_to_story_comment. */
       story_comment_reactions: {
         Row: StoryCommentReaction;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      /**
+       * One row per provider; written only on transitions of the derived online
+       * value (182). SELECT for authenticated members; no client writes.
+       */
+      provider_presence: {
+        Row: ProviderPresenceChange;
         Insert: never;
         Update: never;
         Relationships: [];

@@ -1075,6 +1075,9 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       gap: TOKENS.space['2xs'],
       paddingVertical: TOKENS.space['2xs'],
+      paddingHorizontal: TOKENS.space['2xs'],
+      // Clip state layer to a rounded shape (star icon + text link).
+      borderRadius: TOKENS.radius.xs,
     },
     rateFooterText: {
       ...TOKENS.typography.labelLargeEmphasized,

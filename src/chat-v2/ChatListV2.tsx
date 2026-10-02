@@ -34,6 +34,8 @@ import {
   type ChatV2ImageBody,
   type ChatV2Row,
 } from './rows';
+import { useChatKeyboardFrozen } from './useChatKeyboardFrozen';
+import { ChatScrollThumbV2, useScrollThumb } from './ChatScrollThumbV2';
 
 interface Props {
   /** Newest first. The list is `inverted`, so index 0 paints at the bottom. */
@@ -113,11 +115,15 @@ export function ChatListV2({
 }: Props) {
   const styles = useStyles(makeStyles);
 
+  // The right-edge scroll thumb; its timing lives with it (useScrollThumb).
+  const thumb = useScrollThumb(extraContentPadding);
+  const onThumbScroll = thumb.onScroll;
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       onScrollOffset(event.nativeEvent.contentOffset.y);
+      onThumbScroll(event);
     },
-    [onScrollOffset],
+    [onScrollOffset, onThumbScroll],
   );
 
   const onViewableItemsChanged = useCallback(
@@ -178,6 +184,7 @@ export function ChatListV2({
           <View testID="chat-v2-system">
             <SystemMessageRow
               text={item.text}
+              tone={item.tone}
               icon={item.icon}
               emoji={item.emoji}
             />
@@ -266,11 +273,9 @@ export function ChatListV2({
    * layout work for it. `PeerTyping` is a module-level memo, so handing it
    * here does not invalidate the list either.
    */
-  const header = useCallback(
-    () => <PeerTyping name={peerName} />,
-    [peerName],
-  );
+  const header = useCallback(() => <PeerTyping name={peerName} />, [peerName]);
 
+  const covered = useChatKeyboardFrozen();
   const renderScrollComponent = useCallback(
     (props: ScrollViewProps) => (
       <KeyboardChatScrollView
@@ -280,32 +285,40 @@ export function ChatListV2({
         contentInsetAdjustmentBehavior="never"
         keyboardDismissMode="interactive"
         keyboardLiftBehavior="always"
+        // A sheet over the chat owns the keyboard it opens (useChatKeyboardFrozen).
+        freeze={covered}
         offset={safeAreaOffset}
         extraContentPadding={extraContentPadding}
       />
     ),
-    [extraContentPadding, safeAreaOffset],
+    [covered, extraContentPadding, safeAreaOffset],
   );
 
   return (
-    <FlashList
-      ref={listRef}
-      testID="chat-v2-list"
-      style={styles.list}
-      contentContainerStyle={styles.content}
-      data={rows}
-      inverted
-      drawDistance={Dimensions.get('screen').height}
-      getItemType={getItemType}
-      keyExtractor={keyExtractor}
-      renderItem={renderItem}
-      ListHeaderComponent={header}
-      renderScrollComponent={renderScrollComponent}
-      viewabilityConfig={VIEWABILITY_CONFIG}
-      onViewableItemsChanged={onViewableItemsChanged}
-      onScroll={onScroll}
-      scrollEventThrottle={16}
-    />
+    <View style={styles.list}>
+      <FlashList
+        ref={listRef}
+        testID="chat-v2-list"
+        style={styles.list}
+        // The system bar would sit on the LEFT: Android FlashList inverts by
+        // rotating 180°. ChatScrollThumbV2 draws it on the right instead.
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        data={rows}
+        inverted
+        drawDistance={Dimensions.get('screen').height}
+        getItemType={getItemType}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={header}
+        renderScrollComponent={renderScrollComponent}
+        viewabilityConfig={VIEWABILITY_CONFIG}
+        onViewableItemsChanged={onViewableItemsChanged}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+      />
+      <ChatScrollThumbV2 {...thumb.props} />
+    </View>
   );
 }
 

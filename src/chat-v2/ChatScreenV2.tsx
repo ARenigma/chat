@@ -44,19 +44,21 @@ import { errorTick } from '../lib/haptics';
 import { openRefill, openWallet } from '../lib/routes/actions';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import type { VoiceDraft } from '../lib/voice';
+import { useChatKeyboardFrozen } from './useChatKeyboardFrozen';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStore } from '../store/useStore';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { chatV2PageDownBottom, type ChatV2CallPermissions } from './cells';
 import { ChatActionsV2, type ChatV2ActionRequest } from './ChatActionsV2';
 import { BirthDetailsSheet } from './BirthDetailsSheet';
-import { ChatComposerV2 } from './ChatComposerV2';
+import { ChatWallpaper } from '../components/ChatWallpaper';
+import { ChatComposerV2, type ChatComposerV2Handle } from './ChatComposerV2';
 import { ChatHeaderV2 } from './ChatHeaderV2';
 import { ChatListV2 } from './ChatListV2';
 import type { ChatV2Anchor } from './ChatMessageCellV2';
 import { ChatPageDownV2 } from './ChatPageDownV2';
 import { ChatSessionBarV2 } from './ChatSessionBarV2';
-import { chatV2Arrival, chatV2RowIds, chatV2ScrolledAway } from './chatState';
+import { chatV2Arrival, chatV2InitialIndex, chatV2RowIds, chatV2ScrolledAway } from './chatState';
 import {
   chatV2RecentOwnTexts,
   type ChatV2ImageBody,
@@ -167,6 +169,9 @@ export function ChatScreenV2({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const { bottom } = useSafeAreaInsets();
+  // A sheet over the chat owns any keyboard it opens: the dock stays put
+  // behind it (useChatKeyboardFrozen).
+  const covered = useChatKeyboardFrozen();
   const chat = useChatV2Controller(providerId, benchmarkReadOnly, { live, focused });
   const mutationOnStartCall = benchmarkReadOnly ? undefined : onStartCall;
   const { rows, sendText, sendVoice } = chat;
@@ -342,6 +347,33 @@ export function ChatScreenV2({
   // composer's handler.
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+
+  /*
+   * The session-start dialog, asked at the moment of sending and never on its
+   * own (Amit, 2026-10-03: a provider's message just arrives; replying is what
+   * asks). The send returns false so the composer keeps the text or the
+   * recording; yes starts the session and `resend()` sends what was held, not
+   * now leaves it where it is. `consentGranted` covers the gap between the
+   * yes and the session query catching up, so the resend is not asked again.
+   */
+  const composerRef = useRef<ChatComposerV2Handle>(null);
+  const consentGranted = useRef(false);
+  const heldBirthDetails = useRef<string | null>(null);
+  const [askConsent, setAskConsent] = useState(false);
+  const { consentBeforeSend } = chat;
+  useEffect(() => {
+    if (!consentBeforeSend) {
+      consentGranted.current = false;
+    }
+  }, [consentBeforeSend]);
+  const holdForConsent = useCallback(() => {
+    if (!consentBeforeSend || consentGranted.current) {
+      return false;
+    }
+    setAskConsent(true);
+    return true;
+  }, [consentBeforeSend]);
+
   const onSend = useCallback(
     (text: string): boolean => {
       const refusal = precheckContactGuard(
@@ -356,12 +388,15 @@ export function ChatScreenV2({
         errorTick();
         return false;
       }
+      if (holdForConsent()) {
+        return false;
+      }
       const parent = replyTo;
       setReplyTo(null);
       void sendText(text, parent?.messageId ?? null);
       return true;
     },
-    [guardMode, replyTo, sendText, setNotice],
+    [guardMode, holdForConsent, replyTo, sendText, setNotice],
   );
   /*
    * The birth-details card, astrologer chats only. It sends through `onSend`,
@@ -375,12 +410,49 @@ export function ChatScreenV2({
 
   const onSendVoice = useCallback(
     (draft: VoiceDraft) => {
+      if (holdForConsent()) {
+        return false;
+      }
       const parent = replyTo;
       setReplyTo(null);
       void sendVoice(draft, parent?.messageId ?? null);
+      return true;
     },
-    [replyTo, sendVoice],
+    [holdForConsent, replyTo, sendVoice],
   );
+  // The birth-details card sends outside the composer, so it holds its own.
+  const onSendBirthDetails = useCallback(
+    (body: string) => {
+      if (consentBeforeSend && !consentGranted.current) {
+        heldBirthDetails.current = body;
+        setAskConsent(true);
+        return false;
+      }
+      return onSend(body);
+    },
+    [consentBeforeSend, onSend],
+  );
+  const { acceptConsent } = chat;
+  const onConsentConfirm = useCallback(() => {
+    acceptConsent(
+      () => {
+        consentGranted.current = true;
+        setAskConsent(false);
+        const birth = heldBirthDetails.current;
+        heldBirthDetails.current = null;
+        if (birth === null) {
+          composerRef.current?.resend();
+        } else if (onSend(birth)) {
+          setBirthVisible(false);
+        }
+      },
+      () => setAskConsent(false),
+    );
+  }, [acceptConsent, onSend]);
+  const onConsentCancel = useCallback(() => {
+    heldBirthDetails.current = null;
+    setAskConsent(false);
+  }, []);
 
   /* ---- leaving, and the three ways a draft dies ------------------------- */
   /*
@@ -658,6 +730,37 @@ export function ChatScreenV2({
     return () => cancelAnimationFrame(frame);
   }, [rows]);
 
+  /*
+   * One-shot: position at the unread divider the first time it appears.
+   *
+   * This effect runs AFTER the arrival effect (React fires effects in source
+   * order within the same commit), so its requestAnimationFrame is queued
+   * second and executes after the arrival's pin-to-0, overriding it. Once
+   * `unreadScrollDone` is set, subsequent row rebuilds (peer messages
+   * arriving, read receipts, edits) do not repeat it — the member is now
+   * reading and the normal arrival/page-down logic takes over.
+   *
+   * The list is inverted, so scroll coordinates run from the visual bottom:
+   * `viewPosition: 1` puts the divider at the visual top with the unread
+   * messages below it. When they all fit on screen the offset clamps to 0,
+   * which is the newest message, same as the arrival pin.
+   */
+  const unreadScrollDone = useRef(false);
+  useEffect(() => {
+    if (unreadScrollDone.current) {
+      return;
+    }
+    const index = chatV2InitialIndex(rows);
+    if (index === null) {
+      return;
+    }
+    unreadScrollDone.current = true;
+    const frame = requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 1 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rows]);
+
   const consentCopy = chatV2ConsentCopy({
     peerName: chat.displayName,
     theyOpenedTheChat: chat.theyOpenedTheChat,
@@ -728,6 +831,10 @@ export function ChatScreenV2({
         textInputNativeID="chat-v2-input"
         style={styles.keyboardArea}
       >
+        {/* The doodle wallpaper, behind everything and untouchable. v2 shipped
+            without it (only v1 mounted it), and 73af7b8 then deleted the
+            component as unused; restored 2026-10-03 at Amit's request. */}
+        <ChatWallpaper />
         <ChatListV2
           rows={chat.rows}
           listRef={listRef}
@@ -831,6 +938,7 @@ export function ChatScreenV2({
          */}
         <KeyboardStickyView
           offset={{ opened: bottom }}
+          enabled={!covered}
           style={[
             styles.pageDownDock,
             { bottom: chatV2PageDownBottom(dockHeight) },
@@ -845,36 +953,16 @@ export function ChatScreenV2({
           />
         </KeyboardStickyView>
 
-        <KeyboardStickyView offset={{ opened: bottom }} style={styles.dock}>
+        <KeyboardStickyView
+          offset={{ opened: bottom }}
+          enabled={!covered}
+          style={styles.dock}>
           {/* ONE measured wrapper around every sticky child. See `onDockLayout`. */}
           <View
             testID="chat-v2-dock"
             style={styles.dockBody}
             onLayout={onDockLayout}
           >
-            {/*
-              * The pending-consent prompt is NOT here. It is the dialog at the
-              * foot of this file, because it is a decision with two answers —
-              * one of them a refusal that ends the asking for this whole
-              * conversation (082) — and a dock row can only offer the yes.
-              * The composer's placeholder points at it.
-              */}
-            {chat.offerExplicitStart ? (
-              <View style={styles.dockRow}>
-                <Pressable
-                  testID="chat-v2-start-session"
-                  accessibilityRole="button"
-                  accessibilityLabel="Start session"
-                  disabled={chat.startingSession}
-                  style={styles.retry}
-                  onPress={chat.startSession}
-                >
-                  <Text allowFontScaling style={styles.retryLabel}>
-                    {chat.startingSession ? 'Starting' : 'Start session'}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
             {replyTo !== null ? (
               <View testID="chat-v2-reply" style={styles.replyBar}>
                 <View style={styles.replyRule} />
@@ -911,6 +999,7 @@ export function ChatScreenV2({
               </View>
             ) : null}
             <ChatComposerV2
+              ref={composerRef}
               bottomInset={bottom}
               readOnly={benchmarkReadOnly}
               conversationId={chat.conversationId}
@@ -964,7 +1053,7 @@ export function ChatScreenV2({
       <BirthDetailsSheet
         visible={birthVisible}
         onClose={closeBirthDetails}
-        onSend={onSend}
+        onSend={onSendBirthDetails}
       />
 
       {/*
@@ -1034,22 +1123,22 @@ export function ChatScreenV2({
       />
 
       {/*
-       * The one prompt that asks a member to start paying, and the only place
-       * a pending request can be REFUSED. A decline is a fact about the
-       * conversation rather than about this request (082), so it is not asked
-       * again on the next exchange.
+       * The one prompt that asks a member to start paying, opened by their
+       * own send (`holdForConsent`). Not now refuses nothing: the request
+       * stays, the message stays in the composer, and the next send asks
+       * again.
        */}
       <ConfirmDialog
-        visible={chat.awaitingMemberConsent}
+        visible={askConsent}
         testID="chat-v2-consent"
         title={consentCopy.title}
         body={consentCopy.body}
-        cancelLabel="Decline"
+        cancelLabel="Not now"
         confirmLabel="Start session"
         busy={chat.consentBusy}
         busyLabel="Just a moment"
-        onCancel={chat.declineConsent}
-        onConfirm={chat.acceptConsent}
+        onCancel={onConsentCancel}
+        onConfirm={onConsentConfirm}
       />
 
       {/* One dialog, two intents: back (end and leave) and the header's End

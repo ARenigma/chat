@@ -255,14 +255,11 @@ const PARITY: readonly {
     tokens: ['testID="chat-v2-peer-notified"'],
   },
   {
-    feature: 'pending consent, accepted or declined',
+    // Asked at send time, never on its own (Amit, 2026-10-03); a past
+    // decline resumes through the same dialog, so there is no separate pill.
+    feature: 'session start asked when the member sends',
     file: 'ChatScreenV2.tsx',
-    tokens: ['testID="chat-v2-consent"', 'acceptConsent', 'declineConsent'],
-  },
-  {
-    feature: 'the explicit start after a decline',
-    file: 'ChatScreenV2.tsx',
-    tokens: ['testID="chat-v2-start-session"'],
+    tokens: ['testID="chat-v2-consent"', 'acceptConsent', 'holdForConsent'],
   },
   {
     feature: 'leaving a paid session is confirmed, once, for both intents',

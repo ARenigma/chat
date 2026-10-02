@@ -42,8 +42,11 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Icon, type IconName } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { track } from '../lib/telemetry';
+import { logEvent } from '../lib/sentry';
 import { setKeepScreenOn } from '../lib/windowChrome';
 import { openRefill } from '../lib/routes/actions';
+import { markCallEnded } from '../lib/intents';
+import { CountdownRing } from '../components/CountdownRing';
 
 /** Which way the call goes. Outgoing dials; incoming rings and offers answer. */
 type CallDirection = 'out' | 'in';
@@ -312,6 +315,13 @@ export function CallScreen({
     direction === 'in' ? 'incoming' : incomingCallId !== null ? 'ringing' : 'starting',
   );
   const [upgrading, setUpgrading] = useState(false);
+  // When this side's video request went out, for the countdown ring on the
+  // button. Cleared with `upgrading` by the effect below, so every path that
+  // ends the request (answer, decline, expiry, call end) clears it too.
+  const [upgradeStartedAt, setUpgradeStartedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!upgrading) setUpgradeStartedAt(null);
+  }, [upgrading]);
   /**
    * In-place media upgrade (migration 123): a pending request from the PEER
    * to switch audio↔video on the live call. Shown as a consent dialog.
@@ -377,12 +387,19 @@ export function CallScreen({
     onGuard?.({ ending, openLeave: () => setLeaveDialogVisible(true) });
   }, [ending, onGuard]);
 
-  // Outgoing needs the conversation the call belongs to; a member calling a
-  // provider resolves it exactly as opening a chat does.
-  const { data: openedId } = useConversationId(direction === 'out' ? providerId : null);
-  // For an incoming call (provider receiving), the conversation is in peerThread.
-  // (Reserved for future use — in-place upgrade no longer needs it.)
-  const _conversationId = openedId ?? peerThread?.conversation_id; void _conversationId;
+  // Outgoing needs the conversation the call belongs to. A member calling a
+  // provider resolves it via open_conversation (member-only RPC that takes a
+  // provider id). A provider calling a member must NOT pass the member id as
+  // p_provider_id — open_conversation would fail because the member is not in
+  // the provider directory. Providers already have the thread in peerThread, so
+  // that is the source of truth for the provider-outgoing path.
+  // Migration 105, line 28: "PROVIDER PLACES A CALL: wired."
+  const { data: openedId } = useConversationId(
+    direction === 'out' && isMemberSide ? providerId : null,
+  );
+  // Falls back to peerThread.conversation_id for the provider-outgoing path
+  // where open_conversation is not applicable.
+  const resolvedConversationId = openedId ?? peerThread?.conversation_id;
 
   // End on unmount if the call was live, so End / Decline / hardware-back all
   // hang up through one path. Refs so the cleanup sees the latest without
@@ -502,7 +519,7 @@ export function CallScreen({
 
   // Outgoing: place the call once the conversation resolves.
   useEffect(() => {
-    if (direction !== 'out' || callId !== null || openedId === undefined) {
+    if (direction !== 'out' || callId !== null || resolvedConversationId === undefined) {
       return;
     }
     const needsConsent = isMemberSide && incomingCallId === null;
@@ -510,7 +527,7 @@ export function CallScreen({
       return;
     }
     let live = true;
-    void startCall(openedId, medium).then((r: CallResult | null) => {
+    void startCall(resolvedConversationId, medium).then((r: CallResult | null) => {
       if (!live) {
         return;
       }
@@ -559,7 +576,33 @@ export function CallScreen({
     return () => {
       live = false;
     };
-  }, [direction, openedId, callId, medium, isMemberSide, incomingCallId, memberConsented, onEnd, setNotice]);
+  }, [direction, resolvedConversationId, callId, medium, isMemberSide, incomingCallId, memberConsented, onEnd, setNotice]);
+
+  /*
+   * Hard timeout for outgoing calls that never receive a server call_id.
+   *
+   * Without this, a refused or silently-dropped start_call leaves the screen
+   * in the 'starting' phase forever — verified on a real device (B-BS-5,
+   * 2026-10-02): the provider saw "Calling" for >90 s with no row in
+   * public.calls. 15 s covers two round trips on poor connections while still
+   * being short enough to feel wrong rather than correct.
+   */
+  //
+  // The clock starts only once the call may actually be placed: a member still
+  // reading the price sheet has not asked for anything yet, and ending their
+  // screen 15 s into reading it would be the bug, not the fix.
+  const awaitingConsent = isMemberSide && incomingCallId === null && !memberConsented;
+  useEffect(() => {
+    if (direction !== 'out' || callId !== null || awaitingConsent) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      logEvent('call_start_timeout', { medium });
+      setNotice('Could not start the call. Nothing was charged.');
+      onEnd();
+    }, 15_000);
+    return () => clearTimeout(timer);
+  }, [direction, callId, awaitingConsent, medium, onEnd, setNotice]);
 
   useEffect(() => {
     if (callId === null) return;
@@ -649,6 +692,7 @@ export function CallScreen({
           medium,
           reason: 'hangup',
         });
+        logEvent('call_ended', { medium, reason: 'hangup' });
       }
     },
     [medium],
@@ -744,6 +788,11 @@ export function CallScreen({
         return;
       }
       endedRef.current = true;
+      // Publish to the intent queue so a stale glare lock is cleared before
+      // the next ring arrives (B-BS-4: ring-timeout leaves activeCall set).
+      if (callIdRef.current !== null) {
+        markCallEnded(callIdRef.current);
+      }
       /*
        * A call is the one paid session with no `useSessionRealtime` subscription
        * (that hook is keyed by conversation and lives in the chat's controller), so the
@@ -766,6 +815,7 @@ export function CallScreen({
       if (!connectedTrackedRef.current) {
         connectedTrackedRef.current = true;
         track('call_answered', { backend, medium });
+        logEvent('call_connected', { medium });
       }
       if (callId !== null) {
         void heartbeatCall(callId).then(result => {
@@ -992,6 +1042,7 @@ export function CallScreen({
       return;
     }
     if (!iAsked) return;
+    logEvent('video_switch_result', { status: result });
     setNotice(
       result === 'declined'
         ? `${name} would rather stay on voice.`
@@ -1007,7 +1058,9 @@ export function CallScreen({
 
   const askForVideo = () => {
     if (callId === null) return;
+    logEvent('video_switch_requested', { medium: 'video' });
     setUpgrading(true);
+    setUpgradeStartedAt(Date.now());
     askedRef.current = true;
     const attempt = ++askAttempt.current;
     askInFlight.current = true;
@@ -1506,6 +1559,11 @@ export function CallScreen({
               }}
               onLongPress={liveMedium === 'video' && videoEnabled ? switchCamera : undefined}
               label={liveMedium === 'voice' ? (upgrading ? 'Requesting' : 'Switch to Video') : videoEnabled ? 'Camera off' : 'Start Video'}
+              countdown={
+                liveMedium === 'voice' && upgrading && upgradeStartedAt !== null
+                  ? { startedAtMs: upgradeStartedAt, durationMs: VIDEO_SWITCH_REQUEST_TTL_MS }
+                  : undefined
+              }
             />
             <BarButton
               testID="call-mute"
@@ -1673,6 +1731,7 @@ function BarButton({
   label,
   testID,
   disabled = false,
+  countdown,
 }: {
   glyph: IconName;
   active?: boolean;
@@ -1683,6 +1742,8 @@ function BarButton({
   label: string;
   testID: string;
   disabled?: boolean;
+  /** A wait this button started: a ring around it empties as it runs out. */
+  countdown?: { startedAtMs: number; durationMs: number };
 }) {
   const styles = useStyles(makeStyles);
   // An active ghost toggle takes the SOLID treatment, not a 20% alpha nudge on
@@ -1697,6 +1758,22 @@ function BarButton({
         : LIGHT.color.text.onAccent;
   return (
     <View style={styles.barSlot}>
+      <View style={styles.barButtonAnchor}>
+      {countdown !== undefined ? (
+        <CountdownRing
+          testID={`${testID}-countdown`}
+          size={BTN}
+          gap={3}
+          thickness={3}
+          // White on the call's dark wash, the ink the bar's labels use; the
+          // track is the ghost button's own 22% white, so the empty part reads
+          // as the same material.
+          color={LIGHT.color.text.onAccent}
+          trackColor="rgba(255,255,255,0.22)"
+          startedAtMs={countdown.startedAtMs}
+          durationMs={countdown.durationMs}
+        />
+      ) : null}
       <Pressable
         onPress={onPress}
         onLongPress={onLongPress}
@@ -1723,6 +1800,7 @@ function BarButton({
         ]}>
         <Icon name={glyph} size={TOKENS.icon.lg} color={fg} />
       </Pressable>
+      </View>
       <Text allowFontScaling style={[styles.barLabel, disabled && styles.barSlotDisabled]}>
         {label}
       </Text>
@@ -2011,6 +2089,11 @@ const makeStyles = (t: Theme) =>
       // Matches the Pressable's own disabled dim (0.45) so the icon and its
       // label fade to the same level. (2026-09-09 review)
       opacity: 0.45,
+    },
+    // The button's own box, so a countdown ring can sit centred around it.
+    barButtonAnchor: {
+      width: BTN,
+      height: BTN,
     },
     barButton: {
       width: BTN,

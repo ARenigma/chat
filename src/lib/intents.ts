@@ -14,6 +14,7 @@ import { glareDecision, type ActiveCall, type IncomingCallIntent } from './route
 import { useStore } from '../store/useStore';
 // activeElements created alongside this module in step 3.
 import { closeAllActiveElements } from './activeElements';
+import { logEvent } from './sentry';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,6 +78,38 @@ const _queue: TaggedIntent[] = [];
  */
 export const routedCalls = new Set<string>();
 const ROUTED_CALLS_MAX = 50;
+
+/**
+ * callIds that have ended in this session. When `activeCall.callId` is found
+ * here, `flushIntents` treats the glare lock as stale and clears it so the
+ * next incoming ring is not erroneously busy-declined.
+ *
+ * Covers the B-BS-4 scenario: an unanswered ring times out, `finish` fires in
+ * CallScreen, but `endActiveCall` is never called (the route is blocked from
+ * unmounting or captured the wrong seq), leaving `activeCall` set. Without this
+ * backstop the next ring meets a non-null `activeCall` and is busy-declined.
+ * nav-migration §3.
+ */
+export const endedCallIds = new Set<string>();
+const ENDED_CALLS_MAX = 50;
+
+/**
+ * Mark a call as finished. Called from CallScreen's `finish()` the moment this
+ * device considers the call over. The intent queue reads this to bypass a stale
+ * glare lock before applying `glareDecision`. Bounded to ENDED_CALLS_MAX.
+ */
+export function markCallEnded(callId: string): void {
+  if (endedCallIds.size >= ENDED_CALLS_MAX) {
+    const first = endedCallIds.values().next().value as string;
+    endedCallIds.delete(first);
+  }
+  endedCallIds.add(callId);
+}
+
+/** Test helper: reset ended call tracking. @internal */
+export function _resetEndedCallIds(): void {
+  endedCallIds.clear();
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -200,17 +233,30 @@ export function flushIntents(): void {
     // rules against it rather than a snapshot taken before the loop.
     const activeCall: ActiveCall | null = useStore.getState().activeCall;
     if (activeCall !== null) {
-      // An active call is already on screen: apply the glare rules.
-      const decision = glareDecision(activeCall, callIntent);
-      if (decision === 'duplicate' || decision === 'ownDialRace') {
+      // Defensive backstop (B-BS-4): if this activeCall's callId was already
+      // observed as ended by markCallEnded (e.g., the ring timed out and
+      // finish() fired, but endActiveCall was never called due to a nav race
+      // or usePreventRemove holding the route), clear the stale lock now so
+      // the new ring is not erroneously busy-declined.
+      if (activeCall.callId !== null && endedCallIds.has(activeCall.callId)) {
+        logEvent('call_stale_lock_cleared', { medium: intent.medium });
+        useStore.getState().endActiveCall(activeCall.seq);
+        // Fall through: activeCall is now null; route this ring normally.
+      } else {
+        // An active call is already on screen: apply the glare rules.
+        const decision = glareDecision(activeCall, callIntent);
+        if (decision === 'duplicate' || decision === 'ownDialRace') {
+          logEvent('call_ring_dropped_duplicate', { medium: intent.medium });
+          continue;
+        }
+        // busyDecline: end the incoming call so the caller knows immediately,
+        // and take its CallStyle notification down with it, or a dead ring
+        // (with an Accept that can no longer answer) stays in the shade.
+        logEvent('call_ring_busy_declined', { medium: intent.medium });
+        void _callHooks.endCall(intent.callId);
+        void _callHooks.clearCall(intent.callId);
         continue;
       }
-      // busyDecline: end the incoming call so the caller knows immediately,
-      // and take its CallStyle notification down with it, or a dead ring
-      // (with an Accept that can no longer answer) stays in the shade.
-      void _callHooks.endCall(intent.callId);
-      void _callHooks.clearCall(intent.callId);
-      continue;
     }
 
     // Dedup: the same callId must not route twice (Realtime and FCM can
@@ -223,6 +269,7 @@ export function flushIntents(): void {
       routedCalls.delete(first);
     }
     routedCalls.add(intent.callId);
+    logEvent('call_ring_routed', { medium: intent.medium });
 
     // Close any active elements before the call takes the screen.
     // PaymentSheet in flight returns false; in that case leave the
