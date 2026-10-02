@@ -391,11 +391,21 @@ class CallForegroundService : Service() {
             try {
                 ContextCompat.startForegroundService(context, intent)
             } catch (e: IllegalStateException) {
-                android.util.Log.w(
-                    "CallForegroundService",
-                    "start refused while backgrounded; deferring to the foreground",
-                    e,
-                )
+                // Only the background-start refusal is expected. Anything else
+                // (a manifest foregroundServiceType gone missing, a lifecycle
+                // bug) still crashes, so Sentry sees it rather than a ring that
+                // silently has no service.
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+                    e is android.app.ForegroundServiceStartNotAllowedException
+                ) {
+                    android.util.Log.w(
+                        "CallForegroundService",
+                        "start refused while backgrounded; deferring to the foreground",
+                        e,
+                    )
+                } else {
+                    throw e
+                }
             }
         }
 
