@@ -2180,7 +2180,7 @@ FUNCTION submit_review(p_conversation_id uuid, p_rating smallint, p_comment text
 FUNCTION submit_session_review(p_session_id uuid, p_rating smallint, p_comment text) returns void security=definer
 FUNCTION sync_provider_presence_on_availability() returns trigger security=definer
 FUNCTION sync_token_balance() returns trigger security=invoker
-FUNCTION sync_unread_on_read() returns trigger security=definer
+FUNCTION sync_unread_on_read_stmt() returns trigger security=definer
 FUNCTION table_owner_is(name, name) returns text security=invoker
 FUNCTION table_owner_is(name, name, name) returns text security=invoker
 FUNCTION table_owner_is(name, name, name, text) returns text security=invoker

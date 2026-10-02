@@ -210,6 +210,7 @@ const MIGRATIONS = [
   'supabase/migrations/181_chat_billing_deferred_to_first_provider_reply.sql',
   'supabase/migrations/182_provider_presence_push.sql',
   'supabase/migrations/183_unread_count_sync_on_read.sql',
+  'supabase/migrations/184_unread_recount_per_statement.sql',
 ];
 
 /**

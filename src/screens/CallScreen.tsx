@@ -529,6 +529,12 @@ export function CallScreen({
     let live = true;
     void startCall(resolvedConversationId, medium).then((r: CallResult | null) => {
       if (!live) {
+        // The screen is gone (the 15 s timeout, or a hang-up while start_call
+        // was still in flight). A call the server created after that would be
+        // orphaned and could bill, against "Nothing was charged": end it.
+        if (r?.success && r.call_id) {
+          void endCall(r.call_id);
+        }
         return;
       }
       if (r && r.success && r.call_id) {

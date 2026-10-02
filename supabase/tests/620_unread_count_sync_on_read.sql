@@ -11,7 +11,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(7);
+select plan(9);
 
 -- ── Shared fixtures ───────────────────────────────────────────────────────────
 -- Three independent member/provider pairs (unique constraint on conversations).
@@ -251,6 +251,37 @@ select is(
   ),
   0,
   '(d) zero drift threads after backfill'
+);
+
+-- ── (e) 184: one statement marking several messages read recounts once ───────
+insert into public.messages (conversation_id, sender_id, body)
+select 'cc620000-0000-4000-8000-0000000000c3', 'bb620c00-0000-4000-8000-000000000002', 'batch ' || g
+from generate_series(1, 3) g;
+
+update public.conversation_thread_meta
+set unread_count_member = 3
+where conversation_id = 'cc620000-0000-4000-8000-0000000000c3';
+
+update public.messages
+set read_at = now()
+where conversation_id = 'cc620000-0000-4000-8000-0000000000c3'
+  and body like 'batch %';
+
+select is(
+  (select unread_count_member from public.conversation_thread_meta
+   where conversation_id = 'cc620000-0000-4000-8000-0000000000c3'),
+  (select count(*)::integer from public.messages
+   where conversation_id = 'cc620000-0000-4000-8000-0000000000c3'
+     and sender_id = 'bb620c00-0000-4000-8000-000000000002'
+     and read_at is null and hidden_at is null),
+  '(e) a batch mark-read recounts to the true figure'
+);
+
+select ok(
+  (select (tgtype & 1) = 0 from pg_trigger
+   where tgname = 'sync_unread_count_on_read'
+     and tgrelid = 'public.messages'::regclass),
+  '(f) the recount trigger is statement-level (184)'
 );
 
 select * from finish();

@@ -283,9 +283,11 @@ export function chatV2ThumbGeometry(input: {
   if (content <= viewport || track <= 0) {
     return null;
   }
-  const length = Math.max(
-    THUMB_MIN,
-    Math.min(track, (track * viewport) / content),
+  // Never longer than its track, even when the track is shorter than the
+  // floor (keyboard up, tall composer).
+  const length = Math.min(
+    track,
+    Math.max(THUMB_MIN, (track * viewport) / content),
   );
   const travel = Math.max(0, Math.min(1, offset / (content - viewport)));
   // Inverted: no offset is the bottom of the track.

@@ -364,6 +364,13 @@ export function useMarkRead(
        * a stored counter that drifted (the open chat is the truth). A failed
        * write puts it back through the invalidation below.
        */
+      //
+      // Only the loaded page is known here, so it never RAISES or replaces the
+      // server's count with a page-sized one: what was just marked comes off
+      // it, and a page with nothing unread at all clears it (reading runs
+      // newest-first from the bottom, so an older unread past the page would
+      // be one the member scrolled past without seeing; the server recount on
+      // read, migration 183, settles the exact figure either way).
       const left = unreadFromPeer(list, selfId).filter(
         id => !inFlightRef.current.has(id),
       ).length;
@@ -375,15 +382,16 @@ export function useMarkRead(
         const stored = Number(
           row.i_am_member ? row.unread_count_member : row.unread_count_provider,
         );
-        if (stored === left) {
+        const next = left === 0 ? 0 : Math.max(0, stored - ids.length);
+        if (stored === next) {
           return rows;
         }
         return rows.map(r =>
           r !== row
             ? r
             : r.i_am_member
-              ? { ...r, unread_count_member: left }
-              : { ...r, unread_count_provider: left },
+              ? { ...r, unread_count_member: next }
+              : { ...r, unread_count_provider: next },
         );
       });
       if (ids.length === 0) {
