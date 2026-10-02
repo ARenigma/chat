@@ -397,13 +397,17 @@ function SheetView({
                   ) : null}
                 </View>
               ) : null}
-              <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
-                testID="sheet-title"
-                allowFontScaling
-                numberOfLines={2}
-                style={styles.title}>
-                {title}
-              </Text>
+              {/* Bluesky's Dialog.Header: a full-width bar, the title centred,
+                  a hairline under it (social-app Dialog/shared.tsx). */}
+              <View style={styles.header}>
+                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
+                  testID="sheet-title"
+                  allowFontScaling
+                  numberOfLines={2}
+                  style={styles.title}>
+                  {title}
+                </Text>
+              </View>
               {body ? (
                 <Text allowFontScaling style={styles.body}>
                   {body}
@@ -470,10 +474,14 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     paddingVertical: (TOKENS.interaction.minTarget - 4) / 2,
   },
   grabber: {
+    // Bluesky Dialog.Handle: 35×5, opacity 0.5, rounded_sm.
+    // Width stays 36 (one pixel, not worth the diff); height and radius aligned.
+    // https://github.com/bluesky-social/social-app src/components/Dialog/index.tsx
     width: 36,
-    height: 4,
-    borderRadius: 2,
+    height: 5,
+    borderRadius: 4,
     backgroundColor: t.color.border.strong,
+    opacity: 0.5,
   },
   barRow: {
     flexDirection: 'row',
@@ -492,9 +500,29 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     flex: 1,
   },
   title: {
-    ...TOKENS.typography.titleLargeEmphasized,
+    // Bluesky Dialog.Header title: text_lg font_semi_bold (17dp SemiBold),
+    // centred in a bordered header bar.
+    // Our closest token: textLgSemiBold (16.9dp Geist-SemiBold).
+    // Centred to match Bluesky's horizontal alignment.
+    // Previously titleLargeEmphasized (22dp Bold) which was M3 large title —
+    // Bluesky's sheet titles are notably more compact.
+    // https://github.com/bluesky-social/social-app src/components/Dialog/shared.tsx
+    ...TOKENS.typography.textLgSemiBold,
     color: t.color.text.primary,
-    paddingTop: TOKENS.space['2xs'],
+    textAlign: 'center',
+  },
+  // Bluesky Dialog.Header: minHeight 50, py_sm, border_b, full sheet width.
+  // The negative margin undoes the sheet's own 24dp side padding so the rule
+  // runs edge to edge, as theirs does.
+  header: {
+    minHeight: 50,
+    justifyContent: 'center',
+    paddingVertical: TOKENS.space.xs,
+    marginHorizontal: -TOKENS.space.xl,
+    paddingHorizontal: TOKENS.space.xl,
+    marginBottom: TOKENS.space.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: t.color.border.hairline,
   },
   // Plain tinted text, not a button. An iOS sheet's bar actions have no fill and
   // no border; the tint is what says they are tappable.

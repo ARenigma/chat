@@ -32,7 +32,7 @@ import { TOKENS, type Theme } from '../../theme/tokens';
 import { useStyles, useTheme } from '../../theme/ThemeProvider';
 import { Avatar } from '../Avatar';
 import { Icon } from '../Icon';
-import { Pressable } from '../Pressable';
+import { Pressable, PressLayer } from '../Pressable';
 
 const FACE = 56;
 const RING_GAP = 2;
@@ -50,6 +50,16 @@ const StoryRing = memo(function StoryRingView({
   return (
     <View style={[styles.ring, unseen ? styles.ringUnseen : styles.ringSeen]}>
       <Avatar initial={(name || '·').slice(0, 1).toUpperCase()} uri={avatar} size={FACE} />
+      {/*
+       * Circular press overlay: clips PressLayer to the ring's inscribed
+       * circle. Rendered after Avatar so it is on top; `overflow: 'hidden'`
+       * + pill radius creates the circular clip. The ring itself has no
+       * `overflow: 'hidden'`, so the Avatar's presence dot can overflow the
+       * ring's rounded corner where the circular overlay has no coverage.
+       */}
+      <View style={styles.ringPressOverlay} pointerEvents="none">
+        <PressLayer />
+      </View>
     </View>
   );
 });
@@ -110,6 +120,7 @@ function StoryRailView({ providerIds }: RailProps) {
               onPress={() => open(g.providerId)}
               accessibilityLabel={unseen ? `${name}, new story` : `${name}, story`}
               press="card"
+              layer="child"
               style={styles.item}
               testID={`story-rail-${g.providerId}`}>
               <StoryRing name={name} avatar={p?.avatar_url ?? null} unseen={unseen} />
@@ -236,6 +247,22 @@ const makeStyles = (t: Theme) =>
       borderWidth: 1,
       borderColor: t.color.border.hairline,
       padding: RING_GAP + 1,
+    },
+    /*
+     * Circular clip for the press layer. Positioned absolutely over the ring's
+     * full area; `overflow: 'hidden'` + pill radius clips PressLayer to the
+     * inscribed circle. The ring view has no overflow:hidden of its own, so
+     * the Avatar's presence dot (which overflows the Avatar's host at the
+     * bottom-right corner) remains visible outside the clip's circle area.
+     */
+    ringPressOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: TOKENS.radius.pill,
+      overflow: 'hidden',
     },
     name: {
       ...TOKENS.typography.labelSmall,

@@ -27,7 +27,7 @@
  * ADR-0022: India User Choice Billing
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { withSentry } from '../_shared/sentry.ts';
+import { reportEdgeFailure, withSentry } from '../_shared/sentry.ts';
 
 function cashfreeBaseUrl(): string {
   const env = Deno.env.get('CASHFREE_ENV') ?? 'sandbox';
@@ -169,6 +169,9 @@ Deno.serve(withSentry('verify-order', async (request: Request) => {
 
     if (creditErr) {
       console.error('verify-order: credit_purchased_recharge failed:', creditErr.message);
+      await reportEdgeFailure('verify-order', 'credit_purchased_recharge failed', {
+        code: creditErr.code ?? 'unknown',
+      });
       return Response.json({ error: 'credit failed' }, { status: 500 });
     }
 
@@ -182,6 +185,12 @@ Deno.serve(withSentry('verify-order', async (request: Request) => {
     return Response.json({ status: 'PAID', credited: true, balance });
   } catch (err) {
     console.error('verify-order error:', err);
+    // The handler answers its own failures, so withSentry never sees them:
+    // report here. The error's NAME only, never its message, which can carry
+    // the gateway's response body (order and customer details).
+    await reportEdgeFailure('verify-order', 'unhandled error', {
+      error: err instanceof Error ? err.name : 'unknown',
+    });
     return Response.json({ error: String(err) }, { status: 500 });
   }
 }));

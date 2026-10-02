@@ -24,7 +24,7 @@
  * ADR-0022: India User Choice Billing
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { withSentry } from '../_shared/sentry.ts';
+import { reportEdgeFailure, withSentry } from '../_shared/sentry.ts';
 
 // ---------------------------------------------------------------------------
 // GST — mirrors gstOnTop in src/lib/rates.ts (ADR-0029: exclusive model).
@@ -350,6 +350,12 @@ Deno.serve(withSentry('create-order', async (request: Request) => {
     });
   } catch (err) {
     console.error('create-order error:', err);
+    // The handler answers its own failures, so withSentry never sees them:
+    // report here. The error's NAME only, never its message, which can carry
+    // the gateway's response body (order and customer details).
+    await reportEdgeFailure('create-order', 'unhandled error', {
+      error: err instanceof Error ? err.name : 'unknown',
+    });
     return Response.json({ error: String(err) }, { status: 500 });
   }
 }));

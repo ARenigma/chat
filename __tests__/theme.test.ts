@@ -2499,10 +2499,17 @@ describe('iOS conformance', () => {
   it('uses Material 3 Paper bottom-sheet corners', () => {
     // 28 is Material 3's specified bottom-sheet corner — M3 Paper is the product
     // choice for every overlay (user 2026-08-30).
-    expect(radius.sheet).toBe(28);
+    // 20 since 2026-10-03: Bluesky's sheet corner (social-app
+    // Dialog/index.tsx cornerRadius 20), at Amit's request to match its sheets.
+    expect(radius.sheet).toBe(20);
     expect(read('src/components/Sheet.tsx')).toContain('TOKENS.radius.sheet');
+    // Sheet title was titleLargeEmphasized (22dp Bold, M3 large title) until the
+    // Bluesky-sheet anatomy pass (2026-10-03): Bluesky uses text_lg font_semi_bold
+    // (~17dp SemiBold, centred) for its Dialog.Header title, not the M3 large
+    // title scale. Updated to textLgSemiBold to match.
+    // https://github.com/bluesky-social/social-app src/components/Dialog/shared.tsx
     expect(read('src/components/Sheet.tsx')).toContain(
-      'TOKENS.typography.titleLargeEmphasized',
+      'TOKENS.typography.textLgSemiBold',
     );
   });
 

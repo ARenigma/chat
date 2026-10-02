@@ -590,10 +590,13 @@ export function CallScreen({
   //
   // The clock starts only once the call may actually be placed: a member still
   // reading the price sheet has not asked for anything yet, and ending their
-  // screen 15 s into reading it would be the bug, not the fix.
+  // screen 15 s into reading it would be the bug, not the fix. Nor before the
+  // conversation id resolves: start_call is not sent until it does, so a slow
+  // open_conversation would otherwise time out a call never attempted.
   const awaitingConsent = isMemberSide && incomingCallId === null && !memberConsented;
+  const placeable = resolvedConversationId !== undefined;
   useEffect(() => {
-    if (direction !== 'out' || callId !== null || awaitingConsent) {
+    if (direction !== 'out' || callId !== null || awaitingConsent || !placeable) {
       return;
     }
     const timer = setTimeout(() => {
@@ -602,7 +605,7 @@ export function CallScreen({
       onEnd();
     }, 15_000);
     return () => clearTimeout(timer);
-  }, [direction, callId, awaitingConsent, medium, onEnd, setNotice]);
+  }, [direction, callId, awaitingConsent, placeable, medium, onEnd, setNotice]);
 
   useEffect(() => {
     if (callId === null) return;

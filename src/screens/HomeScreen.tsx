@@ -48,7 +48,7 @@ import { useStore } from '../store/useStore';
 import { Avatar } from '../components/Avatar';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 import { Icon } from '../components/Icon';
-import { Pressable } from '../components/Pressable';
+import { Pressable, PressLayer } from '../components/Pressable';
 import {
   PROVIDER_ROW_HEIGHT,
   ProviderRow,
@@ -1116,6 +1116,7 @@ const RailItem = memo(function ({
               : name
         }
         press="none"
+        layer="child"
         style={styles.railItem}>
         <View style={[styles.railRing, unread && styles.railRingUnread]}>
           <Avatar
@@ -1124,6 +1125,17 @@ const RailItem = memo(function ({
             size={56}
             online={presence.here}
           />
+          {/*
+           * Circular press overlay: clips PressLayer to the ring's circle,
+           * rendered AFTER Avatar so it paints on top. The ring itself keeps
+           * `overflow: 'visible'` so the Avatar's presence dot can spill
+           * past the rounded corner — the circular overlay clips only to its
+           * own inscribed circle (radius 34 on the 68dp ring box), leaving
+           * the corners transparent, so the dot is visible at the corner.
+           */}
+          <View style={styles.railRingPressOverlay} pointerEvents="none">
+            <PressLayer />
+          </View>
         </View>
         <Text allowFontScaling numberOfLines={1} style={styles.railName}>
           {name}
@@ -1856,6 +1868,23 @@ const makeStyles = (t: Theme) =>
     },
     railRingUnread: {
       borderColor: t.color.bg.accent,
+    },
+    /*
+     * Circular clip for the press layer, sized to the ring's full outer circle
+     * (same borderRadius as railRing). Positioned absolutely so it sits on top
+     * of the Avatar disc; `overflow: 'hidden'` clips PressLayer to the circle.
+     * The ring view keeps `overflow: 'visible'` so the Avatar's presence dot
+     * can overflow the rounded corner, which the circular clip does not cover
+     * (the dot sits outside the inscribed circle's 34dp radius).
+     */
+    railRingPressOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: (RAIL_AVATAR + 12) / 2,
+      overflow: 'hidden',
     },
     // Anchor only — M3 Badge owns fill, size, and “9+”.
     //

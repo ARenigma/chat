@@ -130,7 +130,7 @@ export const LIGHT = {
     alert: 14,
     bubble: 20,
     thread: 24,
-    sheet: 28,
+    sheet: 20,
   },
   icon: {
     xs: 12,
@@ -838,7 +838,7 @@ export const DARK = {
     alert: 14,
     bubble: 20,
     thread: 24,
-    sheet: 28,
+    sheet: 20,
   },
   icon: {
     xs: 12,

@@ -15,7 +15,7 @@ import { DURATION, EASE_OUT_QUINT, fadeSwapOutFast, rowIn } from '../theme/motio
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
 import { Avatar } from './Avatar';
 import { ICON_SCALE, Icon, type IconName } from './Icon';
-import { Pressable } from './Pressable';
+import { Pressable, PressLayer } from './Pressable';
 import { CATEGORY_BADGE, categoryOf, type ProviderCategory } from '../lib/providerFilters';
 import { rowExpertise } from '../lib/expertise';
 import { formatRupees } from '../lib/rates';
@@ -842,6 +842,7 @@ function ProviderRowView({
             // the card. The card's own label already carries who this is.
             accessible={false}
             press="none"
+            layer="child"
             style={styles.ring}>
             <Avatar
               initial={initial}
@@ -849,6 +850,17 @@ function ProviderRowView({
               size={ROW_AVATAR}
               online={presence.here}
             />
+            {/*
+             * Circular press overlay: clips PressLayer to the ring's circle.
+             * Rendered after Avatar so it paints on top. The ring keeps
+             * `overflow: 'visible'` so the Avatar's presence dot can spill
+             * past the rounded corner — the circular overlay's clip radius
+             * (ROW_AVATAR_RING / 2 = 42) matches the ring, so corners stay
+             * transparent and the dot remains fully visible at the corner.
+             */}
+            <View style={styles.ringPressOverlay} pointerEvents="none">
+              <PressLayer />
+            </View>
           </Pressable>
           {/* Stars and count as ONE block, so the column has exactly two
               children for `space-between` to push apart: the ring to the top,
@@ -1213,6 +1225,23 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderColor: t.color.bg.accent,
     padding: RING_INSET,
     overflow: 'visible',
+  },
+  /*
+   * Circular clip for the press layer. The ring keeps `overflow: 'visible'` so
+   * the Avatar's 18dp presence dot can spill 1dp past the 84dp ring without
+   * being clipped at the rounded corner. This overlay sits on top of the Avatar
+   * disc, clips PressLayer to the inscribed circle (radius 42 on the 84dp ring
+   * box), and leaves the far corner (where the dot lives) uncovered because the
+   * dot's corner at ~55dp from the ring's centre exceeds the 42dp clip radius.
+   */
+  ringPressOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: ROW_AVATAR_RING / 2,
+    overflow: 'hidden',
   },
   ratingBlock: {
     alignItems: 'center',

@@ -25,6 +25,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { beginSignOut, deleteAccount } from '../api/auth';
 import { stopPush } from '../lib/push';
 import { track } from '../lib/telemetry';
+import { tick } from '../lib/haptics';
 import { useSetClayAvatar } from '../api/provider';
 import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
@@ -88,6 +89,36 @@ interface Props {
  * leading pad. Dividers align to this so a rule never cuts under the icon.
  */
 const ROW_TEXT_INSET = 32 + TOKENS.space.sm;
+
+/**
+ * Radio indicator used inside the theme choice sheet.
+ *
+ * Mirrors Bluesky's Toggle.BaseRadio anatomy exactly:
+ *   - Outer 20×20dp circle, full border in our `border.strong` colour when
+ *     unselected; filled accent with no border when selected.
+ *   - Inner 8×8dp white dot (text.onAccent) visible only when selected.
+ *
+ * View-based, not icon-based, because Phosphor has no filled-circle glyph.
+ * The `dot` icon (Phosphor `circle`) is an OUTLINE ring; using it for both
+ * states would require two stacked icons at different sizes and colours, which
+ * is more fragile than a pair of Views that can be tested and inspected.
+ *
+ * https://github.com/bluesky-social/social-app
+ * src/components/forms/Toggle/index.tsx  BaseRadio / createSharedToggleStyles
+ */
+function RadioDot({ selected }: { selected: boolean }) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View
+      style={[
+        styles.radioDotOuter,
+        selected ? styles.radioDotSelected : styles.radioDotUnselected,
+      ]}
+    >
+      {selected ? <View style={styles.radioDotInner} /> : null}
+    </View>
+  );
+}
 
 /** One navigable row of the list, as data. */
 interface SettingsRowSpec {
@@ -775,6 +806,8 @@ export function SettingsSheet({
                 )}
                 <Pressable
                   onPress={() => {
+                    // Bluesky's Toggle.Item plays a light haptic on select.
+                    tick();
                     setMode(option);
                     setChoiceSheet(null);
                   }}
@@ -786,11 +819,28 @@ export function SettingsSheet({
                   highlight="dim"
                   style={styles.row}
                 >
+                  {/*
+                   * Radio indicator in the trailing slot (Bluesky anatomy).
+                   *
+                   * Previously: `selected={on}` rendered a `check` icon only
+                   * when selected, and nothing when unselected. Bluesky's radio
+                   * rows always show the circle — filled+dot when selected,
+                   * outline ring when not — so the affordance is present before
+                   * the user taps, not only after.
+                   *
+                   * Pass `selected={false}` so SettingsRowContent renders
+                   * neither the check nor the chevron; the RadioDot in `trailing`
+                   * takes the whole trailing slot.
+                   *
+                   * https://github.com/bluesky-social/social-app
+                   * src/components/forms/Toggle/index.tsx  BaseRadio
+                   */}
                   <SettingsRowContent
                     icon="settings"
                     title={label}
-                    selected={on}
+                    selected={false}
                     chevron={false}
+                    trailing={<RadioDot selected={on} />}
                   />
                 </Pressable>
               </React.Fragment>
@@ -1082,5 +1132,31 @@ const makeStyles = (t: Theme) =>
     rateFooterText: {
       ...TOKENS.typography.labelLargeEmphasized,
       color: t.color.text.secondary,
+    },
+    // Bluesky Toggle.BaseRadio anatomy — outer circle, 20×20dp (our icon.md).
+    // https://github.com/bluesky-social/social-app
+    // src/components/forms/Toggle/index.tsx  BaseRadio
+    radioDotOuter: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    radioDotUnselected: {
+      borderWidth: 1.5,
+      borderColor: t.color.border.strong,
+      backgroundColor: 'transparent',
+    },
+    radioDotSelected: {
+      borderWidth: 0,
+      backgroundColor: t.color.bg.accent,
+    },
+    // Inner white dot, visible only in the selected state.
+    radioDotInner: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: t.color.text.onAccent,
     },
   });
