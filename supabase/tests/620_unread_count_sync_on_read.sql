@@ -11,7 +11,7 @@
 
 \set ON_ERROR_STOP on
 begin;
-select plan(9);
+select plan(10);
 
 -- ── Shared fixtures ───────────────────────────────────────────────────────────
 -- Three independent member/provider pairs (unique constraint on conversations).
@@ -282,6 +282,26 @@ select ok(
    where tgname = 'sync_unread_count_on_read'
      and tgrelid = 'public.messages'::regclass),
   '(f) the recount trigger is statement-level (184)'
+);
+
+-- ── (g) 184: hiding an unread message (end_session's purge) recounts too ─────
+insert into public.messages (conversation_id, sender_id, body)
+values ('cc620000-0000-4000-8000-0000000000c3', 'bb620c00-0000-4000-8000-000000000002', 'to be hidden');
+
+update public.conversation_thread_meta
+set unread_count_member = 1
+where conversation_id = 'cc620000-0000-4000-8000-0000000000c3';
+
+update public.messages
+set hidden_at = now()
+where conversation_id = 'cc620000-0000-4000-8000-0000000000c3'
+  and body = 'to be hidden';
+
+select is(
+  (select unread_count_member from public.conversation_thread_meta
+   where conversation_id = 'cc620000-0000-4000-8000-0000000000c3'),
+  0,
+  '(g) a hidden unread message no longer counts'
 );
 
 select * from finish();

@@ -9,8 +9,12 @@
 -- A statement-level trigger with transition tables. A column list
 -- (`UPDATE OF read_at`) cannot be combined with transition tables in
 -- Postgres, so the trigger fires on every UPDATE of messages and the join on
--- old/new rows keeps only those whose read_at went NULL -> set; an UPDATE
--- that marks nothing read recounts nothing.
+-- old/new rows keeps only those that changed what counts as unread: read_at
+-- going NULL -> set, OR hidden_at going NULL -> set. The second is end_session
+-- hiding a session's content (181): an unread message hidden there used to
+-- leave the counter above the true, hidden-excluded figure for good, the
+-- stuck-badge bug 183 was written for, through a second door. An UPDATE that
+-- changes neither recounts nothing.
 -- https://www.postgresql.org/docs/current/sql-createtrigger.html
 
 create or replace function public.sync_unread_on_read_stmt()
@@ -44,8 +48,8 @@ begin
       select distinct n.conversation_id
       from   new_rows n
       join   old_rows o on o.id = n.id
-      where  o.read_at is null
-        and  n.read_at is not null
+      where  (o.read_at is null and n.read_at is not null)
+         or  (o.hidden_at is null and n.hidden_at is not null)
     );
   return null;
 end;
@@ -54,7 +58,8 @@ $$;
 comment on function public.sync_unread_on_read_stmt() is
   'Statement-level AFTER UPDATE trigger on messages (184): recounts '
   'conversation_thread_meta unread counters once per conversation whose '
-  'messages went read in the statement. Replaces 183''s per-row trigger.';
+  'messages went read or hidden in the statement. Replaces 183''s per-row '
+  'trigger.';
 
 -- New functions start closed; the trigger still fires (privilege on a trigger
 -- function is checked at CREATE TRIGGER time, not when it fires).
