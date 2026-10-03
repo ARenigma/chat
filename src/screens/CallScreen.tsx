@@ -1419,7 +1419,15 @@ export function CallScreen({
   const faceRoom = windowHeight - insets.bottom - CONTROLS_CLEARANCE - metaBottom - TOKENS.space.md;
   const faceSize = Math.max(FACE_MIN, Math.min(AVATAR, Math.floor(faceRoom)));
   const faceCentre = (windowHeight - CONTROLS_CLEARANCE) / 2;
-  const faceTopPad = Math.max(0, Math.ceil(metaBottom + TOKENS.space.md - (faceCentre - faceSize / 2)) * 2);
+  // Lowered to clear the name block, but never past the control row: in a very
+  // short window the face gives up its clearance before it reaches the buttons.
+  const faceTopPad = Math.max(
+    0,
+    Math.min(
+      Math.ceil(metaBottom + TOKENS.space.md - (faceCentre - faceSize / 2)) * 2,
+      Math.floor(2 * (faceCentre - faceSize / 2)),
+    ),
+  );
 
   return (
     <View style={styles.root}>
@@ -1837,7 +1845,7 @@ function BarButton({
 /** Face diameter — WhatsApp capture ~140–160 logical on a tall phone. */
 const AVATAR = 148;
 /** The smallest face a landscape call shrinks to. */
-const FACE_MIN = 96;
+const FACE_MIN = 56;
 /** The name and status block's height under the top inset, in dp, and one more line. */
 const META_BLOCK = 64;
 const META_LINE = 22;
