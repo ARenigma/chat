@@ -1448,9 +1448,9 @@ export function CallScreen({
       ) : backdropSource !== null && !backdropFailed ? (
         <>
           <Image
-            // Remounted when the window changes size: a decoded backdrop that
+            // Remounted on a change of orientation, not on every resize: a decoded backdrop that
             // kept its portrait box filled a corner of a landscape call.
-            key={`backdrop-${windowWidth}x${windowHeight}`}
+            key={windowWidth > windowHeight ? 'backdrop-landscape' : 'backdrop-portrait'}
             source={backdropSource}
             resizeMode="cover"
             blurRadius={CALL_BG_BLUR}

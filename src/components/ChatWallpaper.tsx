@@ -51,7 +51,7 @@ function ChatWallpaperView() {
   const theme = useTheme();
   // Keyed by the window: after a rotation the bitmap kept its portrait box and
   // the wallpaper stopped short of the right edge (BrowserStack Pixel 8,
-  // 2026-10-03). A new size remounts the Image so it is laid out afresh.
+  // 2026-10-03). A change of orientation remounts the Image so it is laid out afresh.
   const { width, height } = useWindowDimensions();
   const source = isDark
     ? require('../../assets/chat-wallpaper-dark.jpg')
@@ -60,7 +60,7 @@ function ChatWallpaperView() {
   return (
     <View pointerEvents="none" style={styles.host}>
       <Image
-        key={`${width}x${height}`}
+        key={width > height ? 'landscape' : 'portrait'}
         source={source}
         resizeMode="cover"
         style={styles.wallpaper}

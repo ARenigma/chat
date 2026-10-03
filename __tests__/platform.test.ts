@@ -3368,9 +3368,9 @@ describe('a ring the system refused is reported, not swallowed', () => {
 });
 
 describe('landscape (BrowserStack Pixel 8, 2026-10-03)', () => {
-  it('remounts the wallpaper and the call backdrop when the window changes size', () => {
-    expect(read('src/components/ChatWallpaper.tsx')).toContain('key={`${width}x${height}`}');
-    expect(read('src/screens/CallScreen.tsx')).toContain('key={`backdrop-${windowWidth}x${windowHeight}`}');
+  it('remounts the wallpaper and the call backdrop when the orientation changes', () => {
+    expect(read('src/components/ChatWallpaper.tsx')).toContain('key={width > height ? \'landscape\' : \'portrait\'}');
+    expect(read('src/screens/CallScreen.tsx')).toContain('key={windowWidth > windowHeight ? \'backdrop-landscape\' : \'backdrop-portrait\'}');
   });
   it('shrinks and lowers the call face so it clears the name block', () => {
     const call = read('src/screens/CallScreen.tsx');
