@@ -994,6 +994,9 @@ const makeStyles = (t: Theme) =>
       textAlign: 'center',
     },
     rateFooter: {
+      // A fixed 48dp box: without one the link's inner view grew to the foot
+      // of the scroll and its label sat under the bottom bar (S22, 2026-10-04).
+      height: TOKENS.interaction.minTarget,
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space['2xs'],
