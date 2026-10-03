@@ -129,6 +129,8 @@ class CallForegroundService : Service() {
             serviceTypes,
         )
 
+        ringing = if (isIncoming) Ring(callerName, includeCamera) else null
+
         // This notification is now the ring, so the one the push put up has to go.
         // the reference app's service takes the call over from its prenotification exactly
         // here (VoIPPreNotificationService.java:476 starts the service, :579
@@ -331,6 +333,7 @@ class CallForegroundService : Service() {
         audioFocusManager.abandonCallFocus()
         proximityLock?.let { if (it.isHeld) it.release() }
         proximityLock = null
+        ringing = null
         // The service dying is the end of the call, which is the moment the push's
         // record of it stops describing anything.
         Conversations.forgetPendingCall()
@@ -351,6 +354,33 @@ class CallForegroundService : Service() {
         private const val REQUEST_DECLINE = 302
         private const val REQUEST_HANGUP = 303
         private const val REQUEST_OPEN = 304
+
+        /** What the ring was built from, so [refreshIncoming] can rebuild it. */
+        private data class Ring(val callerName: String, val includeCamera: Boolean)
+
+        /** Set while this service is ringing; null once answered or gone. */
+        @Volatile
+        private var ringing: Ring? = null
+
+        /**
+         * Re-post the ring with the caller's photo once [Conversations.notifyCall]'s
+         * fill has it. The service's ring often goes up before the download lands
+         * (the app comes forward, the service takes the ring over), and without
+         * this it stayed a monogram for the whole ring. Same id, so Android
+         * replaces it in place; `setOnlyAlertOnce` keeps the update silent.
+         * https://developer.android.com/develop/ui/views/notifications/build-notification#Updating
+         */
+        fun refreshIncoming(context: Context) {
+            val ring = ringing ?: return
+            try {
+                androidx.core.app.NotificationManagerCompat.from(context).notify(
+                    CALL_NOTIFICATION_ID,
+                    buildIncomingNotification(context, ring.callerName, true, ring.includeCamera),
+                )
+            } catch (denied: SecurityException) {
+                android.util.Log.w("PappalCall", "refreshIncoming: notify refused", denied)
+            }
+        }
 
         /**
          * @param isIncoming true only while the phone is ringing. It selects the
@@ -419,9 +449,12 @@ class CallForegroundService : Service() {
             isIncoming: Boolean,
             includeCamera: Boolean,
         ): Notification {
+            // The push's photo, when it has one: the ring the service takes over
+            // keeps the face the push drew (Conversations.pendingCallAvatar).
             val caller = Person.Builder()
                 .setName(callerName)
                 .setImportant(true)
+                .apply { Conversations.pendingCallAvatar()?.let { setIcon(it) } }
                 .build()
 
             val contentIntent = PendingIntent.getActivity(
@@ -462,6 +495,9 @@ class CallForegroundService : Service() {
                     .setContentIntent(contentIntent)
                     .setCategory(NotificationCompat.CATEGORY_CALL)
                     .setOngoing(true)
+                    // The photo arriving re-posts this (refreshIncoming); the
+                    // ring is this service's own loop, not a second alert.
+                    .setOnlyAlertOnce(true)
                     .setStyle(
                         NotificationCompat.CallStyle
                             .forIncomingCall(caller, declineIntent, answerIntent)

@@ -209,6 +209,25 @@ object Conversations {
     fun pendingCallAnswer(): android.app.PendingIntent? = pendingCallAnswer
 
     /**
+     * The ringing caller's photo, once [notifyCall]'s fill has it, for the
+     * service's ring to reuse.
+     *
+     * The service's ring REPLACES the pushed one ([cancelCallPrenotification])
+     * the moment the app comes forward, and it used to build its Person from
+     * the name alone, so the face the push had just drawn was swapped for a
+     * system monogram mid-ring (S22, 2026-10-03: "profile photo vanished").
+     * [pendingCallId] says which call the photo belongs to, so a slow fill for
+     * an older ring never lands on a newer one.
+     */
+    @Volatile
+    private var pendingCallAvatar: IconCompat? = null
+
+    @Volatile
+    private var pendingCallId: String? = null
+
+    fun pendingCallAvatar(): IconCompat? = pendingCallAvatar
+
+    /**
      * Forget the ringing call. Called when the call service is destroyed, which
      * is the end of the call — NOT from [clearCall], which only takes the pushed
      * notification off the screen and runs before the service has read any of
@@ -217,6 +236,8 @@ object Conversations {
     fun forgetPendingCall() {
         pendingCallIsVideo = false
         pendingCallAnswer = null
+        pendingCallAvatar = null
+        pendingCallId = null
     }
 
     /**
@@ -355,11 +376,20 @@ object Conversations {
         id !in cleared && (!clearedAll || posted.containsKey(id))
 
     /**
-     * How long the callee's ring may stay up, matched to `RING_TIMEOUT_IN_MS` in
-     * `src/screens/CallScreen.tsx` (60 s), which is itself the reference app's
-     * `callRingTimeout` shortened for a paid product.
+     * How long the callee's ring may stay up: the call's own 30 s window.
+     *
+     * The caller gives up at 30 s (`RING_TIMEOUT_OUT_MS` in
+     * src/screens/CallScreen.tsx) and the push's FCM ttl is 30 s (send-call),
+     * so a callee still ringing after that is ringing a call that has already
+     * ended as missed. It was 60 s, and on the S22 (2026-10-03) the ring stayed
+     * up after the server had recorded the call missed; an Answer in that tail
+     * opened a dead call. Counted from the post, which is after the push lands,
+     * so the caller still gives up first (the order clientSupport.test pins).
+     * `RING_TIMEOUT_IN_MS` (60 s) stays as it is: it bounds the in-app screen,
+     * which Realtime ends the moment the caller does; this notification has no
+     * Realtime to end it.
      */
-    private const val RING_TIMEOUT_MS = 60_000L
+    private const val RING_TIMEOUT_MS = 30_000L
 
     /**
      * The longest edge a Person/large-icon bitmap is decoded to.
@@ -831,7 +861,7 @@ object Conversations {
         if (avatarUrl != null) {
             avatarExecutor.execute {
                 val icon = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)
-                    ?.let { IconCompat.createWithBitmap(it) }
+                    ?.let { personIcon(it) }
                     ?: return@execute
                 /*
                  * Re-read what is actually on screen rather than re-posting the
@@ -1047,6 +1077,8 @@ object Conversations {
 
         pendingCallIsVideo = isVideo
         pendingCallAnswer = answer
+        pendingCallAvatar = null
+        pendingCallId = callId
 
         /*
          * B-BS-8 (BrowserStack Pixel 8, Android 14, 2026-10-02): a call pushed to a
@@ -1188,6 +1220,13 @@ object Conversations {
         if (avatarUrl != null) {
             avatarExecutor.execute {
                 val avatar = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX) ?: return@execute
+                val icon = personIcon(avatar)
+                // The service's ring takes over from this one when the app comes
+                // forward, and wears the same face (see `pendingCallAvatar`).
+                if (pendingCallId == callId) {
+                    pendingCallAvatar = icon
+                    CallForegroundService.refreshIncoming(context)
+                }
                 /*
                  * Only worth re-posting while the ring is still this call's ring.
                  * A newer ring stamps the id again, and a fill that only checked
@@ -1202,7 +1241,7 @@ object Conversations {
                     if (stillCurrentLocked(CALL_PRENOTIFICATION_ID, version) &&
                         manager.activeNotifications.any { shown -> shown.id == CALL_PRENOTIFICATION_ID }
                     ) {
-                        post(IconCompat.createWithBitmap(avatar))
+                        post(icon)
                     }
                 }
             }
@@ -1364,7 +1403,7 @@ object Conversations {
         if (avatarUrl != null) {
             avatarExecutor.execute {
                 val icon = loadAvatarBitmap(avatarUrl, AVATAR_MAX_PX)
-                    ?.let { IconCompat.createWithBitmap(it) }
+                    ?.let { personIcon(it) }
                     ?: return@execute
                 // Same live re-read as notify(), transcript and route both: a
                 // second post can land while the photo downloads, on either
@@ -1428,6 +1467,46 @@ object Conversations {
 
 
     /**
+     * A Person's photo, cut to a circle here rather than left to the system.
+     *
+     * The platform docs do not say what shape a Person icon is drawn in, and
+     * the answer differs by surface: MessagingStyle avatars come out round, but
+     * One UI draws a CallStyle caller's photo as the square it was given (S22,
+     * 2026-10-03, Amit: "square instead of circle.. copy this from whatsapp").
+     * A bitmap that is already a circle reads the same under either treatment,
+     * so every Person icon goes through here: one shape on every surface.
+     * https://developer.android.com/develop/ui/views/notifications/call-style
+     */
+    private fun personIcon(bitmap: android.graphics.Bitmap): IconCompat {
+        val side = minOf(bitmap.width, bitmap.height)
+        val out = android.graphics.Bitmap.createBitmap(side, side, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+        canvas.drawCircle(side / 2f, side / 2f, side / 2f, paint)
+        paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_IN)
+        // Centre-crop: the middle square of a portrait or landscape photo.
+        canvas.drawBitmap(
+            bitmap,
+            -(bitmap.width - side) / 2f,
+            -(bitmap.height - side) / 2f,
+            paint,
+        )
+        return IconCompat.createWithBitmap(out)
+    }
+
+    /**
+     * Photos already fetched in this process, by URL and decode size.
+     *
+     * A face the last ring or message downloaded is not downloaded again: the
+     * fetch has a 1.5 s budget, and on a slow network a second ring from the
+     * same person could lose the photo the first one had. Small, because a
+     * handful of people ring or message in one process's life; LruCache sizes
+     * by count here.
+     * https://developer.android.com/reference/android/util/LruCache
+     */
+    private val avatarCache = android.util.LruCache<String, android.graphics.Bitmap>(16)
+
+    /**
      * Download a photo and decode it, for the Person icon or the BigPicture.
      *
      * Runs on [avatarExecutor], never on the bridge thread that asked for the
@@ -1451,6 +1530,8 @@ object Conversations {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             return null
         }
+        val key = "$longestEdgePx:$url"
+        avatarCache.get(key)?.let { return it }
         return try {
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 1500
@@ -1466,7 +1547,10 @@ object Conversations {
             }
             val options = BitmapFactory.Options().apply { inSampleSize = sample }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                ?.also { avatarCache.put(key, it) }
         } catch (error: Exception) {
+            // The class only: the URL may be a signed link.
+            android.util.Log.w(CALL_LOG_TAG, "avatar fetch failed: ${error.javaClass.simpleName}")
             null
         }
     }

@@ -175,3 +175,12 @@ describe('the wallet follows the money', () => {
     expect(finish.slice(0, 400)).toMatch(/queryKey: \['profile'\]/);
   });
 });
+
+describe('call rows reach both transcripts', () => {
+  it('refreshes the call pills when a call row changes in this conversation', () => {
+    // A decline or a missed call moves no session row, so the side that did
+    // not end the call never refetched ['calls', id] (BrowserStack, 2026-10-03).
+    expect(sessions).toMatch(/table: 'calls',\s*filter: `conversation_id=eq\.\$\{conversationId\}`,\s*\},\s*invalidateCalls/);
+    expect(sessions).toContain("queryKey: ['calls', conversationId]");
+  });
+});

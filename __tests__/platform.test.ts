@@ -3289,3 +3289,33 @@ describe('pressing a tab leaves its search (2026-09-27)', () => {
     expect(bar.indexOf('emitTabPress(tab)')).toBeLessThan(bar.indexOf('emitSoftReset();'));
   });
 });
+
+describe('the incoming-call ring (S22, 2026-10-03)', () => {
+  const conv = read('android/app/src/main/java/com/companionchat/Conversations.kt');
+  const fgs = read('android/app/src/main/java/com/companionchat/CallForegroundService.kt');
+
+  it('ends the background ring with the call window, not after it', () => {
+    // The caller gives up at 30 s and the push's ttl is 30 s; a 60 s ring
+    // stayed up over a call the server had already recorded missed.
+    expect(conv).toContain('private const val RING_TIMEOUT_MS = 30_000L');
+    expect(read('supabase/functions/send-call/index.ts')).toContain("ttl: '30s'");
+  });
+
+  it('draws every Person photo as a circle', () => {
+    // One UI drew the CallStyle caller as a square. Every Person icon is cut
+    // to a circle in personIcon; no raw bitmap reaches a Person.
+    expect(conv).toContain('private fun personIcon(');
+    expect(conv).toContain('PorterDuff.Mode.SRC_IN');
+    expect(conv).not.toMatch(/\?\.let \{ IconCompat\.createWithBitmap\(it\) \}/);
+    expect(conv).not.toContain('post(IconCompat.createWithBitmap(avatar))');
+  });
+
+  it("keeps the caller's photo when the service takes the ring over", () => {
+    // The service's ring replaced the push's and was built from the name
+    // alone, so the photo turned into a monogram mid-ring.
+    expect(fgs).toContain('Conversations.pendingCallAvatar()?.let { setIcon(it) }');
+    expect(conv).toContain('CallForegroundService.refreshIncoming(context)');
+    // The refresh re-posts the same id; it must not alert again.
+    expect(fgs).toContain('.setOnlyAlertOnce(true)');
+  });
+});

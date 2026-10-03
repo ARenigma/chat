@@ -144,8 +144,32 @@ export function useSessionRealtime(conversationId: string | undefined): void {
       void queryClient.invalidateQueries({ queryKey: providerKeys.earnings });
     };
 
+    /*
+     * A call row changing on its own: declined, missed, or ended with no
+     * session row moving. The transcript's call pills read `['calls', id]`, and
+     * nothing else invalidated it, so the side that did not end the call kept
+     * the old list (BrowserStack Pixel, 2026-10-03: a decline and a missed
+     * call never appeared on the provider's open chat). A connected call also
+     * bills, hence the balance and the usage ledger.
+     */
+    const invalidateCalls = (): void => {
+      void queryClient.invalidateQueries({ queryKey: ['calls', conversationId] });
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
+      void queryClient.invalidateQueries({ queryKey: usageKeys.ledger });
+    };
+
     const channel = supabase
       .channel(`session-state:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'calls',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        invalidateCalls,
+      )
       .on(
         'postgres_changes',
         {
