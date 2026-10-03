@@ -35,6 +35,9 @@ interface Props {
   onOpenUsage: () => void;
   /** The provider's blocked-members list, opened from the settings list. */
   onOpenBlocked: () => void;
+  /** Appearance and About, the same pushed screens the member tree opens. */
+  onOpenAppearance: () => void;
+  onOpenAbout: () => void;
   /** Sign-out and account deletion, forwarded into SettingsSheet. */
   onSignedOut: () => void;
   onDeleted: () => void;
@@ -79,6 +82,8 @@ export function ProviderYouScreen({
   onOpenEditProfile,
   onOpenUsage,
   onOpenBlocked,
+  onOpenAppearance,
+  onOpenAbout,
   onSignedOut,
   onDeleted,
   bottomOffset,
@@ -162,6 +167,8 @@ export function ProviderYouScreen({
       onDeleted={onDeleted}
       onUsage={onOpenUsage}
       onBlocked={onOpenBlocked}
+      onAppearance={onOpenAppearance}
+      onAbout={onOpenAbout}
       extraRows={{
         'edit-profile': {
           icon: 'person',

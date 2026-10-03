@@ -66,6 +66,7 @@ export const LIGHT = {
       onAstrologer: '#5B21B6',
       onTokenStrong: '#FFFFFF',
       available: '#10855F',
+      destructive: '#E91646',
       warning: '#8C6200',
     },
     border: {
@@ -774,6 +775,7 @@ export const DARK = {
       onAstrologer: '#E5D4FF',
       onTokenStrong: '#FFFFFF',
       available: '#3FD69B',
+      destructive: '#E91646',
       warning: '#F0A800',
     },
     border: {

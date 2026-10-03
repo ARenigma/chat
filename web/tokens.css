@@ -57,6 +57,7 @@
   --text-available: #10855F;
   --bg-available: #10855F;
   --state-danger: #733635;
+  --text-destructive: #E91646;
   --text-warning: #8C6200;
   --mark-talk: #E0245E;
   --mark-listen: #1D6FE0;
@@ -198,6 +199,7 @@
   --text-available: #3FD69B;
   --bg-available: #3FD69B;
   --state-danger: #E39B92;
+  --text-destructive: #E91646;
   --text-warning: #F0A800;
   --mark-talk: #E0245E;
   --mark-listen: #1D6FE0;

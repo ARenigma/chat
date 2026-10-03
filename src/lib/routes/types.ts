@@ -32,6 +32,9 @@ type CommonParams = {
   };
   Blocked: undefined;
   Usage: undefined;
+  /** Appearance (colour mode) and About, pushed from either tree's You tab. */
+  AppearanceSettings: undefined;
+  AboutSettings: undefined;
   /**
    * Full-screen stories, both trees: a member plays listed providers' stories
    * in rail order; a provider plays their own. The order is fixed at open
@@ -50,8 +53,6 @@ export type MemberScreenParams = CommonParams & {
   Invoices: undefined;
   Transactions: undefined;
   HomeSuggestion: { suggestionId: string };
-  /** Appearance (colour mode) settings, pushed from the You tab. */
-  AppearanceSettings: undefined;
 };
 
 export type ProviderScreenParams = CommonParams & {

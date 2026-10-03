@@ -199,7 +199,7 @@ export function ChatHeaderV2({
         size={TOKENS.interaction.minTarget}
         style={styles.navButton}
       >
-        <Icon name="chevronLeft" size={TOKENS.icon.md} />
+        <Icon name="back" size={TOKENS.icon.lg} />
       </Pressable>
 
       {/*

@@ -18,10 +18,13 @@ interface Props {
 /**
  * The one back affordance, so every screen's back reads and presses the same.
  *
- * The design audit found seven different back buttons: some `chevronLeft` at 22
- * with `highlight="dim"`, some at 26 with none, and Settings on Paper's Appbar.
- * This is the single source — a bare chevron in a transparent 28pt target with
- * the iOS press highlight — that they all now use.
+ * Uses `back` (Phosphor arrow-left) at `TOKENS.icon.lg` (24dp), matching
+ * Bluesky's Header.BackButton which renders `ArrowLeft` at `size="lg"` (24dp).
+ * An arrow points where you came from; a chevron is a disclosure caret and
+ * belongs on expandable rows. The design audit found seven different back
+ * buttons using `chevronLeft` at various sizes — this is the single source.
+ *
+ * Ref: social-app src/components/Layout/Header/index.tsx BackButton
  */
 export function BackButton({ onPress, testID, accessibilityLabel = 'Back', style, tint }: Props) {
   const theme = useTheme();
@@ -47,7 +50,7 @@ export function BackButton({ onPress, testID, accessibilityLabel = 'Back', style
       // mean widening the box to 40, which moves the header layout.
       shape="circle"
       style={[styles.button, style]}>
-      <Icon name="chevronLeft" size={TOKENS.icon.md} color={tint ?? theme.color.text.primary} />
+      <Icon name="back" size={TOKENS.icon.lg} color={tint ?? theme.color.text.primary} />
     </Pressable>
   );
 }

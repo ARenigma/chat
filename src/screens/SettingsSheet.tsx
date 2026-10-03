@@ -27,7 +27,6 @@ import { track } from '../lib/telemetry';
 import { useSetClayAvatar } from '../api/provider';
 import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
-import { legalUrl } from '../lib/legal';
 import { initialOf } from '../lib/display';
 import { formatRupees } from '../lib/rates';
 import { visibleSections, type SettingsRowId } from '../lib/settingsSections';
@@ -60,6 +59,8 @@ interface Props {
    * Absent when the host has no stack to push onto; the row is hidden.
    */
   onAppearance?: () => void;
+  /** Pushes the About screen (policies, version). Hidden when absent. */
+  onAbout?: () => void;
   /**
    * Provider-only controls (availability, what they offer, photos, earnings,
    * stats) rendered between the profile hero and the settings list. This is how
@@ -184,12 +185,12 @@ function SettingsRowContent({
   return (
     <>
       {icon === undefined ? null : (
-        <View style={[styles.iconBox, danger && styles.iconBoxDanger]}>
+        <View style={styles.iconBox}>
           <Icon
             name={icon}
             size={TOKENS.icon.lg}
             // Bluesky's ItemIcon takes the text colour, not a muted one.
-            color={danger ? theme.color.state.danger : theme.color.text.primary}
+            color={danger ? theme.color.text.destructive : theme.color.text.primary}
           />
         </View>
       )}
@@ -225,7 +226,8 @@ function SettingsRowContent({
         <Icon
           name="chevronRight"
           size={TOKENS.icon.sm}
-          color={theme.color.text.tertiary}
+          // Bluesky's Chevron: contrast_500, or negative_500 on a destructive row.
+          color={danger ? theme.color.text.destructive : theme.color.text.tertiary}
         />
       ) : null}
     </>
@@ -256,6 +258,7 @@ export function SettingsSheet({
   onInvoices,
   onUsage,
   onAppearance,
+  onAbout,
   topSection,
   extraRows,
   bottomOffset,
@@ -498,40 +501,18 @@ export function SettingsSheet({
             testID: 'settings-blocked',
             accessibilityLabel: 'Blocked People',
           },
-    /*
-     * Terms, Privacy and Refund: android-audit.md launch-blocking gap. All
-     * three are `Linking.openURL` to the system browser, no in-app webview,
-     * at the URLs the seeded policy_versions rows use (migration 027). Refund
-     * is here because the purchase surfaces state "no refunds" and a member
-     * could not read the policy in-app.
-     */
-    terms: {
-      icon: 'report',
-      title: 'Terms of service',
-      onPress: () => {
-        void Linking.openURL(legalUrl('terms'));
-      },
-      testID: 'settings-terms',
-      accessibilityLabel: 'Terms of Service',
-    },
-    privacy: {
-      icon: 'block',
-      title: 'Privacy policy',
-      onPress: () => {
-        void Linking.openURL(legalUrl('privacy'));
-      },
-      testID: 'settings-privacy',
-      accessibilityLabel: 'Privacy Policy',
-    },
-    refund: {
-      icon: 'wallet',
-      title: 'Refund policy',
-      onPress: () => {
-        void Linking.openURL(legalUrl('refund'));
-      },
-      testID: 'settings-refund',
-      accessibilityLabel: 'Refund Policy',
-    },
+    // Bluesky's last root row (CircleInfo), opening AboutSettings: where the
+    // policy links and the version live now (social-app Settings.tsx).
+    about:
+      onAbout === undefined
+        ? undefined
+        : {
+            icon: 'info',
+            title: 'About',
+            onPress: onAbout,
+            testID: 'settings-about',
+            accessibilityLabel: 'About',
+          },
   };
   const sections = visibleSections(id => {
     const spec = rowSpecs[id];
@@ -592,7 +573,7 @@ export function SettingsSheet({
               >
                 <Avatar
                   initial={initialOf(profileName)}
-                  size={88}
+                  size={80}
                   uri={profile?.avatar_url ?? null}
                 />
                 <View style={styles.profileCamera}>
@@ -680,14 +661,15 @@ export function SettingsSheet({
                 <SettingsRowContent
                   icon="logout"
                   title="Sign out"
+                  danger
                   chevron={false}
                 />
               </Pressable>
             </>
           ) : null}
-          {/* The destructive action in the error colour, its own row, which is
-              how a destructive action is kept from sitting flush against a
-              benign one. */}
+          {/* Bluesky keeps Delete account on its Account screen; we have no
+              account data to show there (owner, 2026-10-03), so it sits right
+              under Sign out, in the same destructive ink. */}
           {shows('Delete account') ? (
             <Pressable
               onPress={() => requestAnimationFrame(() => setConfirming(true))}
@@ -863,9 +845,10 @@ const makeStyles = (t: Theme) =>
     },
     profileAvatarHit: {
       position: 'relative',
-      width: 88,
-      height: 88,
-      borderRadius: 44,
+      // Bluesky's ProfilePreview avatar is 80 (social-app Settings.tsx).
+      width: 80,
+      height: 80,
+      borderRadius: 40,
     },
     profileCamera: {
       position: 'absolute',
@@ -934,9 +917,8 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.color.bg.base,
       paddingTop: TOKENS.space.xs,
     },
-    groupSpaced: {
-      marginTop: TOKENS.space.xl,
-    },
+    // Bluesky puts the divider straight after the last row (Settings.tsx).
+    groupSpaced: {},
     row: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -972,12 +954,6 @@ const makeStyles = (t: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    // Destructive rows get a danger-tinted disc behind the icon so the action
-    // reads as dangerous at a glance — the muted maroon ink alone did not.
-    iconBoxDanger: {
-      borderRadius: TOKENS.icon.lg / 2,
-      backgroundColor: `${t.color.state.danger}1F`,
-    },
     rowCopy: {
       flex: 1,
       minWidth: 0,
@@ -997,8 +973,10 @@ const makeStyles = (t: Theme) =>
     rowDetailAttention: {
       color: t.color.state.danger,
     },
+    // Bluesky's destructive Item: negative_500 on title, icon and chevron
+    // (social-app SettingsList.tsx ItemText / ItemIcon / Chevron).
     rowTitleDanger: {
-      color: t.color.state.danger,
+      color: t.color.text.destructive,
     },
     // Bottom-of-settings footer: the wordmark, then the Play Store rate link
     // directly beneath it.

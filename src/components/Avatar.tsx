@@ -31,7 +31,7 @@ import { useScreenFocused } from '../hooks/useScreenFocused';
  * round radius is half its side. The header had been using 30 — a LIST ROW
  * size — which is what read as too small.
  */
-type Size = 26 | 30 | 34 | 40 | 42 | 48 | 56 | 76 | 88;
+type Size = 26 | 30 | 34 | 40 | 42 | 48 | 56 | 76 | 80 | 88;
 
 interface Props {
   initial: string;
@@ -78,6 +78,8 @@ const FONT: Record<Size, number> = {
   48: 18,
   56: 20,
   76: 27,
+  // Bluesky's Settings ProfilePreview size (2026-10-03), on the 0.375x line.
+  80: 30,
   88: 31,
 };
 
@@ -102,6 +104,7 @@ const DOT: Record<Size, number> = {
   48: 16,
   56: 13,
   76: 18,
+  80: 18,
   88: 20,
 };
 

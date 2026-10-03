@@ -1,13 +1,7 @@
 /**
- * The settings list's information architecture: which sections exist, in
- * which order, and which rows each one holds. Data, not JSX, so the order is
- * tested without rendering and both trees read one list.
- *
- * Grouped the way Bluesky's Settings and the industry apps group theirs
- * (owner decision, 2026-09-25, "Option A approved"): who you are, your money,
- * how the app behaves, and the legal fine print. Sign out and Delete account
- * stay below Legal in their own spaced group, as they already sat, so the
- * destructive row is never flush against a benign one.
+ * The settings list's information architecture: which rows exist and in which
+ * order. Data, not JSX, so the order is tested without rendering and both
+ * trees read one list.
  *
  * adapted from bluesky-social/social-app src/screens/Settings/Settings.tsx
  * and components/SettingsList.tsx (MIT), see THIRD_PARTY_LICENSES.md
@@ -23,11 +17,9 @@ export type SettingsRowId =
   | 'notifications'
   | 'theme'
   | 'blocked'
-  | 'terms'
-  | 'privacy'
-  | 'refund';
+  | 'about';
 
-type SettingsSectionId = 'profile' | 'money' | 'app' | 'legal';
+type SettingsSectionId = 'main';
 
 export interface SettingsSectionModel {
   id: SettingsSectionId;
@@ -35,19 +27,38 @@ export interface SettingsSectionModel {
   rows: readonly SettingsRowId[];
 }
 
+/*
+ * ONE list, no sections (Amit, 2026-10-03: "bluesky doesnt have sections.. i
+ * told you to import it verbatim"). Bluesky's root Settings is a single run of
+ * rows with About last, then a divider and the destructive rows
+ * (social-app Settings.tsx). The legal rows moved into About, as Bluesky's
+ * Terms and Privacy live in AboutSettings. Kept as a one-entry list so both
+ * trees and the tests still read one model.
+ */
 export const SETTINGS_SECTIONS: readonly SettingsSectionModel[] = [
-  { id: 'profile', title: 'Your profile', rows: ['edit-profile', 'photos'] },
-  // Amit 2026-09-29: usage first (what each session cost/earned), then the
-  // money-in history, then the billing documents, then the payout row.
-  { id: 'money', title: 'Money', rows: ['usage', 'transactions', 'invoices', 'get-paid'] },
-  { id: 'app', title: 'App', rows: ['notifications', 'theme', 'blocked'] },
-  { id: 'legal', title: 'Legal', rows: ['terms', 'privacy', 'refund'] },
+  {
+    id: 'main',
+    title: 'Settings',
+    rows: [
+      'edit-profile',
+      'photos',
+      // Amit 2026-09-29: usage first (what each session cost/earned), then the
+      // money-in history, then the billing documents, then the payout row.
+      'usage',
+      'transactions',
+      'invoices',
+      'get-paid',
+      'notifications',
+      'theme',
+      'blocked',
+      'about',
+    ],
+  },
 ];
 
 /**
- * The sections to draw, holding only the rows this tree offers (and a search
- * matches). A section with no row left is dropped, label and all, so a member
- * never sees an empty "Your profile" heading.
+ * The rows to draw, holding only the rows this tree offers (and a search
+ * matches). An empty list draws nothing.
  */
 export function visibleSections(offered: (row: SettingsRowId) => boolean): SettingsSectionModel[] {
   return SETTINGS_SECTIONS.map(s => ({ ...s, rows: s.rows.filter(offered) })).filter(

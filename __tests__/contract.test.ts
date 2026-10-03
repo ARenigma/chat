@@ -4642,9 +4642,10 @@ describe('availability is the one control, and presence is gone', () => {
 
   it('SettingsSheet legal URLs come from legalUrl, not hard-coded strings', () => {
     // LEGAL_BASE_URL in src/lib/legal.ts is the single source of truth for the
-    // public-site host. SettingsSheet must import it so the Play Console required
-    // URLs (privacy policy, data deletion) cannot diverge from the canonical host.
-    const settings = read('src/screens/SettingsSheet.tsx');
+    // public-site host. The policy rows live on the About screen since
+    // 2026-10-03 (Bluesky's AboutSettings), which must import it so the Play
+    // Console required URLs cannot diverge from the canonical host.
+    const settings = read('src/screens/AboutScreen.tsx');
     expect(settings).toContain("from '../lib/legal'");
     expect(settings).toContain('legalUrl(');
     // Hard-coded host must not appear — the helper is the indirection point.
@@ -9317,6 +9318,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'Invoices',
       'Transactions',
       'AppearanceSettings',
+      'AboutSettings',
       'HomeSuggestion',
       'StoryViewer',
     ]);
@@ -9336,6 +9338,8 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'EditProfile',
       'Blocked',
       'Usage',
+      'AppearanceSettings',
+      'AboutSettings',
       'StoryViewer',
       'StoryCreate',
     ]);

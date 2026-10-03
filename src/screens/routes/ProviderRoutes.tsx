@@ -62,6 +62,8 @@ export function ProviderYouRoute() {
         onOpenEditProfile={() => nav.push('EditProfile')}
         onOpenUsage={() => nav.push('Usage')}
         onOpenBlocked={() => nav.push('Blocked')}
+        onOpenAppearance={() => nav.push('AppearanceSettings')}
+        onOpenAbout={() => nav.push('AboutSettings')}
         onSignedOut={onSignedOut}
         onDeleted={onSignedOut}
       />

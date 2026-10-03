@@ -24,6 +24,7 @@ import { HomeScreen } from '../HomeScreen';
 import { FavouritesScreen } from '../FavouritesScreen';
 import { CallsScreen } from '../CallsScreen';
 import { AppearanceScreen } from '../AppearanceScreen';
+import { AboutScreen } from '../AboutScreen';
 import { SettingsSheet } from '../SettingsSheet';
 import { ChatsListScreen } from '../ChatsListScreen';
 import { ProviderDetailScreen } from '../ProviderDetailScreen';
@@ -150,6 +151,7 @@ export function YouRoute() {
         onInvoices={() => nav.push('Invoices')}
         onUsage={() => nav.push('Usage')}
         onAppearance={() => nav.push('AppearanceSettings')}
+        onAbout={() => nav.push('AboutSettings')}
       />
     </Layout.Screen>
   );
@@ -376,6 +378,14 @@ export function HomeSuggestionRoute({ navigation, route }: RouteProps<'HomeSugge
           onDismiss={prompt.onDismiss}
         />
       )}
+    </Layout.Screen>
+  );
+}
+
+export function AboutRoute({ navigation }: RouteProps<'AboutSettings'>) {
+  return (
+    <Layout.Screen>
+      <AboutScreen onBack={() => navigation.goBack()} />
     </Layout.Screen>
   );
 }

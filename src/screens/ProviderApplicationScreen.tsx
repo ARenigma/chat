@@ -1102,7 +1102,7 @@ function Header({ onBack }: { onBack: () => void }) {
         // https://developer.android.com/training/material/animations
         shape="circle"
         style={styles.back}>
-        <Icon name="chevronLeft" size={TOKENS.icon.md} />
+        <Icon name="back" size={TOKENS.icon.lg} />
       </Pressable>
     </View>
   );

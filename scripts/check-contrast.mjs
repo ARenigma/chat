@@ -45,6 +45,14 @@ const ratio = (a, b) => {
  */
 const PAIRS = [
   {
+    fg: 'text/destructive',
+    bg: 'bg/base',
+    target: 3,
+    exempt:
+      "Bluesky's negative_500 for destructive settings rows (owner, 2026-10-03: match Bluesky exactly); a short action label beside an icon of the same colour",
+    what: 'Sign out and Delete account on the settings page',
+  },
+  {
     fg: 'text/primary',
     bg: 'bg/base',
     target: 4.5,

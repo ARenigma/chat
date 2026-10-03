@@ -37,53 +37,24 @@ import { saveProviderProfile, type PayoutAccount, type PayoutReadiness } from '.
 const ROOT = join(__dirname, '..');
 const read = (file: string): string => readFileSync(join(ROOT, file), 'utf8');
 
-describe('the settings list is grouped into sections', () => {
-  it('orders the sections Your profile, Money, App, Legal', () => {
-    expect(SETTINGS_SECTIONS.map(s => s.title)).toEqual(['Your profile', 'Money', 'App', 'Legal']);
+describe('the settings list is one Bluesky-style list', () => {
+  // Amit, 2026-10-03: "bluesky doesnt have sections.. import it verbatim".
+  it('is a single list with About last, and the legal rows moved into About', () => {
+    expect(SETTINGS_SECTIONS).toHaveLength(1);
+    expect(SETTINGS_SECTIONS[0]?.rows).toEqual([
+      'edit-profile', 'photos', 'usage', 'transactions', 'invoices', 'get-paid',
+      'notifications', 'theme', 'blocked', 'about',
+    ]);
   });
 
-  it('puts each row in the section the owner decided', () => {
-    const where = Object.fromEntries(
-      SETTINGS_SECTIONS.flatMap(s => s.rows.map(r => [r, s.id] as const)),
-    );
-    expect(where).toEqual({
-      'edit-profile': 'profile',
-      photos: 'profile',
-      'get-paid': 'money',
-      usage: 'money',
-      transactions: 'money',
-      invoices: 'money',
-      notifications: 'app',
-      theme: 'app',
-      blocked: 'app',
-      terms: 'legal',
-      privacy: 'legal',
-      refund: 'legal',
-    });
-  });
-
-  it('gives the provider tree all four sections, in order', () => {
+  it('gives each tree only the rows it offers, in that order', () => {
     const provider = new Set<SettingsRowId>([
-      'edit-profile', 'photos', 'get-paid', 'usage', 'notifications', 'theme', 'blocked',
-      'terms', 'privacy', 'refund',
+      'edit-profile', 'photos', 'get-paid', 'usage', 'notifications', 'theme', 'blocked', 'about',
     ]);
-    // Amit 2026-09-29: Money order is usage → transactions → invoices → get-paid.
-    // Provider tree has usage and get-paid; after the reorder usage comes first.
-    expect(visibleSections(r => provider.has(r)).map(s => [s.id, s.rows])).toEqual([
-      ['profile', ['edit-profile', 'photos']],
-      ['money', ['usage', 'get-paid']],
-      ['app', ['notifications', 'theme', 'blocked']],
-      ['legal', ['terms', 'privacy', 'refund']],
+    expect(visibleSections(r => provider.has(r)).map(s => s.rows)).toEqual([
+      ['edit-profile', 'photos', 'usage', 'get-paid', 'notifications', 'theme', 'blocked', 'about'],
     ]);
-  });
-
-  it('drops a section, label and all, when no row of it is offered', () => {
-    const member = new Set<SettingsRowId>([
-      'usage', 'transactions', 'invoices', 'notifications', 'theme', 'blocked', 'terms',
-      'privacy', 'refund',
-    ]);
-    expect(visibleSections(r => member.has(r)).map(s => s.id)).toEqual(['money', 'app', 'legal']);
-    expect(visibleSections(r => r === 'theme').map(s => s.id)).toEqual(['app']);
+    expect(visibleSections(() => false)).toEqual([]);
   });
 
   it('renders the sections from the model and keeps every Maestro id', () => {
@@ -94,11 +65,13 @@ describe('the settings list is grouped into sections', () => {
     expect(settings).not.toContain('style={styles.subheader}');
     for (const id of [
       'settings-usage', 'settings-transactions', 'settings-invoices', 'settings-theme',
-      'settings-blocked', 'settings-terms', 'settings-privacy', 'settings-refund',
-      'settings-notifications',
+      'settings-blocked', 'settings-about', 'settings-notifications',
     ]) {
       expect(settings).toContain(`testID: '${id}'`);
     }
+    // The policy rows keep their Maestro ids on the About screen.
+    const about = read('src/screens/AboutScreen.tsx');
+    expect(about).toContain('testID={`settings-${p.key}`}');
     for (const id of ['sign-out', 'delete-account', 'settings-avatar', 'settings-rate']) {
       expect(settings).toContain(`testID="${id}"`);
     }

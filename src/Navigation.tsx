@@ -95,6 +95,7 @@ import { CallRoute } from './screens/routes/CallRoute';
 import { ChatRoute } from './screens/routes/ChatRoute';
 import {
   AppearanceRoute,
+  AboutRoute,
   ApplicationStatusRoute,
   ApplyRoute,
   BlockedRoute,
@@ -222,6 +223,7 @@ function memberScreens(Stack: typeof HomeStack, background: string) {
       <Stack.Screen name="Invoices" getComponent={() => InvoicesRoute} />
       <Stack.Screen name="Transactions" getComponent={() => TransactionsRoute} />
       <Stack.Screen name="AppearanceSettings" getComponent={() => AppearanceRoute} />
+      <Stack.Screen name="AboutSettings" getComponent={() => AboutRoute} />
       <Stack.Screen name="HomeSuggestion" getComponent={() => HomeSuggestionRoute} />
       <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
     </>
@@ -241,6 +243,8 @@ function providerScreens(Stack: typeof ChatsStack) {
       <Stack.Screen name="EditProfile" getComponent={() => EditProfileRoute} />
       <Stack.Screen name="Blocked" getComponent={() => BlockedRoute} />
       <Stack.Screen name="Usage" getComponent={() => UsageRoute} />
+      <Stack.Screen name="AppearanceSettings" getComponent={() => AppearanceRoute} />
+      <Stack.Screen name="AboutSettings" getComponent={() => AboutRoute} />
       <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
       <Stack.Screen name="StoryCreate" getComponent={() => StoryCreateRoute} />
     </>
