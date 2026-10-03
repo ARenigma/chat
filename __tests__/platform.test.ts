@@ -3319,6 +3319,12 @@ describe('the incoming-call ring (S22, 2026-10-03)', () => {
     expect(fgs).toContain('.setOnlyAlertOnce(true)');
   });
 
+  it('never re-posts the ring over an answered call', () => {
+    // The state flip and startForeground share the lock the refresh posts under.
+    expect(fgs).toMatch(/synchronized\(ringLock\) \{\s*ringing = if \(isIncoming\)[^\n]*\n\s*ServiceCompat\.startForeground\(/);
+    expect(fgs).toMatch(/fun refreshIncoming\(context: Context\) \{\s*synchronized\(ringLock\) \{\s*val ring = ringing \?: return/);
+  });
+
   it('hands the photo over atomically, so an older call cannot dress a newer ring', () => {
     expect(conv).toMatch(
       /synchronized\(postLock\) \{\s*\(pendingCallId == callId\)\.also \{ if \(it\) pendingCallAvatar = icon \}/,

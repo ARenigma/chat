@@ -122,14 +122,19 @@ class CallForegroundService : Service() {
         // ServiceCompat back-fills to two-arg form on pre-API-29 devices.
         // On API 34+ the type mask is enforced: MANAGE_OWN_CALLS permission
         // in the manifest is the prerequisite for FOREGROUND_SERVICE_TYPE_PHONE_CALL.
-        ServiceCompat.startForeground(
-            this,
-            CALL_NOTIFICATION_ID,
-            buildIncomingNotification(this, callerName, isIncoming, includeCamera),
-            serviceTypes,
-        )
-
-        ringing = if (isIncoming) Ring(callerName, includeCamera) else null
+        // The ring state flips and the notification goes up in one hold of
+        // `ringLock`, the lock refreshIncoming posts under: a photo landing as
+        // the call is answered can then never re-post the ringing notification
+        // over the ongoing one.
+        synchronized(ringLock) {
+            ringing = if (isIncoming) Ring(callerName, includeCamera) else null
+            ServiceCompat.startForeground(
+                this,
+                CALL_NOTIFICATION_ID,
+                buildIncomingNotification(this, callerName, isIncoming, includeCamera),
+                serviceTypes,
+            )
+        }
 
         // This notification is now the ring, so the one the push put up has to go.
         // the reference app's service takes the call over from its prenotification exactly
@@ -333,7 +338,7 @@ class CallForegroundService : Service() {
         audioFocusManager.abandonCallFocus()
         proximityLock?.let { if (it.isHeld) it.release() }
         proximityLock = null
-        ringing = null
+        synchronized(ringLock) { ringing = null }
         // The service dying is the end of the call, which is the moment the push's
         // record of it stops describing anything.
         Conversations.forgetPendingCall()
@@ -362,6 +367,9 @@ class CallForegroundService : Service() {
         @Volatile
         private var ringing: Ring? = null
 
+        /** Guards [ringing] together with the post that depends on it. */
+        private val ringLock = Any()
+
         /**
          * Re-post the ring with the caller's photo once [Conversations.notifyCall]'s
          * fill has it. The service's ring often goes up before the download lands
@@ -371,14 +379,16 @@ class CallForegroundService : Service() {
          * https://developer.android.com/develop/ui/views/notifications/build-notification#Updating
          */
         fun refreshIncoming(context: Context) {
-            val ring = ringing ?: return
-            try {
-                androidx.core.app.NotificationManagerCompat.from(context).notify(
-                    CALL_NOTIFICATION_ID,
-                    buildIncomingNotification(context, ring.callerName, true, ring.includeCamera),
-                )
-            } catch (denied: SecurityException) {
-                android.util.Log.w("PappalCall", "refreshIncoming: notify refused", denied)
+            synchronized(ringLock) {
+                val ring = ringing ?: return
+                try {
+                    androidx.core.app.NotificationManagerCompat.from(context).notify(
+                        CALL_NOTIFICATION_ID,
+                        buildIncomingNotification(context, ring.callerName, true, ring.includeCamera),
+                    )
+                } catch (denied: SecurityException) {
+                    android.util.Log.w("PappalCall", "refreshIncoming: notify refused", denied)
+                }
             }
         }
 
