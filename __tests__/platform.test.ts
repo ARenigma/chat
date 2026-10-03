@@ -3366,3 +3366,22 @@ describe('a ring the system refused is reported, not swallowed', () => {
     expect(mod).toMatch(/val shown = Conversations\.notifyCall\([\s\S]*?promise\.resolve\(shown\)/);
   });
 });
+
+describe('landscape (BrowserStack Pixel 8, 2026-10-03)', () => {
+  it('remounts the wallpaper and the call backdrop when the window changes size', () => {
+    expect(read('src/components/ChatWallpaper.tsx')).toContain('key={`${width}x${height}`}');
+    expect(read('src/screens/CallScreen.tsx')).toContain('key={`backdrop-${windowWidth}x${windowHeight}`}');
+  });
+  it('shrinks and lowers the call face so it clears the name block', () => {
+    const call = read('src/screens/CallScreen.tsx');
+    expect(call).toContain('const faceSize = Math.max(FACE_MIN, Math.min(AVATAR, Math.floor(faceRoom)));');
+    expect(call).toContain('<CallRing size={faceSize} active={pulsing}>');
+    expect(call).toMatch(/styles\.center, \{ paddingTop: faceTopPad \}/);
+  });
+});
+
+describe('a new session request supersedes an unanswered review (B-BS-9)', () => {
+  it('clears the pending review when the consent dialog is asked', () => {
+    expect(read('src/chat-v2/ChatScreenV2.tsx')).toMatch(/clearReview\(\);\s*setAskConsent\(true\);/);
+  });
+});

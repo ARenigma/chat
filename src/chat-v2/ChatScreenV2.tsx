@@ -360,13 +360,17 @@ export function ChatScreenV2({
       consentGranted.current = false;
     }
   }, [consentBeforeSend]);
+  const clearReview = useStore(s => s.clearReview);
   const holdForConsent = useCallback(() => {
     if (!consentBeforeSend || consentGranted.current) {
       return false;
     }
+    // A new session request supersedes an unanswered review of the last one:
+    // left pending it sat stacked under this dialog (B-BS-9, S22, 2026-10-02).
+    clearReview();
     setAskConsent(true);
     return true;
-  }, [consentBeforeSend]);
+  }, [consentBeforeSend, clearReview]);
 
   const onSend = useCallback(
     (text: string): boolean => {

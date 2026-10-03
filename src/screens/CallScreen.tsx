@@ -1405,6 +1405,22 @@ export function CallScreen({
     phase === 'starting' ||
     (phase === 'active' && connState === 'reconnecting');
 
+  /*
+   * The face and its clearance in a SHORT window. The name block is pinned to
+   * the top and the control row to the bottom; the face is centred between
+   * them, which in landscape (a Pixel 8 at 411dp tall) put it 19dp over the
+   * name and the status line (BrowserStack, 2026-10-03). It shrinks to what
+   * fits and is pushed down only as far as it needs, so portrait, where it
+   * already clears, is untouched.
+   * https://developer.android.com/develop/ui/views/layout/support-multi-window-mode
+   */
+  const metaBottom =
+    insets.top + TOKENS.space.md + META_BLOCK + (phase === 'incoming' && isMemberSide ? META_LINE : 0);
+  const faceRoom = windowHeight - insets.bottom - CONTROLS_CLEARANCE - metaBottom - TOKENS.space.md;
+  const faceSize = Math.max(FACE_MIN, Math.min(AVATAR, Math.floor(faceRoom)));
+  const faceCentre = (windowHeight - CONTROLS_CLEARANCE) / 2;
+  const faceTopPad = Math.max(0, Math.ceil(metaBottom + TOKENS.space.md - (faceCentre - faceSize / 2)) * 2);
+
   return (
     <View style={styles.root}>
       <View style={[styles.fill, { experimental_backgroundImage: calmGradient }]} />
@@ -1432,6 +1448,9 @@ export function CallScreen({
       ) : backdropSource !== null && !backdropFailed ? (
         <>
           <Image
+            // Remounted when the window changes size: a decoded backdrop that
+            // kept its portrait box filled a corner of a landscape call.
+            key={`backdrop-${windowWidth}x${windowHeight}`}
             source={backdropSource}
             resizeMode="cover"
             blurRadius={CALL_BG_BLUR}
@@ -1488,8 +1507,8 @@ export function CallScreen({
         * non-video state — the halo pulses while ringing and settles once active.
         */}
       {!showRemoteVideo ? (
-        <View style={styles.center} pointerEvents="none">
-          <CallRing size={AVATAR} active={pulsing}>
+        <View style={[styles.center, { paddingTop: faceTopPad }]} pointerEvents="none">
+          <CallRing size={faceSize} active={pulsing}>
             <View style={styles.avatarNeutral}>
               <Text allowFontScaling={false} style={styles.avatarInitial}>
                 {initial}
@@ -1501,7 +1520,7 @@ export function CallScreen({
                 resizeMode="cover"
                 style={[
                   styles.avatarPhoto,
-                  peerIsClay ? clayFraming(AVATAR) : null,
+                  peerIsClay ? clayFraming(faceSize) : null,
                 ]}
                 onError={() => setFaceFailed(true)}
                 accessibilityIgnoresInvertColors
@@ -1817,6 +1836,11 @@ function BarButton({
 
 /** Face diameter — WhatsApp capture ~140–160 logical on a tall phone. */
 const AVATAR = 148;
+/** The smallest face a landscape call shrinks to. */
+const FACE_MIN = 96;
+/** The name and status block's height under the top inset, in dp, and one more line. */
+const META_BLOCK = 64;
+const META_LINE = 22;
 /** How soft the peer photo blurs into the background wash (#4). */
 const CALL_BG_BLUR = 40;
 const BTN = 56;

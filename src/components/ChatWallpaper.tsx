@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTheme, useThemeMode } from '../theme/ThemeProvider';
 
 /**
@@ -49,13 +49,22 @@ const WASH_OPACITY = 0.2;
 function ChatWallpaperView() {
   const { isDark } = useThemeMode();
   const theme = useTheme();
+  // Keyed by the window: after a rotation the bitmap kept its portrait box and
+  // the wallpaper stopped short of the right edge (BrowserStack Pixel 8,
+  // 2026-10-03). A new size remounts the Image so it is laid out afresh.
+  const { width, height } = useWindowDimensions();
   const source = isDark
     ? require('../../assets/chat-wallpaper-dark.jpg')
     : require('../../assets/chat-wallpaper-light.jpg');
 
   return (
     <View pointerEvents="none" style={styles.host}>
-      <Image source={source} resizeMode="cover" style={styles.wallpaper} />
+      <Image
+        key={`${width}x${height}`}
+        source={source}
+        resizeMode="cover"
+        style={styles.wallpaper}
+      />
       {isDark ? null : (
         <View
           style={[
