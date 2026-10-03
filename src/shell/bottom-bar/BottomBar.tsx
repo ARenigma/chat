@@ -228,7 +228,13 @@ function SlotView({ tab, selected, onPressTab }: SlotProps) {
       size={INTERACTION.minTarget}
       style={styles.slot}>
       <Indicator selected={selected} />
-      <View style={styles.iconBox}>
+      {/* collapsable={false} prevents React Native's Fabric view-flattening
+          from merging this layout-only View into the parent Animated.View.
+          If it were merged, the badge's `left: '50%'` would resolve against
+          the slot width rather than TOKENS.icon.md, breaking the M3 BadgedBox
+          anchor in landscape where the slot is wider (B-BS-1). TourAnchor uses
+          the same prop for the same reason. */}
+      <View style={styles.iconBox} collapsable={false}>
         <Icon
           name={tab.glyph}
           // The filled Phosphor glyph when selected: M3 "the icon of the active

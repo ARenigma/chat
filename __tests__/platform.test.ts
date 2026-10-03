@@ -3034,6 +3034,41 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     expect(bar).toContain('placement="badgedBox"');
   });
 
+  it('anchors the badge inside the iconBox in every orientation (B-BS-1)', () => {
+    /*
+     * In landscape the slot is wider than in portrait (maxWidth:600 / 4 = 150dp
+     * vs ~99dp at portrait width). The badge uses `left: '50%'` inside the
+     * iconBox. If Fabric's view-flattening merges the layout-only iconBox into
+     * the parent Animated.View, `left: '50%'` resolves against the slot width
+     * rather than TOKENS.icon.md (20dp), placing the badge to the right of the
+     * icon in landscape.
+     *
+     * The fix: `collapsable={false}` on the iconBox View, the same guard
+     * TourAnchor.tsx uses for measureInWindow. With it, React Native always
+     * keeps a separate native node for the iconBox, so `left: '50%'` resolves
+     * against TOKENS.icon.md / 2 = the icon's horizontal centre.
+     * https://m3.material.io/components/badges/specs (BadgedBox offset)
+     */
+    // iconBox must carry collapsable={false} so Fabric cannot merge it away.
+    expect(bar).toContain('collapsable={false}');
+
+    // iconBox must have an explicit width; without it `left: '50%'` has nothing
+    // to resolve against even if the view is not collapsed.
+    const iconBoxStyle = block(styles, 'iconBox');
+    expect(iconBoxStyle).toContain('width: TOKENS.icon.md');
+
+    // iconBox height must be the pill height so the badge's top offset is stable.
+    expect(iconBoxStyle).toContain('height: INDICATOR_HEIGHT');
+
+    // The badge must be INSIDE the iconBox, not a sibling at the slot level.
+    // Check that `placement="badgedBox"` appears after `styles.iconBox` in the
+    // bar source, meaning it is rendered inside the iconBox View.
+    const iconBoxAt = bar.indexOf('styles.iconBox');
+    const badgeAt = bar.indexOf('placement="badgedBox"');
+    expect(iconBoxAt).toBeGreaterThan(-1);
+    expect(badgeAt).toBeGreaterThan(iconBoxAt);
+  });
+
   it('takes the hidden bar out of the accessibility tree and out of touch', () => {
     expect(bar).toContain("importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}");
     expect(bar).toContain('accessibilityElementsHidden={hidden}');
