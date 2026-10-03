@@ -3332,3 +3332,16 @@ describe('the incoming-call ring (S22, 2026-10-03)', () => {
     expect(labels).toMatch(/if \(summaries !== undefined\) \{\s*peerIndex = new Map/);
   });
 });
+
+describe('the chat header leaves WhatsApp\'s room for the name (S22, 2026-10-03)', () => {
+  const header = read('src/chat-v2/ChatHeaderV2.tsx');
+  it('is flush to both edges, with the name at 100dp and a 40dp overflow', () => {
+    expect(header).toMatch(/paddingHorizontal: 0,/);
+    expect(header).toMatch(/size=\{40\}/);
+    expect(header).toMatch(/paddingLeft: TOKENS\.space\['2xs'\]/);
+    expect(header).toContain('const OVERFLOW_WIDTH = 40;');
+  });
+  it('sets the last-seen line without tracking', () => {
+    expect(read('src/components/HeaderSubtitle.tsx')).toMatch(/letterSpacing: 0,/);
+  });
+});

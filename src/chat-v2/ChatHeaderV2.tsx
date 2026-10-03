@@ -40,6 +40,9 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
  */
 const CALL_GLYPH_SIZE = 19;
 
+/** The overflow button's width, WhatsApp's (S22, 2026-10-03). */
+const OVERFLOW_WIDTH = 40;
+
 /**
  * The height the identity column always reserves: the name's line box plus the
  * presence line's, whether or not there is a presence line.
@@ -158,13 +161,13 @@ export function ChatHeaderV2({
    */
   const identity = (
     <>
-      {/* 42, taken from the reference rather than guessed:
-          `avatarImageView.setRoundRadius(dp(21))` in ChatAvatarContainer, and a
-          circular avatar's round radius is half its side. */}
+      {/* 40, measured from WhatsApp on the S22 (2026-10-03): a 109px photo
+          at density 450 is 38.75dp, in a 48dp slot after the 48dp back target,
+          and the name starts at 100dp. 40 is the nearest avatar size. */}
       <Avatar
         initial={peerInitial}
         uri={peerAvatarUrl}
-        size={42}
+        size={40}
         online={presence.here}
       />
       <View
@@ -342,8 +345,8 @@ export function ChatHeaderV2({
             press="none"
             highlight="dim"
             shape="circle"
-            size={TOKENS.interaction.minTarget}
-            style={styles.navButton}
+            size={OVERFLOW_WIDTH}
+            style={[styles.navButton, styles.overflowButton]}
           >
             {/* Wrap in a View so measureInWindow works (Pressable is not a View). */}
             <View ref={menuButtonRef} collapsable={false}>
@@ -383,8 +386,11 @@ const makeStyles = (t: Theme) =>
       // No gap: each 48dp target already carries its own 12dp of air around
       // the glyph, which is the spacing the 28dp boxes plus an 8dp gap made.
       gap: 0,
-      // The outer targets' own padding stands in for most of the edge inset.
-      paddingHorizontal: TOKENS.space.xs,
+      // Flush, as WhatsApp's toolbar is (S22, 2026-10-03: back target from
+      // x=0, overflow to the right edge): the 48dp targets carry their own air,
+      // and the 16dp this padding cost came out of the name and the "last
+      // seen" line, which clipped.
+      paddingHorizontal: 0,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.sm,
       // The M3 small top app bar's container height, stated rather than left to
@@ -407,6 +413,11 @@ const makeStyles = (t: Theme) =>
       // Pressable paints a circle state layer. A radius here would override
       // shapeStyle (see Pressable.tsx, where innerStyle follows shapeStyle).
     },
+    // WhatsApp's overflow is 113px = 40dp wide against the right edge; the
+    // Pressable's slop (size 40) still makes a 48dp target.
+    overflowButton: {
+      width: OVERFLOW_WIDTH,
+    },
     // The M3 disabled container opacity, which is what a control that is drawn
     // and cannot fire has to look like.
     // https://m3.material.io/foundations/interaction/states/state-layers
@@ -420,6 +431,8 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: TOKENS.space.xs,
+      // 48 back + 4 + 40 avatar + 8 gap = the name at 100dp, WhatsApp's x.
+      paddingLeft: TOKENS.space['2xs'],
       paddingVertical: TOKENS.space.hair,
       borderRadius: TOKENS.radius.xs,
       borderCurve: 'continuous',

@@ -2371,7 +2371,7 @@ describe('the redesign holds its own invariants', () => {
 
     // The header is where the avatar now lives, exclusively.
     expect(withoutComments(read('src/chat-v2/ChatHeaderV2.tsx'))).toMatch(
-      /<Avatar\s+initial=\{peerInitial\}\s+uri=\{peerAvatarUrl\}\s+size=\{42\}/,
+      /<Avatar\s+initial=\{peerInitial\}\s+uri=\{peerAvatarUrl\}\s+size=\{40\}/,
     );
     // ...and the ONE other place the transcript shows a face is the empty
     // state, which is a greeting and not a row.

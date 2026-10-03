@@ -99,6 +99,10 @@ export const HeaderSubtitle = memo(HeaderSubtitleView);
 const makeStyles = (t: Theme) => StyleSheet.create({
   base: {
     ...TOKENS.typography.bodySmall,
+    // No tracking, as WhatsApp's status line has none: bodySmall's 0.4 adds
+    // ~10dp across "last seen today at 3:35 pm", the difference between the
+    // line fitting the header and clipping (S22, 2026-10-03).
+    letterSpacing: 0,
     color: t.color.text.positive,
   },
   quiet: {
