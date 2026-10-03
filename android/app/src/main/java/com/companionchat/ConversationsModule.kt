@@ -128,6 +128,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
             )
             promise.resolve(true)
         } catch (error: Exception) {
+            android.util.Log.w("PappalCall", "notifyCall threw", error)
             promise.resolve(false)
         }
     }

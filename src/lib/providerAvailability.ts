@@ -31,12 +31,12 @@ import { track } from './telemetry';
  */
 export const AVAILABILITY = {
   on: {
-    head: 'Open',
-    title: 'Open to New Conversations',
+    head: 'Online',
+    title: 'Online for New Conversations',
     sub: 'You are listed. Pick how members can reach you.',
   },
   off: {
-    head: 'Closed',
+    head: 'Offline',
     title: 'Not Taking New Conversations',
     sub: 'You are not listed. Existing chats still work.',
   },

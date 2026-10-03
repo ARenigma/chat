@@ -4628,7 +4628,7 @@ describe('availability is the one control, and presence is gone', () => {
     const vocab = withoutComments(read('src/lib/providerAvailability.ts'));
     expect(vocab).not.toContain('You are hidden.');
     expect(vocab).not.toContain('Available Now');
-    expect(vocab).toContain('Open to New Conversations');
+    expect(vocab).toContain('Online for New Conversations');
     for (const file of [
       'src/screens/ProviderChatsScreen.tsx',
       'src/screens/ProviderYouScreen.tsx',

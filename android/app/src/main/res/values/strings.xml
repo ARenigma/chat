@@ -56,6 +56,9 @@
          and that default never says whether the camera is about to come on. -->
     <string name="call_incoming_video">Incoming video call</string>
     <string name="call_incoming_voice">Incoming voice call</string>
+    <!-- The heads-up ring's actions, when CallStyle is not allowed (B-BS-8). -->
+    <string name="call_action_decline">Decline</string>
+    <string name="call_action_answer">Answer</string>
 
     <!-- CallStyle throws on a Person with an empty name, so the service needs a
          placeholder for a call notification built before the name arrives. -->

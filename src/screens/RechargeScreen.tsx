@@ -17,6 +17,7 @@ import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
 import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
+import { Icon } from '../components/Icon';
 import { Pressable } from '../components/Pressable';
 import { RupeeAmount } from '../components/RupeeAmount';
 import { Sheet } from '../components/Sheet';
@@ -391,6 +392,7 @@ function RechargeSheetFooter({ amount, gstRateBps, discountBps, onPay }: { amoun
  */
 export function WalletScreen({ onBack, sheet = false }: { onBack: () => void; sheet?: boolean }) {
   const styles = useStyles(makePageStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { livePacks, gstRateBps, discountBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
@@ -399,11 +401,26 @@ export function WalletScreen({ onBack, sheet = false }: { onBack: () => void; sh
 
   return (
     <View testID="recharge-wallet" style={[styles.page, { paddingTop: topInset }]}>
-      <View style={styles.bar}>
-        <BackButton onPress={onBack} testID="recharge-wallet-back" style={styles.barIcon} />
+      {/* When presented as a sheet: title left, close X right (Bluesky dialog
+          close pattern, owner 2026-10-04). No back arrow — the grabber, swipe
+          down and system back already dismiss the sheet. Full page keeps the
+          back arrow as before. */}
+      <View style={[styles.bar, sheet && styles.barSpaced]}>
+        {!sheet && <BackButton onPress={onBack} testID="recharge-wallet-back" style={styles.barIcon} />}
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling style={styles.barTitle}>
           Recharge
         </Text>
+        {sheet && (
+          <Pressable
+            onPress={onBack}
+            testID="recharge-wallet-close"
+            accessibilityLabel="Close"
+            shape="circle"
+            press="none"
+            style={styles.closeButton}>
+            <Icon name="close" size={TOKENS.icon.md} color={theme.color.text.secondary} />
+          </Pressable>
+        )}
       </View>
       {/* A ScrollView, not the plain View it used to be. "The balance card, the
           grid and the note fit a single screen" was only true of one screen
@@ -660,6 +677,19 @@ const makePageStyles = (t: Theme) =>
     },
     barIcon: {
       marginLeft: -TOKENS.space.xs,
+    },
+    // Sheet variant: title left, close X right.
+    barSpaced: {
+      justifyContent: 'space-between',
+    },
+    // 48dp circular touch target for the sheet close button.
+    closeButton: {
+      width: TOKENS.interaction.minTarget,
+      height: TOKENS.interaction.minTarget,
+      borderRadius: TOKENS.interaction.minTarget / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: -TOKENS.space.xs,
     },
     // Bluesky screen title (Layout.Header TitleText), ADR-0033.
     barTitle: {

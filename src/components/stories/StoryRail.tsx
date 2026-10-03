@@ -37,6 +37,15 @@ import { Pressable, PressLayer } from '../Pressable';
 const FACE = 56;
 const RING_GAP = 2;
 
+/**
+ * Visible face diameter for the avatar in the Chats tab bar. 34dp is the
+ * Avatar union value nearest to the "~32dp" spec; the ring border adds 2dp
+ * per side, so the ring box is 34 + 4 + 4 = 42dp inside the 48dp target.
+ * https://developer.android.com/guide/topics/ui/accessibility/apps
+ */
+const HEADER_FACE = 34;
+const HEADER_RING_GAP = 2;
+
 const StoryRing = memo(function StoryRingView({
   name,
   avatar,
@@ -138,12 +147,27 @@ function StoryRailView({ providerIds }: RailProps) {
 
 export const StoryRail = memo(StoryRailView);
 
-interface YourStoryProps {
+interface YourStoryAvatarProps {
   selfId: string | undefined;
 }
 
-/** The provider's "Your story" row, under the Chats tab's bar. */
-function YourStoryRowView({ selfId }: YourStoryProps) {
+/*
+ * The provider's own avatar, now living in the Chats tab bar to the left of
+ * the "Pappal" wordmark (wireframe A, 2026-10-04). Replaces the full-width
+ * "Your story" row that used to sit below the bar.
+ *
+ * Size: 32dp face inside a 48dp touch target (the Pressable box is 48dp;
+ * the ring is centred within it). Press feedback is circular: `layer="child"`
+ * + `PressLayer` inside the ring's `overflow: hidden` view so the ripple is
+ * clipped to the avatar circle rather than the full 48dp square.
+ *
+ * Three states:
+ *   live story  — unseen-style ring (2dp accent); tap → StoryViewer,
+ *                 long-press → StoryCreate (Instagram's pattern; a11y hint).
+ *   no story, stories on  — no ring, "+" badge bottom-right; tap → StoryCreate.
+ *   stories paused  — no ring, no badge, tap disabled.
+ */
+function YourStoryAvatarView({ selfId }: YourStoryAvatarProps) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const nav = useNavigationDeduped();
@@ -159,60 +183,60 @@ function YourStoryRowView({ selfId }: YourStoryProps) {
   const count = mine?.stories.length ?? 0;
   const name = profile.data?.display_name ?? '';
 
-  const view = () => {
+  const view = useCallback(() => {
     if (selfId !== undefined && count > 0) {
       nav.push('StoryViewer', { providerIds: [selfId], startProviderId: selfId });
     }
-  };
-  const add = () => nav.push('StoryCreate');
+  }, [nav, selfId, count]);
+
+  const add = useCallback(() => nav.push('StoryCreate'), [nav]);
+
+  const hasStory = count > 0;
+  // Stories paused and no live story: no ring, no "+", non-interactive.
+  const disabled = !canAdd && !hasStory;
 
   return (
-    <View style={styles.yourRow} testID="your-story">
+    <View testID="your-story">
       <Pressable
-        onPress={count > 0 ? view : add}
-        accessibilityLabel={count > 0 ? 'View your story' : 'Add to your story'}
-        disabled={count === 0 && !canAdd}
-        press="row"
-        style={styles.yourMain}
-        testID="your-story-open">
-        <View>
-          <StoryRing name={name} avatar={profile.data?.avatar_url ?? null} unseen={count > 0} />
-          {count === 0 && canAdd ? (
-            <View style={styles.plusBadge}>
-              <Icon name="plus" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
-            </View>
-          ) : null}
+        testID="your-story-open"
+        onPress={hasStory ? view : add}
+        onLongPress={hasStory && canAdd ? add : undefined}
+        accessibilityLabel={hasStory ? 'View your story' : 'Add to your story'}
+        accessibilityHint={hasStory && canAdd ? 'Long-press to add to your story' : undefined}
+        disabled={disabled}
+        press="none"
+        shape="circle"
+        layer="child"
+        style={styles.headerPressable}>
+        {/*
+         * The ring: unseen-style accent border while a story is live; no
+         * visible border otherwise. `overflow: hidden` + pill radius clips
+         * PressLayer to the avatar circle so the press lights the face only,
+         * not the full 48dp square.
+         */}
+        <View style={[styles.headerRing, hasStory && styles.headerRingLive]}>
+          <Avatar
+            initial={(name || '·').slice(0, 1).toUpperCase()}
+            uri={profile.data?.avatar_url ?? undefined}
+            size={HEADER_FACE}
+          />
+          <View style={styles.headerPressOverlay} pointerEvents="none">
+            <PressLayer />
+          </View>
         </View>
-        <View style={styles.yourText}>
-          <Text allowFontScaling maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMedium} style={styles.yourTitle}>
-            Your story
-          </Text>
-          <Text allowFontScaling style={styles.yourSub}>
-            {count > 0
-              ? `${count} live · tap to see views and comments`
-              : canAdd
-                ? 'Share a photo or a video for 24 hours'
-                : 'Stories are paused right now'}
-          </Text>
-        </View>
+        {!hasStory && canAdd ? (
+          // "+" badge in the "no story, stories on" state.
+          // testID="your-story-add" so Maestro can tap the add-story entry point.
+          <View testID="your-story-add" style={styles.headerPlusBadge}>
+            <Icon name="plus" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
+          </View>
+        ) : null}
       </Pressable>
-      {count > 0 && canAdd ? (
-        <Pressable
-          onPress={add}
-          accessibilityLabel="Add to your story"
-          press="chip"
-          shape="circle"
-          size={48}
-          style={styles.addButton}
-          testID="your-story-add">
-          <Icon name="plus" size={TOKENS.icon.lg} color={theme.color.text.primary} />
-        </Pressable>
-      ) : null}
     </View>
   );
 }
 
-export const YourStoryRow = memo(YourStoryRowView);
+export const YourStoryAvatar = memo(YourStoryAvatarView);
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
@@ -269,47 +293,52 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
       maxWidth: FACE + RING_GAP * 2 + 8,
     },
-    yourRow: {
-      flexDirection: 'row',
+    /*
+     * Header avatar (YourStoryAvatar): 48dp Pressable box centres the 32dp
+     * face. Press feedback is clipped to the avatar circle via PressLayer
+     * inside the ring view (overflow: hidden + pill radius).
+     */
+    headerPressable: {
+      width: 48,
+      height: 48,
       alignItems: 'center',
-      paddingHorizontal: TOKENS.space.md,
-      paddingVertical: TOKENS.space.xs,
-      gap: TOKENS.space.sm,
+      justifyContent: 'center',
     },
-    yourMain: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: TOKENS.space.md,
-      minHeight: TOKENS.layout.rowTwoLine,
+    headerRing: {
+      // HEADER_RING_GAP (2dp) padding separates face from any border.
+      padding: HEADER_RING_GAP,
+      borderRadius: TOKENS.radius.pill,
     },
-    yourText: {
-      flex: 1,
-      minWidth: 0,
+    headerRingLive: {
+      // Unseen-style ring: 2dp accent border, same weight as the rail faces.
+      borderWidth: 2,
+      borderColor: t.color.border.accent,
     },
-    yourTitle: {
-      ...TOKENS.typography.titleMedium,
-      color: t.color.text.primary,
+    /*
+     * Circular press-layer clip: positioned over the full ring box; overflow
+     * + pill radius clips PressLayer to the inscribed circle.
+     */
+    headerPressOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      borderRadius: TOKENS.radius.pill,
+      overflow: 'hidden',
     },
-    yourSub: {
-      ...TOKENS.typography.bodySmall,
-      color: t.color.text.secondary,
-    },
-    plusBadge: {
+    headerPlusBadge: {
       position: 'absolute',
       right: 0,
       bottom: 0,
-      width: 20,
-      height: 20,
-      borderRadius: 10,
+      width: 16,
+      height: 16,
+      borderRadius: 8,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: t.color.bg.accent,
+      // 2dp hairline so the badge reads above the avatar even on a matching bg.
       borderWidth: 2,
       borderColor: t.color.bg.base,
-    },
-    addButton: {
-      backgroundColor: t.color.bg.sunken,
-      borderRadius: TOKENS.radius.pill,
     },
   });

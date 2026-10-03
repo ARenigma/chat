@@ -172,7 +172,19 @@ class InAppUpdateModule(private val reactContext: ReactApplicationContext) :
                 .addOnSuccessListener { info ->
                     // Each AppUpdateInfo can start exactly one flow, which is why
                     // it is fetched here rather than cached from check().
-                    if (info.isUpdateTypeAllowed(type)) {
+                    if (!info.isUpdateTypeAllowed(type)) {
+                        promise.resolve(false)
+                        return@addOnSuccessListener
+                    }
+                    // Inside the listener, not around it: the try below only
+                    // covers registering the listener, and this call runs later
+                    // on the main thread. Play can refuse to launch its flow
+                    // (IntentSender.SendIntentException when the activity is
+                    // finishing or the update intent went stale), and uncaught
+                    // here that was a FATAL crash on a Redmi on 1.2.2
+                    // (Sentry PAPPAL-A, 2026-10-01). A refused flow is "no
+                    // update offered this time", not a crash.
+                    try {
                         manager.startUpdateFlowForResult(
                             info,
                             activity,
@@ -180,7 +192,11 @@ class InAppUpdateModule(private val reactContext: ReactApplicationContext) :
                             REQUEST_CODE,
                         )
                         promise.resolve(true)
-                    } else {
+                    } catch (error: android.content.IntentSender.SendIntentException) {
+                        android.util.Log.w("InAppUpdate", "update flow refused", error)
+                        promise.resolve(false)
+                    } catch (error: RuntimeException) {
+                        android.util.Log.w("InAppUpdate", "update flow failed", error)
                         promise.resolve(false)
                     }
                 }

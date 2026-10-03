@@ -16,6 +16,7 @@ import {
 } from '@react-native-firebase/messaging';
 import { SESSION_STORAGE_KEY, supabase } from './supabase';
 import { storage } from './storage';
+import { reportSwallowed } from './sentry';
 import {
   ensureConversationChannel,
   notifyCall,
@@ -30,6 +31,7 @@ import {
   type EngagementPush,
   type NotifyOptions,
 } from './conversations';
+import { getLabel, getLabelByPeer } from './conversationLabelCache';
 import {
   declinedAt,
   foregroundPushAction,
@@ -830,7 +832,21 @@ export async function handleBackgroundPush(
   }
   const call = readCallPush(remote.data);
   if (call !== null) {
-    await notifyCall(call);
+    // A ring that could not be drawn is the one failure the callee can never
+    // report (B-BS-8 sat unseen because this result was ignored). Ids only.
+    //
+    // Substitute a private label when one exists. The call payload carries only
+    // `peerId` (no conversationId), so the peer index from conversationLabelCache
+    // is the only lookup path here (see src/api/conversationLabels.ts).
+    const callUserId = storedAccountId();
+    const callLabel =
+      callUserId !== null ? getLabelByPeer(callUserId, call.peerId) : null;
+    const resolvedCall: CallPush =
+      callLabel !== null ? { ...call, callerName: callLabel } : call;
+    const shown = await notifyCall(resolvedCall);
+    if (!shown) {
+      reportSwallowed('notifyCall', new Error('call ring not shown'));
+    }
     return;
   }
   const nudge = readEngagementPush(remote.data);
@@ -846,15 +862,20 @@ export async function handleBackgroundPush(
     pushLog('info', `background ${push.requestId ? 'contact' : 'message'}: dropped, sent before this device declined`);
     return;
   }
+  // Substitute a private label when one exists (keyed on conversationId).
+  const msgUserId = storedAccountId();
+  const msgLabel =
+    msgUserId !== null ? getLabel(msgUserId, push.conversationId) : null;
+  const resolvedPush = msgLabel !== null ? { ...push, senderName: msgLabel } : push;
   // What a Decline landing meanwhile asks before it clears (`postedSince`).
   recordPosted(push.conversationId, push.sentAt);
   // A provider-initiated chat request carries a requestId (migration 105);
   // route it to the notification with Accept/Decline action buttons.
-  if (push.requestId) {
-    await notifyChatRequest(push);
+  if (resolvedPush.requestId) {
+    await notifyChatRequest(resolvedPush);
     return;
   }
-  await notifyConversation(push, MESSAGE_BODY);
+  await notifyConversation(resolvedPush, MESSAGE_BODY);
 }
 
 /**
@@ -895,7 +916,14 @@ export function onForegroundPush(handlers: {
     }
     const call = readCallPush(remote.data);
     if (call !== null) {
-      handlers.onCall(call);
+      // Substitute a private label for calls in the foreground too. Calls are
+      // routed to the app's own UI (handlers.onCall), which currently shows the
+      // raw callerName; the substitution ensures the app and the shade are
+      // consistent.
+      const fgCallUserId = signedInOnDevice() ? storedAccountId() : null;
+      const fgCallLabel =
+        fgCallUserId !== null ? getLabelByPeer(fgCallUserId, call.peerId) : null;
+      handlers.onCall(fgCallLabel !== null ? { ...call, callerName: fgCallLabel } : call);
       return;
     }
     const nudge = readEngagementPush(remote.data);
@@ -907,19 +935,25 @@ export function onForegroundPush(handlers: {
     if (push === null) {
       return;
     }
+    // Substitute a private label for the conversation sender name.
+    const fgUserId = storedAccountId();
+    const fgLabel =
+      fgUserId !== null ? getLabel(fgUserId, push.conversationId) : null;
+    const resolvedFgPush =
+      fgLabel !== null ? { ...push, senderName: fgLabel } : push;
     const action = foregroundPushAction(
-      push,
+      resolvedFgPush,
       getViewingConversation(),
       AppState.currentState === 'active',
       getRingingConversation(),
-      declinedAt(push.conversationId),
+      declinedAt(resolvedFgPush.conversationId),
       isViewingCovered(),
     );
-    pushLog('info', `foreground ${push.requestId ? 'contact' : 'message'}: ${action}`);
+    pushLog('info', `foreground ${resolvedFgPush.requestId ? 'contact' : 'message'}: ${action}`);
     if (action === 'ignore') {
       return;
     }
-    recordPosted(push.conversationId, push.sentAt);
+    recordPosted(resolvedFgPush.conversationId, resolvedFgPush.sentAt);
     // A ringing request's push is an in-app post too, on the same channel,
     // only silenced: in the shade, no banner over the ring.
     const options: NotifyOptions = {
@@ -928,9 +962,9 @@ export function onForegroundPush(handlers: {
     };
     // Same routing as index.js: a requestId is a provider's chat request and
     // gets Accept/Decline; anything else extends the conversation transcript.
-    void (push.requestId
-      ? notifyChatRequest(push, options)
-      : notifyConversation(push, MESSAGE_BODY, options));
+    void (resolvedFgPush.requestId
+      ? notifyChatRequest(resolvedFgPush, options)
+      : notifyConversation(resolvedFgPush, MESSAGE_BODY, options));
   });
 }
 

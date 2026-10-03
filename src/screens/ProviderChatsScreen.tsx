@@ -19,7 +19,7 @@ import { Icon } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Pressable } from '../components/Pressable';
 import { Toggle } from '../components/Toggle';
-import { YourStoryRow } from '../components/stories/StoryRail';
+import { YourStoryAvatar } from '../components/stories/StoryRail';
 
 /*
  * OWN CONSTANTS since 2026-09-08, where this used to import ROW_AVATAR and
@@ -229,11 +229,17 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
   return (
     <View style={styles.root}>
       <View style={[styles.head, { paddingTop: insets.top + TOKENS.space.xs }]}>
-        <Text
-          allowFontScaling={false}
-          style={styles.headWordmark}>
-          Pappal
-        </Text>
+        {/* Avatar + wordmark are a leading pair so `space-between` keeps them
+            flush-left together while the availability switch stays flush-right.
+            The avatar is the provider's own story entry point; see YourStoryAvatar. */}
+        <View style={styles.headLeading}>
+          <YourStoryAvatar selfId={selfId} />
+          <Text
+            allowFontScaling={false}
+            style={styles.headWordmark}>
+            Pappal
+          </Text>
+        </View>
         {/* THE SAME SWITCH AS THE ONE ON THE YOU TAB, not a second control.
             The member's bar carries the wallet in this slot because the
             number that decides whether they can act is their balance; the
@@ -264,15 +270,11 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
             value={available}
             onValueChange={toggle}
             disabled={availabilityPending}
-            accessibilityLabel="Open to new conversations"
+            accessibilityLabel="Online for new conversations"
             tone="presence"
           />
         </View>
       </View>
-      {/* "Your story" (owner, 2026-09-26): the provider's own entry to stories,
-          fixed under the bar and above the list, so it is there whether or
-          not any chat is. */}
-      <YourStoryRow selfId={selfId} />
       {isPending ? (
         <View style={styles.centre}>
           <LoadingIndicator size={48} />
@@ -329,6 +331,14 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.lg,
       paddingTop: TOKENS.space.xs,
       paddingBottom: TOKENS.space.md,
+    },
+    // Avatar + wordmark sit together as the leading group in the bar.
+    headLeading: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      // The avatar Pressable is 48dp square; a small gap keeps the wordmark
+      // from crowding its circular face.
+      gap: TOKENS.space['2xs'],
     },
     headAvailability: {
       flexDirection: 'row',

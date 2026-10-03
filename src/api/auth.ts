@@ -13,6 +13,7 @@ import {
   credentialSheetAvailable,
   requestGoogleCredential,
 } from '../lib/googleCredential';
+import { clearLabels } from '../lib/conversationLabelCache';
 import {
   TruecallerOAuthError,
   requestTruecallerAuth,
@@ -1031,7 +1032,23 @@ function leaveDevice(remember: { push: boolean } | null): {
   if (pending !== null) {
     writePending([...readPending(), pending]);
   }
+  // Parse the signing-out account's id BEFORE removing the session, so the
+  // label cache can be cleared under the right key. Another account on the
+  // device must never see a previous user's private labels.
+  let signingOutUserId: string | null = null;
+  try {
+    const parsed = stored !== null
+      ? (JSON.parse(stored) as { user?: { id?: unknown } } | null)
+      : null;
+    const maybeId = parsed?.user?.id;
+    signingOutUserId = typeof maybeId === 'string' ? maybeId : null;
+  } catch {
+    // Malformed session entry — clearLabels cannot run, but the session goes.
+  }
   storage.remove(SESSION_STORAGE_KEY);
+  if (signingOutUserId !== null) {
+    clearLabels(signingOutUserId);
+  }
   // The queued sends are this account's too, and have no owner to be told
   // apart by (outboxStore.ts `clearOutbox`).
   clearOutbox();

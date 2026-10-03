@@ -307,7 +307,7 @@ export function ProviderYouScreen({
                 value={available}
                 onValueChange={toggle}
                 disabled={availabilityPending}
-                accessibilityLabel="Open to new conversations"
+                accessibilityLabel="Online for new conversations"
                 tone="presence"
               />
             </View>

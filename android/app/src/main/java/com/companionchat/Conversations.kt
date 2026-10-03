@@ -171,6 +171,9 @@ object Conversations {
      */
     const val CALL_PRENOTIFICATION_ID = 2003
 
+    /** Logcat tag for the call ring path (B-BS-8): `adb logcat -s PappalCall`. */
+    private const val CALL_LOG_TAG = "PappalCall"
+
     /**
      * Whether the call currently being rung by the push is a video call.
      *
@@ -1045,6 +1048,32 @@ object Conversations {
         pendingCallIsVideo = isVideo
         pendingCallAnswer = answer
 
+        /*
+         * B-BS-8 (BrowserStack Pixel 8, Android 14, 2026-10-02): a call pushed to a
+         * backgrounded app reached this function and drew NOTHING. A CallStyle
+         * notification is only legal "for a foreground Service or with a
+         * fullScreenIntent" (Notification.CallStyle; NotificationManagerService
+         * rejects it otherwise), and on Android 14 an app that is not the
+         * default dialer or alarm app may have USE_FULL_SCREEN_INTENT revoked
+         * ("must check NotificationManager.canUseFullScreenIntent()").
+         * Declaring MANAGE_OWN_CALLS does not keep the grant. With the grant
+         * gone the system strips the full-screen intent, the CallStyle is then
+         * neither, notify() throws IllegalArgumentException, and the module's
+         * catch-all resolved `false` with no log.
+         * https://developer.android.com/about/versions/14/behavior-changes-14#fsi-restrictions
+         * https://developer.android.com/develop/ui/views/notifications/call-style
+         *
+         * So: CallStyle with the full-screen intent when the grant is there; a
+         * plain high-importance ring (title, Decline and Answer actions, the
+         * ringtone channel, no full-screen intent) when it is not, or when the
+         * system refuses the CallStyle anyway. The fallback is a heads-up
+         * rather than a take-over, which is what Android allows such an app.
+         */
+        val fullScreenAllowed =
+            android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                context.getSystemService(android.app.NotificationManager::class.java)
+                    ?.canUseFullScreenIntent() == true
+
         fun post(avatarIcon: IconCompat?) {
             val caller = Person.Builder()
                 .setKey(peerId)
@@ -1105,10 +1134,45 @@ object Conversations {
                 .setContentIntent(answer)
                 .build()
 
+            // The heads-up form of the same ring, for when CallStyle is not
+            // allowed (see `fullScreenAllowed`).
+            val plain = NotificationCompat.Builder(context, CALL_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setColor(BRAND_COLOR)
+                .setContentTitle(callerName)
+                .setContentText(
+                    context.getString(
+                        if (isVideo) R.string.call_incoming_video else R.string.call_incoming_voice,
+                    ),
+                )
+                .addPerson(caller)
+                .addAction(0, context.getString(R.string.call_action_decline), decline)
+                .addAction(0, context.getString(R.string.call_action_answer), answer)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setOngoing(true)
+                .setAutoCancel(true)
+                .setSound(Settings.System.DEFAULT_RINGTONE_URI, AudioManager.STREAM_RING)
+                .setTimeoutAfter(RING_TIMEOUT_MS)
+                .setContentIntent(answer)
+                .build()
+
             try {
-                manager.notify(CALL_PRENOTIFICATION_ID, notification)
+                if (fullScreenAllowed) {
+                    try {
+                        manager.notify(CALL_PRENOTIFICATION_ID, notification)
+                    } catch (refused: IllegalArgumentException) {
+                        android.util.Log.w(CALL_LOG_TAG, "notifyCall: CallStyle refused, ringing as a heads-up", refused)
+                        manager.notify(CALL_PRENOTIFICATION_ID, plain)
+                    }
+                } else {
+                    android.util.Log.i(CALL_LOG_TAG, "notifyCall: full-screen intent not granted, ringing as a heads-up")
+                    manager.notify(CALL_PRENOTIFICATION_ID, plain)
+                }
             } catch (denied: SecurityException) {
-                // POST_NOTIFICATIONS revoked; swallowed as in notify().
+                // POST_NOTIFICATIONS revoked: nothing can be shown. Logged, not
+                // silent, so the next missing ring is visible in logcat.
+                android.util.Log.w(CALL_LOG_TAG, "notifyCall: notify refused (notifications off?)", denied)
             }
         }
 

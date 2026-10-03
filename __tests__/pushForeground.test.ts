@@ -2308,8 +2308,8 @@ describe('push.ts wiring', () => {
     // Silenced only for the ringing request, never for the in-app banner.
     expect(foreground).toContain("silent: action === 'show-silent',");
     expect(count(foreground, 'silent:')).toBe(1);
-    expect(foreground).toContain('notifyChatRequest(push, options)');
-    expect(foreground).toContain('notifyConversation(push, MESSAGE_BODY, options)');
+    expect(foreground).toContain('notifyChatRequest(resolvedFgPush, options)');
+    expect(foreground).toContain('notifyConversation(resolvedFgPush, MESSAGE_BODY, options)');
   });
 
   it('uses the same copy as the background handler, since both extend one transcript', () => {
@@ -2319,7 +2319,7 @@ describe('push.ts wiring', () => {
       push.indexOf('export async function handleBackgroundPush'),
       push.indexOf('export function onForegroundPush'),
     );
-    expect(background).toContain('await notifyConversation(push, MESSAGE_BODY);');
+    expect(background).toContain('await notifyConversation(resolvedPush, MESSAGE_BODY);');
     // index.js registers that handler, and routes nothing itself.
     const entry = withoutComments(read('index.js'));
     expect(entry).toContain(
