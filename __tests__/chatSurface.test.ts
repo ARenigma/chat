@@ -734,8 +734,10 @@ describe('the composer and the bubbles share one grid and one corner', () => {
     );
     // ...and the transcript's own content column is the same edge, so a bubble
     // and the field under it start in the same place.
+    // 20 since 2026-10-04: the 12dp edge plus the 8dp tail, so the TAIL tip
+    // lands on the capsule's edge and the body clears it.
     expect(styleBlock(list, 'content')).toContain(
-      'paddingHorizontal: TOKENS.space.sm',
+      'paddingHorizontal: TOKENS.space.lg',
     );
   });
 
@@ -743,10 +745,10 @@ describe('the composer and the bubbles share one grid and one corner', () => {
     /*
      * The arithmetic, on a 360dp window:
      *
-     *   content column     content.paddingHorizontal = space.sm = 12 -> [12, 348]
-     *   incoming left edge 12 + row(0) + stack(0)                     =  12
-     *   outgoing right edge 348 - row(0) - stack(0)                   =  348
-     *   capsule left/right root.paddingHorizontal = 12                -> 12 / 348
+     *   content column     content.paddingHorizontal = space.lg = 20 -> [20, 340]
+     *   incoming left edge 20 + row(0) + stack(0)                     =  20
+     *   outgoing right edge 340 - row(0) - stack(0)                   =  340
+     *   tails (8dp) reach    12 / 348, the capsule's edges            -> 12 / 348
      *
      * Both bubble edges and both capsule edges are the same two columns. The
      * mechanism is that the peer row is the MIRROR of my row — a full-width

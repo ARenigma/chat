@@ -669,6 +669,36 @@ export function ChatScreenV2({
     setUnreadBelow(0);
   }, []);
 
+  /*
+   * Re-pin to the newest message when the dock's height lands or changes.
+   * On a warm open the rows come from cache and pin to offset 0 BEFORE the
+   * dock has measured; the dock's height then grows the list's bottom inset
+   * (extraContentPadding) and the newest messages sat under the composer by
+   * exactly the dock's height until a scroll (S22, 2026-10-04: back + rail
+   * re-open, newest row 323px below where it belonged). Only when the member
+   * is at the bottom: reading history is never yanked.
+   */
+  useEffect(() => {
+    if (dockHeight === 0 || scrolledAwayRef.current) {
+      return;
+    }
+    // Twice: the inset is applied on the UI thread from the shared value, and
+    // on a warm open that can land a frame or two after this commit; one
+    // frame alone missed it about one open in three on the S22. The second
+    // pin is a no-op when the first already held.
+    const pin = () => {
+      if (!scrolledAwayRef.current) {
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      }
+    };
+    const frame = requestAnimationFrame(pin);
+    const settle = setTimeout(pin, 160);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(settle);
+    };
+  }, [dockHeight]);
+
   const onScrollOffset = useCallback(
     (offsetY: number) => {
       const away = chatV2ScrolledAway(offsetY);

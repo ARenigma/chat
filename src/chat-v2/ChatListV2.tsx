@@ -328,7 +328,11 @@ const makeStyles = (t: Theme) =>
       flex: 1,
     },
     content: {
-      paddingHorizontal: TOKENS.space.sm,
+      // 20 = the composer's 12dp edge + the 8dp bubble tail, so the TAIL tip
+      // sits on the composer's edge and the bubble body clears it, as
+      // WhatsApp's does. At 12 the tail ran to 4dp from the screen and the
+      // peer bubble read as cut at the left (S22, 2026-10-04).
+      paddingHorizontal: TOKENS.space.lg,
       paddingVertical: TOKENS.space.xs,
     },
     cell: {
