@@ -78,18 +78,24 @@ export function getLabelByPeer(userId: string, peerId: string): string | null {
  * Persist the full label set fetched from the server.
  *
  * Call this whenever `useConversationLabels`' queryFn resolves with the latest
- * map. Supplying `peerIndex` also writes the secondary index so call pushes
- * can look up the label by peer id.
+ * map. Supplying `peerUpdates` also updates the secondary index so call
+ * pushes can look up the label by peer id.
+ *
+ * The peer index is MERGED, never replaced: `peerUpdates` covers only the
+ * peers whose conversations are in the loaded inbox, so a replace dropped
+ * every label for a chat outside it (not loaded, paginated out, ended), and a
+ * call from that peer pushed the real name again (B-BS-3, AI review 10-03).
+ * A null value clears that peer: their conversation is loaded and unlabelled.
  *
  * @param userId          The signed-in account's user id.
  * @param byConversation  The full conversationId → label map from the server.
- * @param peerIndex       Optional peerId → label map derived from the server
- *                        result joined against conversation_summaries.
+ * @param peerUpdates     Optional peerId → label (or null to clear) for the
+ *                        peers in the loaded conversation_summaries.
  */
 export function setAllLabels(
   userId: string,
   byConversation: Map<string, string>,
-  peerIndex?: Map<string, string>,
+  peerUpdates?: Map<string, string | null>,
 ): void {
   const convRecord: Record<string, string> = {};
   for (const [id, name] of byConversation) {
@@ -97,10 +103,14 @@ export function setAllLabels(
   }
   storage.set(convKey(userId), JSON.stringify(convRecord));
 
-  if (peerIndex !== undefined) {
-    const peerRecord: Record<string, string> = {};
-    for (const [peerId, name] of peerIndex) {
-      peerRecord[peerId] = name;
+  if (peerUpdates !== undefined) {
+    const peerRecord = readRecord(peerKey(userId));
+    for (const [peerId, name] of peerUpdates) {
+      if (name === null) {
+        delete peerRecord[peerId];
+      } else {
+        peerRecord[peerId] = name;
+      }
     }
     storage.set(peerKey(userId), JSON.stringify(peerRecord));
   }

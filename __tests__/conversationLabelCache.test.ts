@@ -152,6 +152,19 @@ describe('setAllLabels', () => {
     expect(getLabelByPeer(USER_A, PEER_1)).toBe('My label');
   });
 
+  it('merges the peer index: a peer outside the loaded inbox keeps its label', () => {
+    setPeerLabel(USER_A, PEER_1, 'Outside the inbox');
+    setAllLabels(USER_A, new Map([[CONV_2, 'Loaded']]), new Map([[PEER_2, 'Loaded']]));
+    expect(getLabelByPeer(USER_A, PEER_1)).toBe('Outside the inbox');
+    expect(getLabelByPeer(USER_A, PEER_2)).toBe('Loaded');
+  });
+
+  it('clears a loaded peer whose conversation lost its label', () => {
+    setPeerLabel(USER_A, PEER_1, 'Old');
+    setAllLabels(USER_A, new Map(), new Map([[PEER_1, null]]));
+    expect(getLabelByPeer(USER_A, PEER_1)).toBeNull();
+  });
+
   it('does not touch the peer index when not provided', () => {
     setPeerLabel(USER_A, PEER_1, 'Existing peer label');
     const map = new Map([[CONV_1, 'Conv label']]);

@@ -65,17 +65,16 @@ export function useConversationLabels() {
         const summaries = queryClient.getQueryData<ConversationSummary[]>(
           keys.conversationList,
         );
-        let peerIndex: Map<string, string> | undefined;
+        // Merged into the stored index (setAllLabels): a loaded, unlabelled
+        // conversation clears its peer; a peer outside the inbox keeps theirs.
+        let peerUpdates: Map<string, string | null> | undefined;
         if (summaries !== undefined) {
-          peerIndex = new Map<string, string>();
+          peerUpdates = new Map<string, string | null>();
           for (const summary of summaries) {
-            const label = map.get(summary.conversation_id);
-            if (label !== undefined) {
-              peerIndex.set(summary.peer_id, label);
-            }
+            peerUpdates.set(summary.peer_id, map.get(summary.conversation_id) ?? null);
           }
         }
-        setAllLabels(userId, map, peerIndex);
+        setAllLabels(userId, map, peerUpdates);
       }
 
       return map;

@@ -3335,7 +3335,9 @@ describe('the incoming-call ring (S22, 2026-10-03)', () => {
   it('keeps the stored private-label peer index when the inbox has not loaded', () => {
     // An empty index from an unloaded inbox overwrote it (B-BS-3 regression).
     const labels = read('src/api/conversationLabels.ts');
-    expect(labels).toMatch(/if \(summaries !== undefined\) \{\s*peerIndex = new Map/);
+    expect(labels).toMatch(/if \(summaries !== undefined\) \{\s*peerUpdates = new Map/);
+    // Merged, not replaced: a peer outside the loaded inbox keeps its label.
+    expect(read('src/lib/conversationLabelCache.ts')).toContain('const peerRecord = readRecord(peerKey(userId));');
   });
 });
 
