@@ -3318,4 +3318,17 @@ describe('the incoming-call ring (S22, 2026-10-03)', () => {
     // The refresh re-posts the same id; it must not alert again.
     expect(fgs).toContain('.setOnlyAlertOnce(true)');
   });
+
+  it('hands the photo over atomically, so an older call cannot dress a newer ring', () => {
+    expect(conv).toMatch(
+      /synchronized\(postLock\) \{\s*\(pendingCallId == callId\)\.also \{ if \(it\) pendingCallAvatar = icon \}/,
+    );
+    expect(conv).toMatch(/synchronized\(postLock\) \{\s*pendingCallAvatar = null\s*pendingCallId = callId/);
+  });
+
+  it('keeps the stored private-label peer index when the inbox has not loaded', () => {
+    // An empty index from an unloaded inbox overwrote it (B-BS-3 regression).
+    const labels = read('src/api/conversationLabels.ts');
+    expect(labels).toMatch(/if \(summaries !== undefined\) \{\s*peerIndex = new Map/);
+  });
 });

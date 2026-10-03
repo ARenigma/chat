@@ -236,8 +236,10 @@ object Conversations {
     fun forgetPendingCall() {
         pendingCallIsVideo = false
         pendingCallAnswer = null
-        pendingCallAvatar = null
-        pendingCallId = null
+        synchronized(postLock) {
+            pendingCallAvatar = null
+            pendingCallId = null
+        }
     }
 
     /**
@@ -1077,8 +1079,12 @@ object Conversations {
 
         pendingCallIsVideo = isVideo
         pendingCallAnswer = answer
-        pendingCallAvatar = null
-        pendingCallId = callId
+        // Under the post lock, as the fill's check-and-set below is: a slow
+        // fill for the previous call must not land between these two writes.
+        synchronized(postLock) {
+            pendingCallAvatar = null
+            pendingCallId = callId
+        }
 
         /*
          * B-BS-8 (BrowserStack Pixel 8, Android 14, 2026-10-02): a call pushed to a
@@ -1223,8 +1229,12 @@ object Conversations {
                 val icon = personIcon(avatar)
                 // The service's ring takes over from this one when the app comes
                 // forward, and wears the same face (see `pendingCallAvatar`).
-                if (pendingCallId == callId) {
-                    pendingCallAvatar = icon
+                // Check and set in one hold of the lock notifyCall resets under,
+                // so an older call's fill cannot put its face on a newer ring.
+                val stillThisCall = synchronized(postLock) {
+                    (pendingCallId == callId).also { if (it) pendingCallAvatar = icon }
+                }
+                if (stillThisCall) {
                     CallForegroundService.refreshIncoming(context)
                 }
                 /*

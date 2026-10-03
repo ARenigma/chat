@@ -57,16 +57,22 @@ export function useConversationLabels() {
       const userId = sessionResult.data.session?.user.id;
       if (userId !== undefined) {
         // Build the peer index by joining the label map against the in-memory
-        // conversation_summaries (already fetched for the inbox). This is a
-        // best-effort join: summaries may not be loaded yet on first boot, and
-        // the peer index will be populated on the next label refresh.
-        const summaries =
-          queryClient.getQueryData<ConversationSummary[]>(keys.conversationList) ?? [];
-        const peerIndex = new Map<string, string>();
-        for (const summary of summaries) {
-          const label = map.get(summary.conversation_id);
-          if (label !== undefined) {
-            peerIndex.set(summary.peer_id, label);
+        // conversation_summaries (already fetched for the inbox). Only when the
+        // inbox has loaded: on a cold start the labels can resolve first, and
+        // an index built from no summaries is EMPTY, which used to overwrite
+        // the persisted one and put real names back into call pushes (B-BS-3).
+        // Unloaded, the stored peer index is left as it is.
+        const summaries = queryClient.getQueryData<ConversationSummary[]>(
+          keys.conversationList,
+        );
+        let peerIndex: Map<string, string> | undefined;
+        if (summaries !== undefined) {
+          peerIndex = new Map<string, string>();
+          for (const summary of summaries) {
+            const label = map.get(summary.conversation_id);
+            if (label !== undefined) {
+              peerIndex.set(summary.peer_id, label);
+            }
           }
         }
         setAllLabels(userId, map, peerIndex);
