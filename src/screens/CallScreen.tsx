@@ -212,7 +212,7 @@ export function CallScreen({
 }: Props) {
   const styles = useStyles(makeStyles);
   const insets = useSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   const setNotice = useStore(s => s.setNotice);
   const { data: providers } = useProviders();
   const provider = useMemo<ProviderSummary | null>(
@@ -1415,7 +1415,11 @@ export function CallScreen({
    * https://developer.android.com/develop/ui/views/layout/support-multi-window-mode
    */
   const metaBottom =
-    insets.top + TOKENS.space.md + META_BLOCK + (phase === 'incoming' && isMemberSide ? META_LINE : 0);
+    insets.top +
+    TOKENS.space.md +
+    // The name block's text scales with the user's font size (up to the caps
+    // on the Texts), so its height does too.
+    (META_BLOCK + (phase === 'incoming' && isMemberSide ? META_LINE : 0)) * Math.min(fontScale, 1.5);
   const faceRoom = windowHeight - insets.bottom - CONTROLS_CLEARANCE - metaBottom - TOKENS.space.md;
   const faceSize = Math.max(FACE_MIN, Math.min(AVATAR, Math.floor(faceRoom)));
   const faceCentre = (windowHeight - CONTROLS_CLEARANCE) / 2;
