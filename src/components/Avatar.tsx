@@ -31,7 +31,7 @@ import { useScreenFocused } from '../hooks/useScreenFocused';
  * round radius is half its side. The header had been using 30 — a LIST ROW
  * size — which is what read as too small.
  */
-type Size = 26 | 30 | 34 | 40 | 42 | 48 | 56 | 76 | 80 | 88;
+type Size = 26 | 30 | 34 | 38 | 40 | 42 | 48 | 56 | 76 | 80 | 88;
 
 interface Props {
   initial: string;
@@ -71,6 +71,8 @@ const FONT: Record<Size, number> = {
   26: 11,
   30: 12,
   34: 13,
+  // The chat header (2026-10-03): WhatsApp's 39dp photo, on the 0.375x line.
+  38: 14,
   40: 15,
   // 16 sits on the line the neighbours already describe: the map runs at very
   // close to 0.375x the diameter (40->15, 48->18), and 42*0.375 = 15.75.
@@ -96,6 +98,7 @@ const DOT: Record<Size, number> = {
   26: 10,
   30: 10,
   34: 13,
+  38: 13,
   40: 13,
   // 13, with 40 rather than with 48. The dot is a presence mark, not a
   // proportion: 48 is the one avatar Figma measured a bigger circle on, and 42

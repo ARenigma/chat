@@ -41,8 +41,18 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
  */
 const CALL_GLYPH_SIZE = 19;
 
-/** The overflow button's width, WhatsApp's (S22, 2026-10-03). */
-const OVERFLOW_WIDTH = 40;
+/**
+ * The overflow button's width: 48dp, Android's minimum touch target, not
+ * WhatsApp's 40. A narrower box with hitSlop touches like 48 but its
+ * accessibility node stays 40, which TalkBack and the Accessibility Scanner
+ * measure (reference-pappal-hitslop-a11y-node; AI review 2026-10-03). The 8dp
+ * is taken back on the left, so the name keeps WhatsApp's room.
+ * https://developer.android.com/guide/topics/ui/accessibility/apps#large-controls
+ */
+const OVERFLOW_WIDTH = TOKENS.interaction.minTarget;
+
+/** Avatar to name: WhatsApp's is 11dp; 6 here buys the overflow its 48dp. */
+const AVATAR_GAP = 6;
 
 /**
  * The height the identity column always reserves: the name's line box plus the
@@ -155,13 +165,14 @@ export function ChatHeaderV2({
    */
   const identity = (
     <>
-      {/* 40, measured from WhatsApp on the S22 (2026-10-03): a 109px photo
-          at density 450 is 38.75dp, in a 48dp slot after the 48dp back target,
-          and the name starts at 100dp. 40 is the nearest avatar size. */}
+      {/* 38, measured from WhatsApp on the S22 (2026-10-03): a 109px photo
+          at density 450 is 38.75dp. Tight to the back target with a 6dp gap,
+          so the name starts at 92dp, 8dp left of WhatsApp's 100: the 8dp the
+          48dp overflow target costs on the right (see OVERFLOW_WIDTH). */}
       <Avatar
         initial={peerInitial}
         uri={peerAvatarUrl}
-        size={40}
+        size={38}
         online={presence.here}
       />
       <View
@@ -399,8 +410,7 @@ const makeStyles = (t: Theme) =>
       // Pressable paints a circle state layer. A radius here would override
       // shapeStyle (see Pressable.tsx, where innerStyle follows shapeStyle).
     },
-    // WhatsApp's overflow is 113px = 40dp wide against the right edge; the
-    // Pressable's slop (size 40) still makes a 48dp target.
+    // Against the right edge, as WhatsApp's is.
     overflowButton: {
       width: OVERFLOW_WIDTH,
     },
@@ -416,9 +426,9 @@ const makeStyles = (t: Theme) =>
     identity: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: TOKENS.space.xs,
-      // 48 back + 4 + 40 avatar + 8 gap = the name at 100dp, WhatsApp's x.
-      paddingLeft: TOKENS.space['2xs'],
+      // 48 back + 38 avatar + 6 gap = the name at 92dp; with the 48dp overflow
+      // that leaves WhatsApp's ~148dp for the name and the status line.
+      gap: AVATAR_GAP,
       paddingVertical: TOKENS.space.hair,
       borderRadius: TOKENS.radius.xs,
       borderCurve: 'continuous',

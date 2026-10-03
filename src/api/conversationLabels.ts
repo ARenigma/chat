@@ -71,7 +71,13 @@ export function useConversationLabels() {
         if (summaries !== undefined) {
           peerUpdates = new Map<string, string | null>();
           for (const summary of summaries) {
-            peerUpdates.set(summary.peer_id, map.get(summary.conversation_id) ?? null);
+            const label = map.get(summary.conversation_id) ?? null;
+            // A peer can have more than one loaded conversation; a labelled
+            // one wins, whatever order they come in, so an unlabelled older
+            // chat never clears a label set on another (AI review 10-03).
+            if (label !== null || !peerUpdates.has(summary.peer_id)) {
+              peerUpdates.set(summary.peer_id, label);
+            }
           }
         }
         setAllLabels(userId, map, peerUpdates);

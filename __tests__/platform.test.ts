@@ -3336,6 +3336,8 @@ describe('the incoming-call ring (S22, 2026-10-03)', () => {
     // An empty index from an unloaded inbox overwrote it (B-BS-3 regression).
     const labels = read('src/api/conversationLabels.ts');
     expect(labels).toMatch(/if \(summaries !== undefined\) \{\s*peerUpdates = new Map/);
+    // Two loaded chats with one peer: the labelled one wins.
+    expect(labels).toContain('if (label !== null || !peerUpdates.has(summary.peer_id)) {');
     // Merged, not replaced: a peer outside the loaded inbox keeps its label.
     expect(read('src/lib/conversationLabelCache.ts')).toContain('const peerRecord = readRecord(peerKey(userId));');
   });
@@ -3345,9 +3347,10 @@ describe('the chat header leaves WhatsApp\'s room for the name (S22, 2026-10-03)
   const header = read('src/chat-v2/ChatHeaderV2.tsx');
   it('is flush to both edges, with the name at 100dp and a 40dp overflow', () => {
     expect(header).toMatch(/paddingHorizontal: 0,/);
-    expect(header).toMatch(/size=\{40\}/);
-    expect(header).toMatch(/paddingLeft: TOKENS\.space\['2xs'\]/);
-    expect(header).toContain('const OVERFLOW_WIDTH = 40;');
+    expect(header).toMatch(/size=\{38\}/);
+    expect(header).toContain('gap: AVATAR_GAP,');
+    // 48dp, not WhatsApp's 40: the a11y node must meet the minimum itself.
+    expect(header).toContain('const OVERFLOW_WIDTH = TOKENS.interaction.minTarget;');
   });
   it('sets the last-seen line without tracking', () => {
     expect(read('src/components/HeaderSubtitle.tsx')).toMatch(/letterSpacing: 0,/);
