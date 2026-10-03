@@ -237,6 +237,13 @@ export function chatV2Arrival(
     return { action: 'idle', peerArrivals: 0 };
   }
   const newest = rows[0];
+  // A call that just ended is where the member lands after hanging up, and the
+  // newest call row jumps into view wherever they were (Amit, 2026-10-03,
+  // case B): the list could otherwise hold the old position and leave the new
+  // row one short of the bottom.
+  if (newest?.kind === 'call' && !previousIds.has(newest.id)) {
+    return { action: 'pin', peerArrivals };
+  }
   const mine = newest?.kind === 'message' && newest.mine;
   if (mine) {
     // My own send pins, and pinning clears the badge — so what arrived

@@ -1037,6 +1037,15 @@ describe('V2 scroll policy', () => {
     expect(arrival(before, after, false).action).toBe('pin');
   });
 
+  it('pins to a call row that just ended, wherever the member was', () => {
+    const before = rowsOf(theirs(BASE));
+    const callRow = { kind: 'call', id: 'call-1' } as unknown as ChatV2Row;
+    const after = [callRow, ...before];
+
+    expect(arrival(before, after, true).action).toBe('pin');
+    expect(arrival(before, after, false).action).toBe('pin');
+  });
+
   it('counts a peer arrival instead of yanking a member out of history', () => {
     const before = rowsOf(mine(BASE));
     const after = rowsOf(mine(BASE), theirs(BASE + 1_000));
