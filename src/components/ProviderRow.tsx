@@ -9,7 +9,7 @@ import Animated, {
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
-import { genderLetter, initialOf, providerCtaLabel, providerFirstName } from '../lib/display';
+import { genderLetter, initialOf, providerCtaLabel, firstName as getFirstName } from '../lib/display';
 import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { DURATION, EASE_OUT_QUINT, fadeSwapOutFast, rowIn } from '../theme/motion';
 import { minutesUntil, useNotifyProvider } from '../api/sessions';
@@ -556,7 +556,7 @@ function ProviderRowView({
   const theme = useTheme();
   const initial = initialOf(provider.display_name);
   // First name only, on every surface a member reads (display.ts).
-  const firstName = providerFirstName(provider.display_name);
+  const firstName = getFirstName(provider.display_name);
 
   /*
    * The expertise line. Category leads when there are no tabs above the list to

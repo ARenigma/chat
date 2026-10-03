@@ -2192,7 +2192,7 @@ describe('the in-app flag reaches its own Android channel', () => {
       /val version = synchronized\(postLock\) \{\s*post\(null\)\s*stampPostLocked\(CALL_PRENOTIFICATION_ID\)\s*\}/,
     );
     expect(ring).toMatch(
-      /synchronized\(postLock\) \{\s*if \(stillCurrentLocked\(CALL_PRENOTIFICATION_ID, version\) &&\s*manager\.activeNotifications\.any \{ shown -> shown\.id == CALL_PRENOTIFICATION_ID \}\s*\) \{\s*post\(IconCompat\.createWithBitmap\(avatar\)\)\s*\}\s*\}/,
+      /synchronized\(postLock\) \{\s*if \(stillCurrentLocked\(CALL_PRENOTIFICATION_ID, version\) &&\s*manager\.activeNotifications\.any \{ shown -> shown\.id == CALL_PRENOTIFICATION_ID \}\s*\) \{\s*post\(icon\)\s*\}\s*\}/,
     );
     expect(count(ring, 'post(')).toBe(3);
     // The download stays outside the lock.

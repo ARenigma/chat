@@ -6,7 +6,7 @@ import { useSoftReset } from '../lib/routes/useSoftReset';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import type { ConversationSummary } from '../lib/database.types';
-import { initialOf } from '../lib/display';
+import { firstName, initialOf } from '../lib/display';
 import { readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { listStamp } from '../lib/datetime';
@@ -71,7 +71,7 @@ export function ProviderSavedScreen({
         const unread = unreadCount > 0;
         const label =
           conversationLabels?.get(item.conversation_id) ??
-          item.peer_display_name ??
+          (firstName(item.peer_display_name) || null) ??
           `Member ${item.peer_id.slice(0, 4)}`;
         return (
           <Pressable

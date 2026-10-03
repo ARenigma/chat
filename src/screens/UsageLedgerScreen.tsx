@@ -32,7 +32,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { providerFirstName } from '../lib/display';
+import { firstName } from '../lib/display';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { moneyDate } from '../lib/datetime';
 import { formatCount, formatRupees } from '../lib/rates';
@@ -334,8 +334,8 @@ export function UsageLedgerScreen({ onBack }: Props) {
                 )}
                 <View style={styles.rowBody}>
                   <Text allowFontScaling numberOfLines={1} style={styles.rowName}>
-                    {/* A member's peer is a provider: first name only (display.ts). */}
-                    {row.i_am_member ? providerFirstName(row.peer_name) || row.peer_name : row.peer_name}
+                    {/* First name only for everyone (display.ts, 2026-10-03). */}
+                    {firstName(row.peer_name) || row.peer_name}
                   </Text>
                   {/*
                    * Amit 2026-09-29: secondary line is elapsed · date only.

@@ -1,15 +1,17 @@
 /**
- * A provider's name in a notification: the first name only (Amit, 2026-09-27:
- * "always render only first name of provider").
+ * A person's name in a notification: the first name only. First for providers
+ * (Amit, 2026-09-27: "always render only first name of provider"), then for
+ * everyone (Amit, 2026-10-03: "always show only first name everywhere whether
+ * in app or notification").
  *
  * The same rule as `providerFirstName` in src/lib/display.ts, restated because
  * an Edge Function cannot import the app's source. Trimmed, then the first
  * whitespace-separated token; a single-token name is kept whole; null and blank
  * come back null so each sender keeps its own 'Someone' fallback.
- * __tests__/providerFirstName.test.ts runs both copies over one table.
+ * __tests__/firstName.test.ts runs both copies over one table.
  *
- * Only for a PROVIDER. A member's public name is their handle and is sent as it
- * is, so every caller says which one it holds.
+ * Members too since 2026-10-03: a member's display name ("Amit ranjan") was
+ * pushed whole. A handle is one token, so it is unchanged.
  */
 const COURTESY_TITLE = /^(dr|mr|mrs|ms|miss|prof|shri|sri|smt)\.?$/iu;
 
@@ -28,7 +30,13 @@ export function providerFirstName(displayName: string | null | undefined): strin
   return second !== undefined && COURTESY_TITLE.test(first) ? second : first;
 }
 
-/** The name to put in a push: first name for a provider, unchanged otherwise. */
-export function pushName(displayName: string | null | undefined, isProvider: boolean): string | null {
-  return isProvider ? providerFirstName(displayName) : (displayName ?? null);
+/** The same rule under the name the app uses (src/lib/display.ts `firstName`). */
+export const firstName = providerFirstName;
+
+/**
+ * The name to put in a push: the first name, whoever sent it. `isProvider` is
+ * kept so callers need not change; it no longer decides anything.
+ */
+export function pushName(displayName: string | null | undefined, _isProvider: boolean): string | null {
+  return providerFirstName(displayName);
 }

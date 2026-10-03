@@ -4,7 +4,7 @@ import Animated from 'react-native-reanimated';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { ProviderSummary } from '../lib/database.types';
-import { initialOf, providerFirstName } from '../lib/display';
+import { initialOf, firstName as getFirstName } from '../lib/display';
 import { offeredChannelsLine, presenceForSpeech, readPresence } from '../lib/presence';
 import { rowIn } from '../theme/motion';
 import { avatarImageSource } from '../lib/clayAvatars';
@@ -53,7 +53,7 @@ function SquareProviderCardView({
   const styles = useStyles(makeStyles);
 
   const initial = initialOf(provider.display_name);
-  const firstName = providerFirstName(provider.display_name);
+  const firstName = getFirstName(provider.display_name);
   const coverSource = avatarImageSource(provider.avatar_url, 300, 300, 85);
   const presence = readPresence({
     online: provider.online,

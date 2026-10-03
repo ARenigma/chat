@@ -77,7 +77,7 @@ describe('a provider cannot reply (147)', () => {
   it('renders user text in its own Text node, never joined to app copy', () => {
     // The caption, a commenter's name and a comment body each stand alone.
     expect(sheet).toMatch(/>\s*\{story\.caption\}\s*</);
-    expect(sheet).toMatch(/>\s*\{c\.author_display_name\}\s*</);
+    expect(sheet).toMatch(/>\s*\{firstName\(c\.author_display_name\) \|\| c\.author_display_name\}\s*</);
     expect(sheet).toMatch(/>\s*\{c\.body\}\s*</);
     expect(code('src/screens/StoryViewerScreen.tsx')).toMatch(/>\s*\{who\.name\}\s*</);
   });

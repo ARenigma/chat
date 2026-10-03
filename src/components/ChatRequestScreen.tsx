@@ -23,7 +23,7 @@ import { AppState, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { initialOf } from '../lib/display';
+import { firstName, initialOf } from '../lib/display';
 import { formatClock } from '../lib/sessionClock';
 import { useAcceptSessionRequest, useDeclineSessionRequest } from '../api/sessions';
 import { clearConversation, notifyConversation } from '../lib/conversations';
@@ -518,7 +518,7 @@ export function ChatRequestScreen({ request: incoming, onOpenConversation, held 
           maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
           allowFontScaling
           style={styles.name}>
-          {incoming.peerName}
+          {firstName(incoming.peerName) || incoming.peerName}
         </Text>
         <Text allowFontScaling style={styles.sub} testID="chat-ring-countdown">
           {`wants to chat · ${formatClock(Math.max(0, left))}`}
@@ -529,7 +529,7 @@ export function ChatRequestScreen({ request: incoming, onOpenConversation, held 
           incoming state uses the same one — a ring that is bigger than the app's
           own largest avatar would be a one-off size to maintain forever. */}
       <CallRing size={RING_FACE} active>
-        <Avatar initial={initialOf(incoming.peerName)} size={RING_FACE} />
+        <Avatar initial={initialOf(firstName(incoming.peerName) || incoming.peerName)} size={RING_FACE} />
       </CallRing>
 
       <View style={styles.actions}>

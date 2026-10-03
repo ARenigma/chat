@@ -27,6 +27,7 @@ import { useKillSwitches } from '../../api/appConfig';
 import { useLiveStories, useSeenStoryIds } from '../../api/stories';
 import { useNavigationDeduped } from '../../hooks/useNavigationDeduped';
 import { SCROLL_PHYSICS } from '../../lib/scroll';
+import { firstName } from '../../lib/display';
 import { groupHasUnseen, groupStories, orderRail } from '../../lib/stories';
 import { TOKENS, type Theme } from '../../theme/tokens';
 import { useStyles, useTheme } from '../../theme/ThemeProvider';
@@ -121,7 +122,7 @@ function StoryRailView({ providerIds }: RailProps) {
         contentContainerStyle={styles.scroll}>
         {groups.map(g => {
           const p = byId.get(g.providerId);
-          const name = p?.display_name ?? '';
+          const name = firstName(p?.display_name);
           const unseen = groupHasUnseen(g, seen.data ?? new Set());
           return (
             <Pressable
@@ -181,7 +182,7 @@ function YourStoryAvatarView({ selfId }: YourStoryAvatarProps) {
     [live.data, selfId],
   );
   const count = mine?.stories.length ?? 0;
-  const name = profile.data?.display_name ?? '';
+  const name = firstName(profile.data?.display_name);
 
   const view = useCallback(() => {
     if (selfId !== undefined && count > 0) {

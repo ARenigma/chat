@@ -78,6 +78,7 @@ import { StoryProgress } from '../components/stories/StoryProgress';
 import { StoryReplySheet } from '../components/stories/StoryReplySheet';
 import type { ReportReason, Story } from '../lib/database.types';
 import { newUuid } from '../lib/ids';
+import { firstName } from '../lib/display';
 import {
   currentStory,
   groupStories,
@@ -220,7 +221,7 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
       return { name: 'Your story', avatar: profile.data?.avatar_url ?? null };
     }
     const p = providers.data?.find(x => x.id === group.providerId);
-    return { name: p?.display_name ?? '', avatar: p?.avatar_url ?? null };
+    return { name: firstName(p?.display_name), avatar: p?.avatar_url ?? null };
   }, [group, selfId, providers.data, profile.data]);
 
   // ---- gestures -------------------------------------------------------------
@@ -484,7 +485,7 @@ export function StoryViewerScreen({ providerIds, startProviderId, onClose, onOpe
               <Stat label="Comments" value={insight?.comment_count} />
             </View>
             {(viewers.data ?? []).map((v, i) => (
-              <ViewerRow key={`${v.display_name}-${i}`} name={v.display_name} avatar={v.avatar_url} reaction={v.reaction} />
+              <ViewerRow key={`${v.display_name}-${i}`} name={firstName(v.display_name) || v.display_name} avatar={v.avatar_url} reaction={v.reaction} />
             ))}
           </View>
         ) : null}

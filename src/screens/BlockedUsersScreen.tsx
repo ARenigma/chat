@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
-import { initialOf } from '../lib/display';
+import { firstName, initialOf } from '../lib/display';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useBlockedPeople, useUnblockUser } from '../api/safety';
 import { Avatar } from '../components/Avatar';
@@ -73,13 +73,13 @@ export function BlockedUsersScreen({ onBack }: Props) {
             <View key={p.handle} style={styles.row}>
               <Avatar initial={initialOf(p.display_name)} size={40} />
               <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling numberOfLines={1} style={styles.name}>
-                {p.display_name}
+                {firstName(p.display_name) || p.display_name}
               </Text>
               <Pressable
                 onPress={() => unblock.mutate(p.handle)}
                 disabled={unblock.isPending}
                 testID={`unblock-${p.handle}`}
-                accessibilityLabel={`Unblock ${p.display_name}`}
+                accessibilityLabel={`Unblock ${firstName(p.display_name) || p.display_name}`}
                 press="chip"
                 style={styles.unblock}>
                 <Text allowFontScaling style={styles.unblockLabel}>

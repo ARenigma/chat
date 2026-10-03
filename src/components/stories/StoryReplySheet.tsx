@@ -38,6 +38,7 @@ import { getReasonLabel, useContactGuardMode, useKillSwitches, useReportTaxonomy
 import { precheckContactGuard, contactGuardNotice } from '../../lib/contactGuard';
 import type { ReportReason, Story, StoryCommentFeedItem } from '../../lib/database.types';
 import { newUuid } from '../../lib/ids';
+import { firstName } from '../../lib/display';
 import { REACTION_CHOICES } from '../../lib/reactions';
 import { SCROLL_PHYSICS } from '../../lib/scroll';
 import { MAX_COMMENT_CHARS, canComment, isOwnStory, storyAge } from '../../lib/stories';
@@ -272,7 +273,7 @@ function StoryReplySheetView({ visible, story, selfId, onClose }: Props) {
             <View style={styles.commentBody}>
               <View style={styles.commentHead}>
                 <Text allowFontScaling numberOfLines={1} style={styles.commentName}>
-                  {c.author_display_name}
+                  {firstName(c.author_display_name) || c.author_display_name}
                 </Text>
                 <Text allowFontScaling style={styles.commentAge}>
                   {storyAge(c.created_at, Date.now())}

@@ -38,19 +38,26 @@ export function genderLetter(gender: string | null): string | null {
 }
 
 /**
- * A provider's name as a member sees it: the first name only (Amit,
- * 2026-09-27: "always render only first name of provider").
+ * Any person's name as a first name only (Amit, 2026-10-03: "always show only
+ * first name everywhere whether in app or notification"). Applies to every
+ * person — members, providers, story commenters, story viewers, blocked users,
+ * call screens — replacing the earlier provider-only `providerFirstName`.
  *
  * Trimmed, then the first whitespace-separated token; a single-token name is
  * kept whole. Null, undefined and blank come back as '' so each caller keeps
- * its own fallback ('?', 'Your provider'), as it did for a missing name.
+ * its own fallback ('?', 'Someone'), as it did for a missing name.
  *
  * The same rule runs server side in supabase/functions/_shared/names.ts for the
- * push titles; __tests__/providerFirstName.test.ts holds the two to one table.
+ * push titles; __tests__/firstName.test.ts holds the two to one table.
  *
- * Nothing today needs two same-first-name providers told apart on one surface
+ * Nothing today needs two same-first-name people told apart on one surface
  * (no list shows a disambiguator), so accessibility labels use the first name
  * too. The day one does, it needs a different fact (a handle), not the surname.
+ *
+ * EXCEPTIONS (not passed through this function):
+ *   - Private conversation labels typed by the user (shown verbatim).
+ *   - The signed-in user's own name in editable inputs (Settings / ProfileSetup).
+ *   - Usernames / handles (single token anyway).
  */
 const COURTESY_TITLE = /^(dr|mr|mrs|ms|miss|prof|shri|sri|smt)\.?$/iu;
 
@@ -60,7 +67,7 @@ const COURTESY_TITLE = /^(dr|mr|mrs|ms|miss|prof|shri|sri|smt)\.?$/iu;
  * a full stop. "Pandit" and "Acharya" are kept on purpose: for an astrologer
  * they are the name members know, not a courtesy.
  */
-export function providerFirstName(displayName: string | null | undefined): string {
+export function firstName(displayName: string | null | undefined): string {
   const trimmed = (displayName ?? '').trim();
   if (trimmed === '') {
     return '';

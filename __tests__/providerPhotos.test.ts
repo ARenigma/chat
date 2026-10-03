@@ -426,7 +426,7 @@ describe('the provider hero pages between photos', () => {
     // and the position rather than "image".
     // https://developer.android.com/guide/topics/ui/accessibility/principles
     expect(detail).toMatch(
-      /accessibilityLabel=\{`\$\{providerFirstName\(provider\.display_name\)\}, photo \$\{i \+ 1\} of \$\{gallery\.length\}`\}/,
+      /accessibilityLabel=\{`\$\{firstName\(provider\.display_name\)\}, photo \$\{i \+ 1\} of \$\{gallery\.length\}`\}/,
     );
   });
 });

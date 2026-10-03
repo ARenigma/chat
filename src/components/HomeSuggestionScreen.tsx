@@ -18,7 +18,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { HomeSuggestion } from '../api/homeSuggestions';
-import { initialOf, providerFirstName } from '../lib/display';
+import { initialOf, firstName } from '../lib/display';
 import { formatClock } from '../lib/sessionClock';
 import { PROMPT_DURATION_S } from '../lib/homeSuggestions';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -102,7 +102,7 @@ export function HomeSuggestionScreen({ suggestion, onAccept, onDismiss }: Props)
           style={styles.name}
           numberOfLines={1}
         >
-          {providerFirstName(suggestion.display_name)}
+          {firstName(suggestion.display_name)}
         </Text>
         <Text allowFontScaling style={styles.sub} testID="home-suggestion-countdown">
           {`is calling · ${formatClock(Math.max(0, secondsLeft))}`}

@@ -75,7 +75,7 @@ import {
 } from '../api/voice';
 import type { ReactionEmoji } from '../lib/database.types';
 import { clearChatDraft } from '../lib/chatDraft';
-import { initialOf, providerFirstName } from '../lib/display';
+import { initialOf, firstName } from '../lib/display';
 import { readPresence, type PresenceRead } from '../lib/presence';
 import {
   clockTickMs,
@@ -534,17 +534,15 @@ export function useChatV2Controller(
    */
   const fullName = knownThread?.peer_display_name ?? provider?.display_name;
   /*
-   * A member's peer is a provider, and a provider is named by first name only
-   * on every surface a member reads (display.ts): the header, the reply strip,
-   * the notified line and the review sheet all take it from here. The provider
-   * side names a member, which keeps the whole name.
+   * The peer by first name only, on both sides (display.ts; Amit, 2026-10-03:
+   * "always show only first name everywhere"): the header, the reply strip,
+   * the notified and "knows you are here" lines and the review sheet all take
+   * it from here. A provider used to see a member's whole name.
    */
   const nameFromData =
     fullName === null || fullName === undefined
       ? undefined
-      : isMemberSide
-        ? providerFirstName(fullName) || undefined
-        : fullName;
+      : firstName(fullName) || undefined;
   const identityLoading = threads === undefined || providers === undefined;
   const peerName = nameFromData ?? (identityLoading ? '' : 'Conversation');
   /*

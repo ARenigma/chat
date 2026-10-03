@@ -21,7 +21,7 @@ import { LIGHT, TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import type { CallResult, ProviderSummary } from '../lib/database.types';
 import type { CallMedium } from '../lib/database.types';
-import { initialOf, providerFirstName } from '../lib/display';
+import { initialOf, firstName } from '../lib/display';
 import { avatarImageSource, clayFraming, isClayUri } from '../lib/clayAvatars';
 import { useConversationId, useConversations, useProviders, useSelfId } from '../api/chat';
 import { answerCall, endCall, getVideoSwitchQuote, heartbeatCall, requestVideoSwitch, respondVideoSwitch, startCall, useCallEnded, useVideoSwitch, type VideoSwitchQuote, type VideoSwitchResult } from '../api/calls';
@@ -253,12 +253,10 @@ export function CallScreen({
   const peerThread = threads?.find(t => t.peer_id === providerId);
   const isMemberSide = peerThread?.i_am_member ?? true;
   /*
-   * On the member side the peer is a provider, named by first name only on
-   * every surface, the call notification included (display.ts). The provider
-   * side names a member, which the rule does not touch.
+   * First name only for everyone on the call screen (display.ts, 2026-10-03).
    */
   const shownPeerName = (full: string | null | undefined): string | undefined => {
-    const shown = isMemberSide ? providerFirstName(full) : (full ?? '');
+    const shown = firstName(full);
     return shown === '' ? undefined : shown;
   };
   const reviewPeerName =

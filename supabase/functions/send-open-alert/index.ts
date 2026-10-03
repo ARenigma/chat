@@ -205,7 +205,8 @@ Deno.serve(async request => {
   } else {
     // Opener is a member — pseudonymous by design.
     const { data: handle } = await db.rpc('member_handle', { p_id: openerId });
-    opener = (handle as string | null) ?? 'Someone';
+    // A handle is one token; the first-name rule (names.ts) holds anyway.
+    opener = providerFirstName(handle as string | null) ?? 'Someone';
   }
 
   const { data: tokens, error } = await db
