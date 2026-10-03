@@ -50,7 +50,13 @@ export function BackButton({ onPress, testID, accessibilityLabel = 'Back', style
       // mean widening the box to 40, which moves the header layout.
       shape="circle"
       style={[styles.button, style]}>
-      <Icon name="back" size={TOKENS.icon.lg} color={tint ?? theme.color.text.primary} />
+      {/* Measured against Bluesky 1.133.0 on the S22 (2026-10-04): its
+          ArrowLeft draws 18x14dp in contrast_600, which is #8798B0 in dark
+          (the inverted ramp's 400) and #526580 in light. Phosphor's arrow fills
+          more of its box, so icon.md (20) lands on the same drawn size, and
+          text.secondary is that grey at the same luminance in our neutral
+          palette. It was 24dp in primary ink, a heavier mark than theirs. */}
+      <Icon name="back" size={TOKENS.icon.md} color={tint ?? theme.color.text.secondary} />
     </Pressable>
   );
 }

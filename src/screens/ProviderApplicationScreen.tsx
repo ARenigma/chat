@@ -1086,6 +1086,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
 
 function Header({ onBack }: { onBack: () => void }) {
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   return (
     <View style={styles.header}>
       <Pressable
@@ -1102,7 +1103,7 @@ function Header({ onBack }: { onBack: () => void }) {
         // https://developer.android.com/training/material/animations
         shape="circle"
         style={styles.back}>
-        <Icon name="back" size={TOKENS.icon.lg} />
+        <Icon name="back" size={TOKENS.icon.md} color={theme.color.text.secondary} />
       </Pressable>
     </View>
   );

@@ -74,9 +74,10 @@ const makeStyles = (t: Theme) =>
     pill: {
       flexDirection: 'row',
       alignItems: 'center',
-      // Allow the label to wrap onto a second line inside the pill instead of
-      // stretching the row past the screen edge.
-      flexWrap: 'wrap',
+      // The glyph stays BESIDE the text (Amit, 2026-10-04: the bell had
+      // wrapped onto its own line above a long notice). The text shrinks and
+      // wraps inside its own box (flexShrink below), so the row never needs
+      // to wrap and the pill still respects maxWidth.
       justifyContent: 'center',
       gap: TOKENS.space['2xs'],
       paddingHorizontal: TOKENS.space.sm,

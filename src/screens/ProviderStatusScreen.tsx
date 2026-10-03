@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles } from '../theme/ThemeProvider';
+import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { fadeSwap, fadeSwapOut } from '../theme/motion';
 import type { ApplicationStatus } from '../lib/database.types';
 import { useMyApplication } from '../api/provider';
@@ -71,6 +71,7 @@ const COPY: Record<ApplicationStatus, { title: string; body: string }> = {
  */
 export function ProviderStatusScreen({ onBack, onEdit }: Props) {
   const styles = useStyles(makeStyles);
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { data, isPending } = useMyApplication();
 
@@ -99,7 +100,7 @@ export function ProviderStatusScreen({ onBack, onEdit }: Props) {
           // https://developer.android.com/training/material/animations
           shape="circle"
           style={styles.back}>
-          <Icon name="back" size={TOKENS.icon.lg} />
+          <Icon name="back" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
         <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight} allowFontScaling numberOfLines={1} style={styles.headerTitle}>
           Your Application

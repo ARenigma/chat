@@ -8351,10 +8351,11 @@ describe('system messages — centered session/notice rows in the transcript', (
     expect(src).toContain('typography.bodySmall');
     expect(src).toContain('color: t.color.text.available');
     expect(src).toContain('color: t.color.text.warning');
-    // Long notices wrap inside the pill instead of running past the screen
-    // edge (provider chat, both trees share this cell).
+    // Long notices wrap inside the TEXT, not the row: the text shrinks within
+    // maxWidth and the glyph stays beside it rather than wrapping onto its own
+    // line above (Amit, 2026-10-04).
     expect(src).toContain('flexShrink: 1');
-    expect(src).toContain("flexWrap: 'wrap'");
+    expect(src).not.toContain("flexWrap: 'wrap'");
     // Not a bubble: never the sender/bubble colours, no accent.
     expect(src).not.toMatch(/bubble\.(mine|theirs)|bg\.accent/);
   });

@@ -28,7 +28,6 @@ import { useSetClayAvatar } from '../api/provider';
 import { CLAY_SEEDS, CLAY_IMAGES } from '../lib/clayAvatars';
 import { useProfile } from '../api/chat';
 import { initialOf } from '../lib/display';
-import { formatRupees } from '../lib/rates';
 import { visibleSections, type SettingsRowId } from '../lib/settingsSections';
 import { Avatar } from '../components/Avatar';
 import { resetStore, useStore } from '../store/useStore';
@@ -412,10 +411,9 @@ export function SettingsSheet({
    * formatter — there was no formatter. It also skipped grouping, rendering
    * 120000 rather than ₹1,20,000.
    */
-  const profileMetaText = [
-    accountLabel,
-    profile ? formatRupees(profile.token_balance) : '',
-  ]
+  // The balance left this line (Amit, 2026-10-04): the wallet pill shows it
+  // in the bar above, always, so a second copy under the name was noise.
+  const profileMetaText = [accountLabel]
     .filter(Boolean)
     .join(' · ');
 

@@ -104,7 +104,7 @@ export function ProviderBankScreen({ onBack }: Props) {
           // https://developer.android.com/training/material/animations
           shape="circle"
           style={styles.back}>
-          <Icon name="back" size={TOKENS.icon.lg} />
+          <Icon name="back" size={TOKENS.icon.md} color={theme.color.text.secondary} />
         </Pressable>
         <Text
           maxFontSizeMultiplier={TOKENS.fontScaleCap.textLgSemiBoldTight}
