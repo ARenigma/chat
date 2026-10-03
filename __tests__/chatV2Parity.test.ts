@@ -171,20 +171,21 @@ describe('route selection for both roles', () => {
     expect(applier).toContain("StackActions.push('ChatV2', params)");
   });
 
-  it('mounts V2 on the provider tree with back, calls and earnings', () => {
+  it('mounts V2 on the provider tree with back and calls, and no earnings pill', () => {
     const route = chatRoute();
     expect(route).toContain('onBack={exit}');
     expect(route).toContain('onStartCall={benchmarkReadOnly ? undefined : onStartCall}');
-    expect(route).toContain("onOpenEarnings={role === 'provider' ? onOpenEarnings : undefined}");
+    // Earnings live in the provider's settings only (Amit, 2026-10-03).
+    expect(route).not.toContain('onOpenEarnings');
   });
 
   it('mounts V2 on the member tree with the wallet, profile and calls', () => {
     const route = chatRoute();
-    // The member peer has a profile (a sheet over the chat); the wallet is the
-    // screen's own `openWallet` fallback when no earnings opener is passed.
+    // The member peer has a profile; the wallet is reached from the session
+    // bar's recharge and from Home, never from a header pill.
     expect(route).toContain("onOpenProfile={role === 'member' && route.name === 'Chat' ? onOpenProfile : undefined}");
     expect(route).toContain("nav.push('ProviderProfile', { providerId: id })");
-    expect(v2('ChatScreenV2.tsx')).toContain('onOpenEarnings={onOpenEarnings ?? openWallet}');
+    expect(v2('ChatScreenV2.tsx')).not.toContain('onOpenEarnings');
   });
 });
 
@@ -229,11 +230,6 @@ const PARITY: readonly {
     feature: 'end the paid session from the header',
     file: 'ChatHeaderV2.tsx',
     tokens: ['testID="chat-v2-end-session"'],
-  },
-  {
-    feature: 'provider earnings pill, never a member wallet pill',
-    file: 'ChatHeaderV2.tsx',
-    tokens: ['<TokenCounter', "variant=\"earnings\"", 'isMemberSide ? null'],
   },
   {
     feature: 'the countdown and its recharge control',
@@ -820,5 +816,14 @@ describe('the draft is purged on an intentional exit', () => {
 
   it('clears the stored draft through the shared helper', () => {
     expect(v2('useChatV2Controller.ts')).toContain('clearChatDraft');
+  });
+});
+
+describe('the chat header is the same on both sides (Amit, 2026-10-03)', () => {
+  it('draws no wallet or earnings pill, and does not branch on the side', () => {
+    const header = readFileSync(join(__dirname, '..', 'src/chat-v2/ChatHeaderV2.tsx'), 'utf8');
+    expect(header).not.toContain('<TokenCounter');
+    expect(header).not.toContain('isMemberSide');
+    expect(header).not.toMatch(/onOpenEarnings|earningsTokens/);
   });
 });

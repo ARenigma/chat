@@ -13,8 +13,10 @@
  * same glance — during a session the member needs to know how long they have,
  * and a raw token balance beside it answers a question they did not ask.
  * Balance lives on Home and in Recharge; the countdown and the recharge
- * control live in `ChatSessionBarV2`. The provider's earnings pill stays,
- * because a provider has no countdown and the number IS their reason to look.
+ * control live in `ChatSessionBarV2`. Nor a provider earnings pill: the
+ * header is the same on both sides (Amit, 2026-10-03: "provider side chat
+ * header should be exactly same as member side ... provider chat header will
+ * never wallet pill"), and earnings live in the provider's settings.
  */
 import React from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
@@ -23,7 +25,6 @@ import { HeaderSubtitle } from '../components/HeaderSubtitle';
 import { Icon } from '../components/Icon';
 import { PaperMenu, type PaperMenuItem } from '../components/PaperMenu';
 import { Pressable } from '../components/Pressable';
-import { TokenCounter } from '../components/TokenCounter';
 import type { PresenceRead } from '../lib/presence';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -64,9 +65,6 @@ interface Props {
   peerAvatarUrl: string | null;
   presence: PresenceRead;
   /** Which side of the thread we are on. Not `profiles.role`. */
-  isMemberSide: boolean;
-  /** Earnings tokens for the provider pill. Null while the query is loading. */
-  earningsTokens: number | null;
   canStartAudio: boolean;
   canStartVideo: boolean;
   /** A non-chat session is live, so a call would dead-end at the call screen. */
@@ -92,7 +90,6 @@ interface Props {
   onRename?: () => void;
   onStartCall?: (channel: 'audio' | 'video') => void;
   onEndSession: () => void;
-  onOpenEarnings: () => void;
   /**
    * False once the chat is covered (navigation step 6). The overflow menu is a
    * Modal, and a Modal left open over a covered chat sits above the next
@@ -106,8 +103,6 @@ export function ChatHeaderV2({
   peerInitial,
   peerAvatarUrl,
   presence,
-  isMemberSide,
-  earningsTokens,
   canStartAudio,
   canStartVideo,
   sessionBusy,
@@ -119,7 +114,6 @@ export function ChatHeaderV2({
   onRename,
   onStartCall,
   onEndSession,
-  onOpenEarnings,
   focused = true,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -311,14 +305,6 @@ export function ChatHeaderV2({
           />
         </Pressable>
       ) : null}
-
-      {isMemberSide ? null : (
-        <TokenCounter
-          variant="earnings"
-          balance={earningsTokens ?? 0}
-          onPress={onOpenEarnings}
-        />
-      )}
 
       {/*
        * Right-edge overflow menu (Bluesky ConvoMenu pattern).

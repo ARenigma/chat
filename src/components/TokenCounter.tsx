@@ -10,15 +10,9 @@ import { RupeeAmount } from './RupeeAmount';
 import { Pressable, PressLayer } from './Pressable';
 
 interface Props {
-  /** The token balance (members) or earnings total (providers). Null while loading. */
+  /** The member's token balance. Null while loading. */
   balance: number | null;
   onPress: () => void;
-  /**
-   * Members buy talk time; providers are paid for it. Same pill, different number
-   * and destination — recharge vs earnings ledger. Default keeps every existing
-   * call site on the member path.
-   */
-  variant?: 'balance' | 'earnings';
 }
 
 /**
@@ -30,15 +24,14 @@ interface Props {
  * ink. The lime fill it replaced was a third wallet hue that meant nothing the
  * number did not already say; only the two ends are states worth a colour.
  * The flinch still fires only on the transition into critical so navigation
- * remounts do not twitch the pill. Earnings never flinch: a zero payout is not
- * an urgent wallet state.
+ * remounts do not twitch the pill. Members only: a provider's earnings live in
+ * their settings, never in a pill (Amit, 2026-10-03).
  */
-function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
+function TokenCounterView({ balance, onPress }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
-  const earnings = variant === 'earnings';
-  const tone = earnings ? 'healthy' : walletTone(balance);
-  const critical = !earnings && tone === 'critical';
+  const tone = walletTone(balance);
+  const critical = tone === 'critical';
   const flinch = useSharedValue(0);
   const wasCritical = useRef(critical);
 
@@ -55,12 +48,9 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
 
   const ink = inkForTone(tone, theme);
   /*
-   * `formatRupees` ALREADY PREPENDS ITS OWN "₹" — this was rendering "₹₹5,278"
-   * on the earnings variant, a double glyph nobody would have caught by
-   * reading the string in code, only by looking at the pill. Found while
-   * auditing every price display for the ₹ glyph sweep (Amit, 2026-09-08).
-   * The two variants render the identical figure; there was never a reason for
-   * one to differ.
+   * `formatRupees` ALREADY PREPENDS ITS OWN "₹" — this once rendered
+   * "₹₹5,278", a double glyph nobody would have caught by reading the string
+   * in code, only by looking at the pill (Amit, 2026-09-08).
    */
 
   return (
@@ -77,20 +67,10 @@ function TokenCounterView({ balance, onPress, variant = 'balance' }: Props) {
       layer="child"
       accessibilityLabel={
         balance === null
-          ? earnings
-            ? 'Earnings loading'
-            : 'Balance loading'
-          : earnings
-            ? `${formatRupees(balance)} rupees earned. Opens your earnings by session.`
-            : `${formatRupees(balance)}. Talk time is charged by the minute.`
+          ? 'Balance loading'
+          : `${formatRupees(balance)}. Talk time is charged by the minute.`
       }
-      accessibilityHint={
-        earnings
-          ? 'Opens earnings by session'
-          : critical
-            ? 'Opens Recharge'
-            : 'Opens Recharge and explains rates'
-      }>
+      accessibilityHint={critical ? 'Opens Recharge' : 'Opens Recharge and explains rates'}>
       <Animated.View style={[styles.pill, pillStyle(tone, theme), animated]}>
         <PressLayer />
         <Icon name="wallet" active size={TOKENS.icon.xs} color={ink} />

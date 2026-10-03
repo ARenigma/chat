@@ -1069,7 +1069,7 @@ object Conversations {
         avatarUrl: String? = null,
         medium: String = "voice",
         recipientId: String? = null,
-    ) {
+    ): Boolean {
         ensureCallChannel(context)
 
         val isVideo = medium == "video"
@@ -1112,7 +1112,9 @@ object Conversations {
                 context.getSystemService(android.app.NotificationManager::class.java)
                     ?.canUseFullScreenIntent() == true
 
-        fun post(avatarIcon: IconCompat?) {
+        // True when a ring was posted. False when the system refused it, so the
+        // bridge can tell JS and the missing ring reaches Sentry (push.ts).
+        fun post(avatarIcon: IconCompat?): Boolean {
             val caller = Person.Builder()
                 .setKey(peerId)
                 .setName(callerName)
@@ -1208,18 +1210,21 @@ object Conversations {
                     manager.notify(CALL_PRENOTIFICATION_ID, plain)
                 }
             } catch (denied: SecurityException) {
-                // POST_NOTIFICATIONS revoked: nothing can be shown. Logged, not
-                // silent, so the next missing ring is visible in logcat.
+                // POST_NOTIFICATIONS revoked: nothing can be shown. Logged, and
+                // reported as not shown, so the missing ring is not silent.
                 android.util.Log.w(CALL_LOG_TAG, "notifyCall: notify refused (notifications off?)", denied)
+                return false
             }
+            return true
         }
 
         // Stamped like a conversation post. Every ring shares one id, and each
         // fill re-posts ITS call's name and Answer/Decline intents (the callId
         // is in their data URI and request code), so a fill must know it is
         // still filling the ring now at that id.
+        var shown = false
         val version = synchronized(postLock) {
-            post(null)
+            shown = post(null)
             stampPostLocked(CALL_PRENOTIFICATION_ID)
         }
 
@@ -1249,13 +1254,14 @@ object Conversations {
                  */
                 synchronized(postLock) {
                     if (stillCurrentLocked(CALL_PRENOTIFICATION_ID, version) &&
-                        manager.activeNotifications.any { shown -> shown.id == CALL_PRENOTIFICATION_ID }
+                        manager.activeNotifications.any { active -> active.id == CALL_PRENOTIFICATION_ID }
                     ) {
                         post(icon)
                     }
                 }
             }
         }
+        return shown
     }
 
     /**

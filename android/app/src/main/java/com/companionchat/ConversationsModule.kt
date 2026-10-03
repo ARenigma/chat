@@ -117,7 +117,10 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
         promise: Promise,
     ) {
         try {
-            Conversations.notifyCall(
+            // False when the system refused the ring (notifications off), which
+            // push.ts reports to Sentry: a ring that cannot be drawn is the one
+            // failure the callee can never report themselves.
+            val shown = Conversations.notifyCall(
                 reactContext,
                 callId = callId,
                 peerId = peerId,
@@ -126,7 +129,7 @@ class ConversationsModule(private val reactContext: ReactApplicationContext) :
                 medium = medium,
                 recipientId = recipientId.ifEmpty { null },
             )
-            promise.resolve(true)
+            promise.resolve(shown)
         } catch (error: Exception) {
             android.util.Log.w("PappalCall", "notifyCall threw", error)
             promise.resolve(false)

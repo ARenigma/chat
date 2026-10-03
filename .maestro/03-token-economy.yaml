@@ -10,16 +10,18 @@ name: Pending chat does not create a per-message debit
 - extendedWaitUntil:
     visible: 'Ada'
     timeout: 20000
-- tapOn: 'Ada'
-- tapOn:
-    id: 'action-chat'
 
-# The seed balance is set to 44 by scripts/e2e.mjs.
+# The seed balance is set to 44 by scripts/e2e.mjs. The badge lives in Home's
+# top bar; the chat header carries no pill on either side (2026-10-03).
 - assertVisible:
     id: 'token-badge'
 - assertVisible:
     id: 'token-count'
 - assertVisible: '44'
+
+- tapOn: 'Ada'
+- tapOn:
+    id: 'action-chat'
 
 - tapOn:
     id: 'chat-v2-input'
@@ -30,18 +32,22 @@ name: Pending chat does not create a per-message debit
     visible: 'Still here.'
     timeout: 20000
 
+- assertVisible:
+    id: 'refill-sheet'
+
+# Close the first-send sheet, leave the chat, and read the badge on Home.
+- tapOn: 'Dismiss'
+- assertNotVisible:
+    id: 'refill-sheet'
+- tapOn:
+    id: 'chat-v2-back'
+
 # ADR-0020: pending messages do not decrement the authoritative wallet.
 - assertVisible:
     id: 'token-count'
 - assertVisible: '44'
-- assertVisible:
-    id: 'refill-sheet'
 
-# Close the first-send sheet, then prove the wallet route remains independently
-# reachable from the badge.
-- tapOn: 'Dismiss'
-- assertNotVisible:
-    id: 'refill-sheet'
+# The wallet stays reachable from the badge.
 - tapOn:
     id: 'token-badge'
 - assertVisible:

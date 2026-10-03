@@ -151,7 +151,6 @@ export function ChatRoute({ navigation, route }: Props) {
     (id: string) => nav.push('ProviderProfile', { providerId: id }),
     [nav],
   );
-  const onOpenEarnings = useCallback(() => nav.push('Usage'), [nav]);
 
   return (
     <Layout.Screen minimalShell>
@@ -163,7 +162,6 @@ export function ChatRoute({ navigation, route }: Props) {
         // The member tree's peer has a profile; the provider tree's is a
         // member, whose identity block opens the safety sheet instead.
         onOpenProfile={role === 'member' && route.name === 'Chat' ? onOpenProfile : undefined}
-        onOpenEarnings={role === 'provider' ? onOpenEarnings : undefined}
         live={live}
         focused={focused}
         onGuard={onGuard}

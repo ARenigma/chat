@@ -41,7 +41,7 @@ import {
 } from '../lib/contactGuard';
 import type { ReactionEmoji } from '../lib/database.types';
 import { errorTick } from '../lib/haptics';
-import { openRefill, openWallet } from '../lib/routes/actions';
+import { openRefill } from '../lib/routes/actions';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import type { VoiceDraft } from '../lib/voice';
 import { useChatKeyboardFrozen } from './useChatKeyboardFrozen';
@@ -97,11 +97,6 @@ interface Props {
    * sheet instead.
    */
   onOpenProfile?: (peerId: string) => void;
-  /**
-   * The provider's earnings ledger, behind the header pill. Provider tree
-   * only; the member wallet falls back to the store's own wallet sheet.
-   */
-  onOpenEarnings?: () => void;
   /**
    * The chat is in use (navigation step 6; see `ChatV2Gates` in the
    * controller). Defaults to true: the old tree unmounts a covered chat.
@@ -161,7 +156,6 @@ export function ChatScreenV2({
   onBack,
   onStartCall,
   onOpenProfile,
-  onOpenEarnings,
   live = true,
   focused = true,
   onGuard,
@@ -809,8 +803,6 @@ export function ChatScreenV2({
         peerInitial={chat.peerInitial}
         peerAvatarUrl={chat.peerAvatarUrl}
         presence={chat.presence}
-        isMemberSide={chat.isMemberSide}
-        earningsTokens={chat.earningsTokens}
         canStartAudio={chat.canStartAudio}
         canStartVideo={chat.canStartVideo}
         sessionBusy={chat.sessionBusy}
@@ -842,7 +834,6 @@ export function ChatScreenV2({
         }
         onStartCall={mutationOnStartCall === undefined ? undefined : startCall}
         onEndSession={requestEnd}
-        onOpenEarnings={onOpenEarnings ?? openWallet}
       />
 
       <ChatSessionBarV2

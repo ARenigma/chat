@@ -3353,3 +3353,13 @@ describe('the chat header leaves WhatsApp\'s room for the name (S22, 2026-10-03)
     expect(read('src/components/HeaderSubtitle.tsx')).toMatch(/letterSpacing: 0,/);
   });
 });
+
+describe('a ring the system refused is reported, not swallowed', () => {
+  it('returns false from notifyCall and resolves it through the bridge', () => {
+    const conv = read('android/app/src/main/java/com/companionchat/Conversations.kt');
+    const mod = read('android/app/src/main/java/com/companionchat/ConversationsModule.kt');
+    expect(conv).toMatch(/notify refused \(notifications off\?\)", denied\)\s*return false/);
+    expect(conv).toMatch(/return shown\s*\}/);
+    expect(mod).toMatch(/val shown = Conversations\.notifyCall\([\s\S]*?promise\.resolve\(shown\)/);
+  });
+});

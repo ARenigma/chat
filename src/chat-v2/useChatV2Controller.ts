@@ -26,7 +26,7 @@
  *   - the consent pair (confirm / decline) and the resume after a decline;
  *   - the countdown's aged figure, its tick, and the elapsed clock;
  *   - ending a session, and the review prompt on the edge one ends;
- *   - the private conversation label, and the provider's earnings figure.
+ *   - the private conversation label.
  * The SURFACES those feed — dialogs, sheets, the band, the header — are the
  * screen's, not this hook's: it still renders nothing.
  */
@@ -66,7 +66,6 @@ import {
   useSessionRealtime,
   type PaidSession,
 } from '../api/sessions';
-import { useEarnings } from '../api/provider';
 import { useConversationLabels } from '../api/conversationLabels';
 import {
   useRetryVoiceSend,
@@ -272,7 +271,6 @@ export interface ChatV2Controller {
 
   /* ---- the provider's wallet ------------------------------------------- */
   /** Earnings tokens, for the provider-side header pill. Null while loading. */
-  earningsTokens: number | null;
 }
 
 /** The message a reply strip quotes, or an edit field is editing. */
@@ -394,7 +392,6 @@ export function useChatV2Controller(
    * unconditional and the query is cheap and shared — the HEADER is what
    * decides the pill is a provider-only control.
    */
-  const { data: earnings } = useEarnings();
   const { data: conversationLabels } = useConversationLabels();
 
   useSessionRealtime(conversationId);
@@ -1141,6 +1138,5 @@ export function useChatV2Controller(
     endSession,
     endingSession,
     askReview,
-    earningsTokens: earnings?.provider_tokens ?? null,
   };
 }

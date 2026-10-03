@@ -547,9 +547,8 @@ describe('Cashfree billing invariants', () => {
     expect(read('src/components/TabTopBar.tsx')).toContain(
       'onPress={openWallet}',
     );
-    // The chat routes members to openWallet; providers route to onOpenEarnings
-    // (with openWallet as fallback). Both paths reach openWallet.
-    expect(readChat()).toContain('openWallet');
+    // The chat carries no wallet or earnings pill on either side (2026-10-03).
+    expect(readChat()).not.toContain('<TokenCounter');
     expect(read('src/screens/ProviderDetailScreen.tsx')).toContain(
       'onPress={openWallet}',
     );
@@ -3318,13 +3317,15 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     );
   });
 
-  it('keeps the token counter in the chat header', () => {
-    // Not negotiable independently of the header layout:
-    // .maestro/03-token-economy.yaml taps into this screen and asserts the
-    // seeded balance remains 3 across a pending send. The contract test elsewhere only greps the testID
-    // across all of src, so removing it from HERE would keep jest green and break
-    // the only gate that would notice.
-    expect(readChat()).toContain('<TokenCounter');
+  it('reads the balance badge where it lives, on Home, not in the chat header', () => {
+    // The header is the same on both sides and carries no pill (Amit,
+    // 2026-10-03). .maestro/03-token-economy.yaml asserts the seeded balance
+    // on Home before and after a pending send, so the flow and the header
+    // agree on where the badge is.
+    expect(readChat()).not.toContain('<TokenCounter');
+    const flow = read('.maestro/03-token-economy.yaml');
+    expect(flow.indexOf("id: 'token-badge'")).toBeLessThan(flow.indexOf("- tapOn: 'Ada'"));
+    expect(read('src/components/TabTopBar.tsx')).toContain('<TokenCounter');
   });
 });
 
@@ -7873,7 +7874,8 @@ describe('the usage ledger answers where the tokens went, from both sides', () =
     // and registered in both trees' stacks, so back pops to whichever opened it.
     expect(withoutComments(read('src/screens/routes/MemberRoutes.tsx'))).toContain("onUsage={() => nav.push('Usage')}");
     expect(withoutComments(read('src/screens/routes/ProviderRoutes.tsx'))).toContain("onOpenUsage={() => nav.push('Usage')}");
-    expect(withoutComments(read('src/screens/routes/ChatRoute.tsx'))).toContain("const onOpenEarnings = useCallback(() => nav.push('Usage'), [nav]);");
+    // Not from the chat: the provider chat's earnings pill is gone (2026-10-03).
+    expect(withoutComments(read('src/screens/routes/ChatRoute.tsx'))).not.toContain('onOpenEarnings');
     const nav = withoutComments(read('src/Navigation.tsx'));
     expect(nav.match(/name="Usage" getComponent=\{\(\) => UsageRoute\}/g)?.length).toBe(2);
   });
@@ -9486,7 +9488,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
     expect(actions).toContain("CommonActions.navigate({ name: 'Wallet', pop: true })");
     const store = withoutComments(read('src/store/useStore.ts'));
     expect(store).not.toMatch(/walletVisible|openWallet|closeWallet/);
-    for (const file of ['src/components/TabTopBar.tsx', 'src/screens/ProviderDetailScreen.tsx', 'src/chat-v2/ChatScreenV2.tsx', 'src/api/sessions.ts']) {
+    for (const file of ['src/components/TabTopBar.tsx', 'src/screens/ProviderDetailScreen.tsx', 'src/api/sessions.ts']) {
       expect(read(file)).toMatch(/import \{[^}]*openWallet[^}]*\} from '\.\.\/lib\/routes\/actions'/);
     }
     expect(read('src/screens/PaymentSheet.tsx')).toContain("import { closeWallet } from '../lib/routes/actions';");
