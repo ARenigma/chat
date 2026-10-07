@@ -1043,7 +1043,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
           style={styles.about}
         />
 
-        <Field label="Your photos">
+        <Field label={`Your photos (at least ${MIN_PROVIDER_PHOTOS})`}>
           {/* A provider is chosen by face, so a real photograph is required and
               a cartoon avatar is not offered (Amit, 2026-09-17 and 2026-10-03:
               "at least 3"). The same gallery as the Your photos page. */}
