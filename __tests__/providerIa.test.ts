@@ -116,7 +116,7 @@ describe('the You tab: earnings first, availability next, the list below', () =>
     ]) {
       expect(you).toContain(id);
     }
-    const photos = read('src/screens/ProviderPhotosScreen.tsx');
+    const photos = read('src/components/ProviderPhotoGallery.tsx');
     for (const id of ['provider-photos', 'photo-add', 'photo-remove-confirm']) {
       expect(photos).toContain(`testID="${id}"`);
     }

@@ -4785,14 +4785,19 @@ describe('the motion adoption is wired, not just drawn', () => {
     expect(screen).toContain("setPhase('done')");
   });
 
-  it('collects the mandatory profile fields, photo optional', () => {
+  it('collects the mandatory profile fields and three photos', () => {
     // The card fields a member chooses a provider by. Photo is the only optional
     // one; the auto-approve RPC enforces the rest server-side.
     const screen = read('src/screens/ProviderApplicationScreen.tsx');
     expect(screen).toContain('testID="provider-name"');
     expect(screen).toContain('testID="provider-headline"');
     expect(screen).toContain('testID="provider-about"');
-    expect(screen).toContain('Photo (optional)');
+    // Three real photos, a main one among them, are required (Amit,
+    // 2026-10-03; migration 185). No cartoon avatar picker, no "optional".
+    expect(screen).toContain('<ProviderPhotoGallery');
+    expect(screen).toContain('photoCount >= MIN_PROVIDER_PHOTOS');
+    expect(screen).not.toContain('Photo (optional)');
+    expect(screen).not.toContain('useSetClayAvatar');
     const rpc = read('supabase/migrations/051_provider_auto_onboarding.sql');
     expect(rpc).toContain('a display name is required');
     expect(rpc).toContain('a headline is required');
@@ -9127,7 +9132,7 @@ describe('navigation step 6: provider split', () => {
   it('keeps the photo-remove confirmation with the only thing that opens it', () => {
     // The gallery moved to its own page in the provider IA (Option A), and
     // the confirmation went with it.
-    const photos = withoutComments(read('src/screens/ProviderPhotosScreen.tsx'));
+    const photos = withoutComments(read('src/components/ProviderPhotoGallery.tsx'));
     expect(photos).toContain('testID="photo-remove-confirm"');
     expect(photos).toContain('setPendingDelete(p)');
     const you = withoutComments(read('src/screens/ProviderYouScreen.tsx'));

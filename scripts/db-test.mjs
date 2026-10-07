@@ -211,6 +211,7 @@ const MIGRATIONS = [
   'supabase/migrations/182_provider_presence_push.sql',
   'supabase/migrations/183_unread_count_sync_on_read.sql',
   'supabase/migrations/184_unread_recount_per_statement.sql',
+  'supabase/migrations/185_provider_onboarding_requires_three_photos.sql',
 ];
 
 /**
@@ -1064,6 +1065,14 @@ const suites = [
     file: join(ROOT, 'supabase/tests/620_unread_count_sync_on_read.sql'),
     label:
       'unread_count_member/provider resets to the true message count when read_at is set on any message, including out-of-session messages, and hidden messages are excluded from the count',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/185_provider_onboarding_requires_three_photos.sql',
+    ),
+    label:
+      'provider onboarding: fewer than three photos is refused, three succeed with one main',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

@@ -246,7 +246,7 @@ describe('a provider publishes several photos, and one of them is the face', () 
   });
 
   it('offers the provider a single-select, not a row of switches', () => {
-    const home = code('src/screens/ProviderPhotosScreen.tsx');
+    const home = code('src/components/ProviderPhotoGallery.tsx');
     expect(home).toContain('accessibilityRole="radiogroup"');
     expect(home).toContain('accessibilityRole="radio"');
     expect(home).toContain('useSetPrimaryPhoto');
@@ -255,7 +255,7 @@ describe('a provider publishes several photos, and one of them is the face', () 
   });
 
   it('picks photos through the system picker, which needs no permission', () => {
-    const home = code('src/screens/ProviderPhotosScreen.tsx');
+    const home = code('src/components/ProviderPhotoGallery.tsx');
     // selectionLimit > 1 routes through PickMultipleVisualMedia, the permissionless
     // system photo picker — NOT the MediaStore / READ_MEDIA_IMAGES path AttachPanel
     // refuses on Play-policy grounds.
@@ -282,7 +282,7 @@ describe('a provider publishes several photos, and one of them is the face', () 
      * Pressable-free View is correct all over this file (the primary badge, the
      * tab badge).
      */
-    const home = code('src/screens/ProviderPhotosScreen.tsx');
+    const home = code('src/components/ProviderPhotoGallery.tsx');
     const block = between(home, 'testID="provider-photos"', 'testID="photo-remove-confirm"');
 
     // A plain View carries the position and wraps the control.

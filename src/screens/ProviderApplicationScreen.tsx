@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Image,
   Keyboard,
   ScrollView,
   StyleSheet,
@@ -13,14 +12,16 @@ import { fadeSwap } from '../theme/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { CLAY_SEEDS, CLAY_IMAGES, type ClaySeed } from '../lib/clayAvatars';
+import { MIN_PROVIDER_PHOTOS } from '../lib/database.types';
+import { useProfile } from '../api/chat';
+import { ProviderPhotoGallery } from '../components/ProviderPhotoGallery';
 import {
   useSavePan,
   useSavePayoutAccount,
   useTaxProfile,
   usePayoutAccount,
   useCompleteProviderOnboarding,
-  useSetClayAvatar,
+  useProviderPhotos,
   isDuplicateDisplayName,
   type PayoutMethod,
 } from '../api/provider';
@@ -235,7 +236,6 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
    */
   const [expertise, setExpertise] = useState<string[]>([]);
   const [about, setAbout] = useState('');
-  const [avatarSeed, setAvatarSeed] = useState<ClaySeed | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   /** The suggestion currently in the field, so "untouched" can be told from "typed". */
   const [suggested, setSuggested] = useState<string | null>(null);
@@ -269,7 +269,12 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
   const [payoutStep, setPayoutStep] = useState<StepState>('waiting');
   const [fetched, setFetched] = useState<Fetched | null>(null);
   const complete = useCompleteProviderOnboarding();
-  const setClay = useSetClayAvatar();
+  const { data: self } = useProfile();
+  const { data: photos } = useProviderPhotos(self?.id ?? null);
+  // Three or more, one of them the main photo (070's trigger makes the first
+  // one main, so the count is the whole condition). The database refuses a
+  // shorter gallery too (migration 185).
+  const photoCount = photos?.length ?? 0;
 
   const toggleLanguage = useCallback((language: string) => {
     setLanguages(prev =>
@@ -522,17 +527,14 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
     !nameTaken &&
     headline.trim().length > 0 &&
     languages.length > 0 &&
-    about.trim().length > 0;
+    about.trim().length > 0 &&
+    photoCount >= MIN_PROVIDER_PHOTOS;
 
   const onGoLive = useCallback(() => {
     Keyboard.dismiss();
     setNameError(null);
     void (async () => {
       try {
-        // Photo is optional — save it only if one was picked.
-        if (avatarSeed !== null) {
-          await setClay.mutateAsync(avatarSeed);
-        }
         await complete.mutateAsync({
           displayName: displayName.trim(),
           headline: headline.trim(),
@@ -560,8 +562,6 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
       }
     })();
   }, [
-    avatarSeed,
-    setClay,
     complete,
     displayName,
     headline,
@@ -1043,24 +1043,11 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
           style={styles.about}
         />
 
-        <Field label="Photo (optional)">
-          <View style={styles.avatarGrid}>
-            {CLAY_SEEDS.map(seed => {
-              const selected = avatarSeed === seed;
-              return (
-                <Pressable
-                  key={seed}
-                  onPress={() => setAvatarSeed(selected ? null : seed)}
-                  press="none"
-                  highlight="dim"
-                  accessibilityRole="button"
-                  accessibilityLabel={selected ? `Avatar ${seed}, selected` : `Avatar ${seed}`}
-                  style={[styles.avatarCell, selected && styles.avatarCellSelected]}>
-                  <Image source={CLAY_IMAGES[seed]} style={styles.avatarImg} />
-                </Pressable>
-              );
-            })}
-          </View>
+        <Field label="Your photos">
+          {/* A provider is chosen by face, so a real photograph is required and
+              a cartoon avatar is not offered (Amit, 2026-09-17 and 2026-10-03:
+              "at least 3"). The same gallery as the Your photos page. */}
+          <ProviderPhotoGallery providerId={self?.id ?? null} minimum={MIN_PROVIDER_PHOTOS} />
         </Field>
       </ScrollView>
 
@@ -1069,13 +1056,17 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
           label="Go live"
           onPress={() => {
             if (!profileReady) {
-              setNotice('Fill your name, headline, a language, and about to go live.');
+              setNotice(
+                photoCount < MIN_PROVIDER_PHOTOS
+                  ? `Add at least ${MIN_PROVIDER_PHOTOS} photos to go live.`
+                  : 'Fill your name, headline, a language, and about to go live.',
+              );
               return;
             }
             onGoLive();
           }}
           disabled={!profileReady}
-          busy={complete.isPending || setClay.isPending}
+          busy={complete.isPending}
           busyLabel="Going live"
           testID="provider-golive"
         />
@@ -1339,17 +1330,6 @@ const makeStyles = (t: Theme) =>
        a taller floor for the bio, nothing else. */
     about: { minHeight: 110 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKENS.space['2xs'] },
-    avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKENS.space.sm },
-    avatarCell: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
-      overflow: 'hidden',
-      borderWidth: 2,
-      borderColor: 'transparent',
-    },
-    avatarCellSelected: { borderColor: t.color.border.accent },
-    avatarImg: { width: '100%', height: '100%' },
     footer: {
       paddingHorizontal: TOKENS.space.lg,
       paddingTop: TOKENS.space.sm,

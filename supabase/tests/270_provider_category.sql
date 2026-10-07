@@ -91,6 +91,12 @@ insert into public.provider_tax_profile (provider_id, verified_dob)
 values ('cc065000-0000-4065-8000-000000000002', (current_date - interval '29 years')::date)
 on conflict (provider_id) do update set verified_dob = excluded.verified_dob;
 
+-- 185: going live needs three photos.
+insert into public.provider_photos (provider_id, url)
+select 'cc065000-0000-4065-8000-000000000002',
+       'https://example.test/storage/v1/object/public/avatars/cc065/' || n || '.jpg'
+from   generate_series(1, 3) n;
+
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub":"cc065000-0000-4065-8000-000000000002","role":"authenticated"}';

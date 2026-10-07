@@ -2168,7 +2168,7 @@ describe('accent budget is enforced in code, not just documented', () => {
        * unchanged.
        */
       'ProviderEditProfileScreen.tsx',
-      'ProviderPhotosScreen.tsx',
+      'ProviderPhotoGallery.tsx',
       'ProviderPushGate.tsx',
       /*
        * The explore row, which JOINED this list on 2026-09-08 when it grew a

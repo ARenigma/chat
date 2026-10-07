@@ -301,6 +301,9 @@ export type ProviderPhoto = {
  */
 export const MAX_PROVIDER_PHOTOS = 6;
 
+/** The least a provider must publish to go live (Amit, 2026-10-03; migration 185). */
+export const MIN_PROVIDER_PHOTOS = 3;
+
 /**
  * Provider earnings summary from the `provider_earnings` view (migration 038+).
  * provider_tokens is the 60% share; gross_tokens is full member spend.

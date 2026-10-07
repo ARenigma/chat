@@ -253,7 +253,7 @@ describe('the bright accent carries no label', () => {
      * is on a screen the same change set is already editing.
      */
     // On the photos page since the provider IA (Option A).
-    const home = withoutComments(read('src/screens/ProviderPhotosScreen.tsx'));
+    const home = withoutComments(read('src/components/ProviderPhotoGallery.tsx'));
     const block = styleBlock(home, 'photoBadge');
     expect(block).toContain('bg.accentStrong');
     expect(block).not.toMatch(/bg\.accent(?!Strong|Tint)/);
