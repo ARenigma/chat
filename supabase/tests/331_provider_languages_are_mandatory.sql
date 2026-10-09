@@ -83,20 +83,26 @@ set local request.jwt.claims =
 -- 23514 and not 42501: this is a check-constraint violation, which is the whole
 -- argument of the migration. A 42501 here would mean someone closed it by
 -- adding the column to the guard, and 5 and 6 below would then fail.
+-- 190: a provider's profile fields are not client-writable at all any more
+-- (guard_provider_profile_columns_direct_write), so the direct PATCH that used
+-- to reach this CHECK is refused one step earlier, by the guard.
 select throws_ok(
   $$update public.profiles
     set languages = '{}'::text[]
     where id = 'cc075000-0000-4075-8000-000000000001'$$,
-  '23514', null,
+  '42501', null,
   '3. a provider cannot empty their own languages by direct UPDATE'
 );
 
 -- The door the PATCH above walked around, asserted here so 3 cannot be read as
 -- evidence about the RPC. 065:213 raises 22023 for an empty list.
+-- 189: the languages check (step 3 in the function) fires before gender and
+-- agreement checks, so a gender and a pre-accepted agreement are not needed to
+-- hit this refusal — but the signature requires 6 args after the DROP in 189.
 select throws_ok(
   $$select public.complete_provider_onboarding(
       'Provider075', 'Here to listen', '{}'::text[],
-      'About text long enough to pass.', 'listener')$$,
+      'About text long enough to pass.', 'listener', 'female')$$,
   '22023', null,
   '4. ...and complete_provider_onboarding still refuses an empty list'
 );
@@ -109,17 +115,18 @@ select throws_ok(
 -- headline and about. Had `languages` been added to
 -- guard_privileged_profile_columns() to close 3, both of these would raise
 -- 42501 and providers would need an RPC to add Tamil.
+-- 190: changes go through update_provider_profile now, which still lets a
+-- provider offer a new language freely.
 select lives_ok(
-  $$update public.profiles
-    set languages = array['English', 'Hindi', 'Tamil']
-    where id = 'cc075000-0000-4075-8000-000000000001'$$,
+  $$select public.update_provider_profile(
+      'Here to listen', 'A provider row for the 075 suite.',
+      array['English', 'Hindi', 'Tamil'], null)$$,
   '5. the provider can still change their languages'
 );
 
 select lives_ok(
-  $$update public.profiles
-    set languages = array['Tamil']
-    where id = 'cc075000-0000-4075-8000-000000000001'$$,
+  $$select public.update_provider_profile(
+      'Here to listen', 'A provider row for the 075 suite.', array['Tamil'], null)$$,
   '6. ...including down to exactly one'
 );
 

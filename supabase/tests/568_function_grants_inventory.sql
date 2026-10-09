@@ -41,6 +41,7 @@ select 'anon', unnest(array[
 -- with the client's rights.
 insert into expected_callable (role, proname)
 select 'authenticated', unnest(array[
+  'accept_current_provider_agreement',
   'accept_policy', 'accept_session_request', 'announce_chat_open', 'answer_call',
   'block_story_comment_author', 'block_story_commenter', 'block_target_known_to_me',
   'check_display_name', 'claim_daily_tokens', 'claim_member_profile',

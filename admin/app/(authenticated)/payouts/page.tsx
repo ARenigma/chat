@@ -1,12 +1,14 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent } from '@/components/ui/card';
-import { StatusBadge } from '@/components/ui/badge';
+import { Badge, StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { PayoutActions } from './PayoutActions';
+
+export const dynamic = 'force-dynamic';
 
 // The manual payout queue: providers with cleared, past-hold, unpaid earnings.
 // Disbursement is triggered by hand (no cron) via the Pay action, which calls the
@@ -22,26 +24,44 @@ interface PayableRow {
   payable: boolean;
 }
 
+interface HistoryRow {
+  id: string;
+  provider_id: string;
+  provider_name: string | null;
+  status: string;
+  total_tokens: number;
+  total_paise: number;
+  initiated_by: string | null;
+  initiated_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+function fmt(ts: string | null | undefined) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
 export default async function PayoutsPage() {
   const svc = createServiceClient();
-  const { data, error } = await svc
-    .schema('admin')
-    .from('payable_providers')
-    .select('*')
-    .order('claimable_tokens', { ascending: false });
+  const [queue, history] = await Promise.all([
+    svc.schema('admin').from('payable_providers').select('*').order('claimable_tokens', { ascending: false }),
+    svc.schema('admin').from('payout_history').select('*').order('created_at', { ascending: false }).limit(50),
+  ]);
 
-  const rows = (data ?? []) as PayableRow[];
+  const rows = (queue.data ?? []) as PayableRow[];
+  const historyRows = (history.data ?? []) as HistoryRow[];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="Payouts"
         subtitle="Providers with a claimable balance. Payouts are triggered manually."
       />
 
-      {error ? (
+      {queue.error ? (
         <Card>
-          <CardContent className="p-4 text-sm text-destructive">{error.message}</CardContent>
+          <CardContent className="p-4 text-sm text-destructive">{queue.error.message}</CardContent>
         </Card>
       ) : rows.length === 0 ? (
         <EmptyState title="Nothing to pay" body="No provider has a cleared, past-hold balance yet." />
@@ -84,6 +104,47 @@ export default async function PayoutsPage() {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {/* 191: Payout history */}
+      {historyRows.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            History (last 50)
+          </p>
+          <Card className="py-0 gap-0">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Tokens</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Initiated by</TableHead>
+                    <TableHead>Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {historyRows.map(b => (
+                    <TableRow key={b.id}>
+                      <TableCell className="text-sm">
+                        {b.provider_name ?? b.provider_id.slice(0, 8)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{b.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">{b.total_tokens.toLocaleString('en-IN')}</TableCell>
+                      <TableCell className="text-sm">₹{(b.total_paise / 100).toLocaleString('en-IN')}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{b.initiated_by ?? '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{fmt(b.created_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </section>
       )}
     </div>
   );

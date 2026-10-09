@@ -316,6 +316,10 @@ export type ProviderEarnings = {
   sessions: number;
   members_served: number;
   first_earned_at: string | null;
+  /** Tokens in status 'pending' or 'cleared' — accrued but not yet paid out (190). */
+  pending_tokens: number;
+  /** Tokens in status 'paid' — already transferred to the provider's account (190). */
+  paid_tokens: number;
 };
 
 export type ReportReason =

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Keyboard,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,10 +22,12 @@ import {
   useTaxProfile,
   usePayoutAccount,
   useCompleteProviderOnboarding,
+  useAcceptProviderAgreement,
   useProviderPhotos,
   isDuplicateDisplayName,
   type PayoutMethod,
 } from '../api/provider';
+import { legalUrl } from '../lib/legal';
 import { useImeSpace } from '../lib/useImeSpace';
 import { useCheckDisplayName } from '../api/profileSetup';
 import {
@@ -191,6 +194,14 @@ const IFSC_SHAPE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const ACCOUNT_SHAPE = /^[0-9]{9,18}$/;
 
 /**
+ * The agreement checkbox's corner radius, shared by the visible box and its
+ * press layer so the two clip to the same shape. Profile setup's value; a
+ * checkbox is a rounded square, never a circle.
+ * https://developer.android.com/develop/ui/views/components/checkbox
+ */
+const CHECKBOX_RADIUS = 6;
+
+/**
  * Becoming a provider, as ONE continuous flow (no second welcome/bloom).
  *
  * Reached straight after phone sign-in (App.tsx `pendingProviderApply`). The
@@ -242,6 +253,18 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
    * differently for an astrologer than for a listener.
    */
   const [category, setCategory] = useState<ProviderCategory>(DEFAULT_CATEGORY);
+  /**
+   * C4 (189): required so member cards never show a blank gender.
+   * Three values mirror the CHECK on profiles.gender (migration 006).
+   * Chips rather than a text field: the list is closed and unlikely to grow.
+   */
+  const [gender, setGender] = useState<'female' | 'male' | 'other' | null>(null);
+  /**
+   * C3 (189): must be checked to enable Go live. The actual server-side
+   * acceptance is recorded by accept_current_provider_agreement() inside onGoLive,
+   * which is idempotent — checking the box shows intent; pressing Go live commits it.
+   */
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
 
   const savePan = useSavePan();
   const savePayout = useSavePayoutAccount();
@@ -316,6 +339,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
    */
   const runIdRef = useRef(0);
   const complete = useCompleteProviderOnboarding();
+  const acceptAgreement = useAcceptProviderAgreement();
   const { data: self } = useProfile();
   const { data: photos } = useProviderPhotos(self?.id ?? null);
   // Three or more, one of them the main photo (070's trigger makes the first
@@ -590,7 +614,11 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
     headline.trim().length > 0 &&
     languages.length > 0 &&
     about.trim().length > 0 &&
-    photoCount >= MIN_PROVIDER_PHOTOS;
+    photoCount >= MIN_PROVIDER_PHOTOS &&
+    // C4 (189): gender is required by complete_provider_onboarding.
+    gender !== null &&
+    // C3 (189): agreement must be checked before Go live is enabled.
+    agreementAccepted;
 
   /**
    * A comma-separated list of what is still needed, shown inline under the
@@ -610,12 +638,20 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
   if (photosShort > 0) {
     missingItems.push(`${photosShort} more photo${photosShort !== 1 ? 's' : ''}`);
   }
+  // C4 (189)
+  if (gender === null) missingItems.push('a gender');
+  // C3 (189)
+  if (!agreementAccepted) missingItems.push('the provider agreement');
 
   const onGoLive = useCallback(() => {
     Keyboard.dismiss();
     setNameError(null);
     void (async () => {
       try {
+        // C3 (189): record acceptance before promotion. The RPC is idempotent so
+        // a network retry after this point is safe. complete_provider_onboarding
+        // validates server-side that the acceptance exists.
+        await acceptAgreement.mutateAsync();
         await complete.mutateAsync({
           displayName: displayName.trim(),
           headline: headline.trim(),
@@ -623,6 +659,8 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
           about: about.trim(),
           category,
           expertise,
+          // C4 (189): profileReady guards this being non-null before onGoLive fires.
+          gender: gender!,
         });
         setPhase('done');
       } catch (err) {
@@ -654,6 +692,9 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
     // first render — empty — so every applicant would have submitted no tags
     // while the chips on screen showed the ones they picked.
     expertise,
+    // C4 (189): gender and C3: acceptAgreement added with their fields.
+    gender,
+    acceptAgreement,
   ]);
 
   // ── Phase: verify — identity AND payout, in one pass ────────────────────
@@ -975,6 +1016,22 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
           </Text>
         </Field>
 
+        {/* C4 (189): gender is shown on every provider card; the column has a
+            NOT-NULL server-side requirement enforced by complete_provider_onboarding.
+            Three values mirror profiles.gender's CHECK (migration 006). */}
+        <Field label="Gender">
+          <View style={styles.chips} testID="provider-gender">
+            {(['female', 'male', 'other'] as const).map(g => (
+              <Chip
+                key={g}
+                label={g.charAt(0).toUpperCase() + g.slice(1)}
+                selected={gender === g}
+                onPress={() => setGender(g)}
+              />
+            ))}
+          </View>
+        </Field>
+
         {/* The local `Field` stays here rather than becoming an `M3Field label=`,
             because this section is the input PLUS a reroll chip and a status
             line, and M3Field takes no children. Its label styling is identical
@@ -1130,6 +1187,44 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
               "at least 3"). The same gallery as the Your photos page. */}
           <ProviderPhotoGallery providerId={self?.id ?? null} minimum={MIN_PROVIDER_PHOTOS} />
         </Field>
+
+        {/* C3 (189): provider agreement checkbox. The checkbox gates Go live
+            client-side; complete_provider_onboarding validates server-side too.
+            Pressing "Read the agreement" opens the URL without changing checked state,
+            so reading and accepting are separate actions. */}
+        {/* The same agree step members have in profile setup (Amit,
+            2026-10-10): a 22dp rounded-square checkbox with its own 48dp
+            target, beside text whose link opens the agreement without ticking
+            the box. Reading and accepting stay separate actions. */}
+        <View style={styles.agreementRow}>
+          <Pressable
+            onPress={() => setAgreementAccepted(v => !v)}
+            press="none"
+            highlight="dim"
+            accessibilityRole="checkbox"
+            checked={agreementAccepted}
+            accessibilityLabel="Accept the provider agreement"
+            testID="provider-agreement-checkbox"
+            size={22}
+            style={styles.checkboxHit}>
+            <View style={[styles.checkbox, agreementAccepted && styles.checkboxOn]}>
+              {agreementAccepted ? (
+                <Icon name="check" size={TOKENS.icon.xs} color={theme.color.text.onAccent} />
+              ) : null}
+            </View>
+          </Pressable>
+          <Text allowFontScaling style={styles.agreementText}>
+            I agree to the{' '}
+            <Text
+              style={styles.agreementLink}
+              onPress={() => {
+                Linking.openURL(legalUrl('provider-agreement')).catch(() => undefined);
+              }}
+              accessibilityRole="link">
+              Provider Agreement
+            </Text>
+          </Text>
+        </View>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: (imeSpace > 0 ? 0 : insets.bottom) + TOKENS.space.md }]}>
@@ -1420,6 +1515,45 @@ const makeStyles = (t: Theme) =>
        a taller floor for the bio, nothing else. */
     about: { minHeight: 110 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: TOKENS.space['2xs'] },
+    // The member profile-setup checkbox (ProfileSetupScreen), copied so the
+    // two agree steps look and behave the same.
+    agreementRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      marginTop: TOKENS.space.md,
+    },
+    checkboxHit: {
+      width: 22,
+      height: 22,
+      borderRadius: CHECKBOX_RADIUS,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: CHECKBOX_RADIUS,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.color.border.hairline,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.sunken,
+    },
+    checkboxOn: {
+      backgroundColor: t.color.bg.accentStrong,
+      borderColor: t.color.bg.accentStrong,
+    },
+    agreementText: {
+      flex: 1,
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+      lineHeight: 22,
+    },
+    agreementLink: {
+      color: t.color.text.accent,
+      fontFamily: 'Geist-Regular',
+    },
     footer: {
       paddingHorizontal: TOKENS.space.lg,
       paddingTop: TOKENS.space.sm,

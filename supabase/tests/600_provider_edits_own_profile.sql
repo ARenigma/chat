@@ -101,9 +101,10 @@ select is(
   '10. ...and nothing of that save was written');
 
 reset role;
+-- 190 changed the signature to (text, text, text[], text) with the 4th arg defaulted.
 select ok(
-  not has_function_privilege('anon', 'public.update_provider_profile(text, text, text[])', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.update_provider_profile(text, text, text[])', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.update_provider_profile(text, text, text[], text)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.update_provider_profile(text, text, text[], text)', 'EXECUTE'),
   '11. signed out cannot call it; signed in can');
 
 select * from finish();

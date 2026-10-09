@@ -418,6 +418,7 @@ COLUMN policy_versions.created_at timestamp with time zone null=NO default=now()
 COLUMN policy_versions.effective_at timestamp with time zone null=NO default=now()
 COLUMN policy_versions.id uuid null=NO default=gen_random_uuid()
 COLUMN policy_versions.is_material boolean null=NO default=true
+COLUMN policy_versions.is_provider_only boolean null=NO default=false
 COLUMN policy_versions.kind text null=NO default=-
 COLUMN policy_versions.summary text null=NO default=''::text
 COLUMN policy_versions.url text null=NO default=-
@@ -429,7 +430,9 @@ COLUMN profiles.avatar_url text null=YES default=-
 COLUMN profiles.chat_enabled boolean null=NO default=true
 COLUMN profiles.created_at timestamp with time zone null=NO default=now()
 COLUMN profiles.date_of_birth date null=YES default=-
+COLUMN profiles.delisted_at timestamp with time zone null=YES default=-
 COLUMN profiles.display_name text null=YES default=-
+COLUMN profiles.display_name_changed_at timestamp with time zone null=YES default=-
 COLUMN profiles.engagement_nudged_at timestamp with time zone null=YES default=-
 COLUMN profiles.expertise ARRAY null=NO default='{}'::text[]
 COLUMN profiles.gender text null=YES default=-
@@ -501,6 +504,8 @@ COLUMN provider_earnings.first_earned_at timestamp with time zone null=YES defau
 COLUMN provider_earnings.gross_tokens bigint null=YES default=-
 COLUMN provider_earnings.members_served bigint null=YES default=-
 COLUMN provider_earnings.minutes_billed bigint null=YES default=-
+COLUMN provider_earnings.paid_tokens bigint null=YES default=-
+COLUMN provider_earnings.pending_tokens bigint null=YES default=-
 COLUMN provider_earnings.provider_tokens bigint null=YES default=-
 COLUMN provider_earnings.sessions bigint null=YES default=-
 COLUMN provider_earnings_ledger.created_at timestamp with time zone null=NO default=now()
@@ -537,6 +542,7 @@ COLUMN provider_payout_batches.completed_at timestamp with time zone null=YES de
 COLUMN provider_payout_batches.created_at timestamp with time zone null=NO default=now()
 COLUMN provider_payout_batches.id uuid null=NO default=gen_random_uuid()
 COLUMN provider_payout_batches.initiated_at timestamp with time zone null=YES default=-
+COLUMN provider_payout_batches.initiated_by text null=YES default=-
 COLUMN provider_payout_batches.provider_id uuid null=YES default=-
 COLUMN provider_payout_batches.status text null=NO default='pending'::text
 COLUMN provider_payout_batches.total_paise integer null=NO default=-
@@ -846,11 +852,11 @@ CONSTRAINT paid_sessions.paid_sessions_provider_id_fkey FOREIGN KEY (provider_id
 CONSTRAINT paid_sessions.paid_sessions_request_id_fkey FOREIGN KEY (request_id) REFERENCES session_requests(id) ON DELETE SET NULL
 CONSTRAINT paid_sessions.paid_sessions_tokens_debited_check CHECK ((tokens_debited >= 0))
 CONSTRAINT policy_acceptances.policy_acceptances_pkey PRIMARY KEY (id)
-CONSTRAINT policy_acceptances.policy_acceptances_policy_kind_check CHECK ((policy_kind = ANY (ARRAY['terms'::text, 'privacy'::text])))
+CONSTRAINT policy_acceptances.policy_acceptances_policy_kind_check CHECK ((policy_kind = ANY (ARRAY['terms'::text, 'privacy'::text, 'provider_agreement'::text])))
 CONSTRAINT policy_acceptances.policy_acceptances_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 CONSTRAINT policy_acceptances.policy_acceptances_user_id_policy_kind_version_id_key UNIQUE (user_id, policy_kind, version_id)
 CONSTRAINT policy_acceptances.policy_acceptances_version_id_fkey FOREIGN KEY (version_id) REFERENCES policy_versions(id)
-CONSTRAINT policy_versions.policy_versions_kind_check CHECK ((kind = ANY (ARRAY['terms'::text, 'privacy'::text])))
+CONSTRAINT policy_versions.policy_versions_kind_check CHECK ((kind = ANY (ARRAY['terms'::text, 'privacy'::text, 'provider_agreement'::text])))
 CONSTRAINT policy_versions.policy_versions_kind_version_key UNIQUE (kind, version)
 CONSTRAINT policy_versions.policy_versions_pkey PRIMARY KEY (id)
 CONSTRAINT profiles.member_is_pseudonymous CHECK (((role = 'provider'::user_role) OR ((date_of_birth IS NULL) AND (gender IS NULL) AND (headline IS NULL))))
@@ -1190,10 +1196,18 @@ FUNCTION _vol(name) returns text security=invoker
 FUNCTION _vol(name, name) returns text security=invoker
 FUNCTION _vol(name, name, name[]) returns text security=invoker
 FUNCTION _vol(name, name[]) returns text security=invoker
+FUNCTION accept_current_provider_agreement() returns void security=definer
 FUNCTION accept_policy(p_version_id uuid, p_device_info text) returns void security=definer
 FUNCTION accept_session_request(p_request_id uuid) returns uuid security=definer
 FUNCTION accrue_ended_paid_session() returns trigger security=definer
 FUNCTION add_result(boolean, boolean, text, text, text) returns integer security=invoker
+FUNCTION admin_ban_provider(p_provider_id uuid, p_reason text, p_actor text) returns jsonb security=definer
+FUNCTION admin_delist_provider(p_provider_id uuid, p_reason text, p_actor text) returns jsonb security=definer
+FUNCTION admin_lift_suspension(p_provider_id uuid, p_reason text, p_actor text) returns jsonb security=definer
+FUNCTION admin_relist_provider(p_provider_id uuid, p_reason text, p_actor text) returns jsonb security=definer
+FUNCTION admin_remove_provider_photo(p_photo_id uuid, p_actor text, p_reason text) returns jsonb security=definer
+FUNCTION admin_resolve_refund_review(p_review_id uuid, p_status text, p_actor text, p_note text) returns jsonb security=definer
+FUNCTION admin_suspend_provider(p_provider_id uuid, p_days integer, p_reason text, p_actor text) returns jsonb security=definer
 FUNCTION alike(anyelement, text) returns text security=invoker
 FUNCTION alike(anyelement, text, text) returns text security=invoker
 FUNCTION announce_chat_open(p_conversation_id uuid) returns jsonb security=definer
@@ -1319,7 +1333,7 @@ FUNCTION columns_are(name, name, name[]) returns text security=invoker
 FUNCTION columns_are(name, name, name[], text) returns text security=invoker
 FUNCTION columns_are(name, name[]) returns text security=invoker
 FUNCTION columns_are(name, name[], text) returns text security=invoker
-FUNCTION complete_provider_onboarding(p_display_name text, p_headline text, p_languages text[], p_about text, p_provider_category text) returns void security=definer
+FUNCTION complete_provider_onboarding(p_display_name text, p_headline text, p_languages text[], p_about text, p_provider_category text, p_gender text) returns void security=definer
 FUNCTION complete_recharge(p_user_id uuid, p_amount_paise integer, p_tokens integer, p_gateway text, p_gateway_ref text, p_gateway_order_id text) returns uuid security=definer
 FUNCTION composite_owner_is(name, name) returns text security=invoker
 FUNCTION composite_owner_is(name, name, name) returns text security=invoker
@@ -1486,6 +1500,7 @@ FUNCTION guard_presence_columns() returns trigger security=invoker
 FUNCTION guard_privileged_profile_columns() returns trigger security=invoker
 FUNCTION guard_provider_avatar_is_a_photograph() returns trigger security=invoker
 FUNCTION guard_provider_photo_columns() returns trigger security=invoker
+FUNCTION guard_provider_profile_columns_direct_write() returns trigger security=invoker
 FUNCTION handle_new_user() returns trigger security=definer
 FUNCTION has_cast(name, name) returns text security=invoker
 FUNCTION has_cast(name, name, name) returns text security=invoker
@@ -2025,7 +2040,7 @@ FUNCTION presence_heartbeat(p_online boolean) returns void security=definer
 FUNCTION provider_busy_waits(p_provider_ids uuid[]) returns TABLE(provider_id uuid, wait_minutes integer) security=definer
 FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
 FUNCTION provider_offers_channel(p_provider_id uuid, p_channel session_channel) returns boolean security=definer
-FUNCTION provider_photos_delete_guard() returns trigger security=definer
+FUNCTION provider_photos_delete_guard() returns trigger security=invoker
 FUNCTION provider_photos_single_primary() returns trigger security=definer
 FUNCTION provider_photos_sync_avatar() returns trigger security=definer
 FUNCTION public_display_name(p profiles) returns text security=invoker
@@ -2253,7 +2268,7 @@ FUNCTION unblock_by_handle(p_handle uuid) returns json security=definer
 FUNCTION unialike(anyelement, text) returns text security=invoker
 FUNCTION unialike(anyelement, text, text) returns text security=invoker
 FUNCTION unregister_push_token(p_token text) returns boolean security=definer
-FUNCTION update_provider_profile(p_headline text, p_about text, p_languages text[]) returns void security=definer
+FUNCTION update_provider_profile(p_headline text, p_about text, p_languages text[], p_display_name text) returns void security=definer
 FUNCTION upsert_external_identity(p_provider text, p_subject text, p_phone text, p_user_id uuid) returns void security=definer
 FUNCTION upsert_media_channel_usage_analytics(p_call_id uuid, p_duration_seconds integer, p_participant_acu numeric, p_raw jsonb) returns uuid security=definer
 FUNCTION upsert_media_vendor_usage_daily(p_backend call_media_backend, p_project_id text, p_usage_date date, p_duration_audio_seconds bigint, p_duration_video_hd_seconds bigint, p_duration_video_hdp_seconds bigint, p_duration_video_1080p_seconds bigint, p_duration_video_2k_seconds bigint, p_duration_video_4k_seconds bigint, p_source text, p_raw jsonb, p_cost_paise_override integer) returns uuid security=definer
@@ -2527,6 +2542,7 @@ TRIGGER profiles.guard_profile_pii_columns
 TRIGGER profiles.guard_profile_presence_columns
 TRIGGER profiles.guard_profile_privileged_columns
 TRIGGER profiles.guard_profile_provider_avatar
+TRIGGER profiles.guard_provider_profile_columns_direct_write
 TRIGGER profiles.sync_provider_presence_after_availability_change
 TRIGGER profiles.sync_token_balance
 TRIGGER provider_applications.guard_application_transitions

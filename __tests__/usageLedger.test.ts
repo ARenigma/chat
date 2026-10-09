@@ -232,10 +232,14 @@ describe('usageKpis: two figures, and what each one means', () => {
 });
 
 describe('the KPIs are wired above the rows', () => {
-  it('renders two of them, and both are reachable by testID', () => {
-    expect(SCREEN.match(/<Kpi\b/g)).toHaveLength(2);
+  it('renders two for a member and the earned/spent split for a provider, each reachable by testID', () => {
+    // Sessions + total for a member; Sessions + Earned (+ Spent, only when the
+    // provider also spent as a member) on the provider tree (sweep D2).
+    expect(SCREEN.match(/<Kpi\b/g)).toHaveLength(4);
     expect(SCREEN).toContain('testID="usage-sessions"');
     expect(SCREEN).toContain('testID="usage-total"');
+    expect(SCREEN).toContain('testID="usage-earned"');
+    expect(SCREEN).toContain('testID="usage-spent"');
     // Fed from the pure helper, so the card cannot compute a second, different
     // answer from the one the tests above pin.
     /*

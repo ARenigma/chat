@@ -126,6 +126,8 @@ import { StoryCreateRoute, StoryViewerRoute } from './screens/routes/StoryRoutes
 import { STORY_BASE } from './screens/StoryViewerScreen';
 import { BottomBar, MEMBER_TABS, PROVIDER_TABS } from './shell/bottom-bar/BottomBar';
 import { MemberShell, ProviderShell } from './shell';
+import * as Layout from './components/Layout';
+import { ProviderDetailScreen } from './screens/ProviderDetailScreen';
 import { useStore } from './store/useStore';
 import { useTheme, useThemeMode } from './theme/ThemeProvider';
 import { TOKENS } from './theme/tokens';
@@ -230,6 +232,32 @@ function memberScreens(Stack: typeof HomeStack, background: string) {
   );
 }
 
+/**
+ * C5: The provider's own public profile — always read-only. Registered in the
+ * provider stack so "See your profile" opens a preview that hides every CTA
+ * (chat, call, video, notify) and the favourite heart. Uses `readOnly` on
+ * ProviderDetailScreen rather than route params so no member-tree routes change.
+ */
+function ProviderSelfProfileRoute({
+  navigation,
+  route,
+}: {
+  navigation: { goBack: () => void };
+  route: { params: { providerId: string } };
+}) {
+  return (
+    <Layout.Screen minimalShell>
+      <ProviderDetailScreen
+        providerId={route.params.providerId}
+        onBack={() => navigation.goBack()}
+        onOpenChat={() => {}} // no-op: a provider cannot message themselves
+        onStartCall={() => {}} // no-op: a provider cannot call themselves
+        readOnly
+      />
+    </Layout.Screen>
+  );
+}
+
 /** The provider screens every provider tab stack registers. */
 function providerScreens(Stack: typeof ChatsStack) {
   return (
@@ -247,13 +275,11 @@ function providerScreens(Stack: typeof ChatsStack) {
       <Stack.Screen name="AboutSettings" getComponent={() => AboutRoute} />
       <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
       <Stack.Screen name="StoryCreate" getComponent={() => StoryCreateRoute} />
-      {/* C5: The provider's own public profile, so they can see what members
-          see. Uses the same full-page route as the member tree (ProviderProfile
-          is a non-sheet push; ProviderDetail is the sheet variant). The CTAs
-          on ProviderDetailScreen will be visible — ProviderDetailScreen has no
-          readOnly prop yet (see report); a self-chat/call attempt is refused
-          server-side. */}
-      <Stack.Screen name="ProviderProfile" getComponent={() => ProviderProfileRoute} />
+      {/* C5: readOnly self-view — ProviderSelfProfileRoute passes readOnly={true}
+          so CTAs (chat, call, video, notify) and the favourite heart are hidden.
+          Same full-page push as the member tree; ProviderDetail is the sheet
+          variant. */}
+      <Stack.Screen name="ProviderProfile" getComponent={() => ProviderSelfProfileRoute} />
     </>
   );
 }

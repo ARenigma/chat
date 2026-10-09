@@ -56,6 +56,19 @@ const CHANNEL_GLYPH = {
 } as const;
 
 /**
+ * D2: maps the raw DB status word to a human label.
+ * Shown under the ₹ amount on provider rows so the state of each earning is
+ * clear without the member needing to know payout cycle terminology.
+ */
+function earningsStatusLabel(status: string | null | undefined): string | null {
+  if (status === 'pending') return 'Waiting to clear';
+  if (status === 'cleared') return 'Ready for payout';
+  if (status === 'paid')    return 'Paid out';
+  if (status === 'refunded') return 'Refunded';
+  return null;
+}
+
+/**
  * Duration label for a usage row — actual elapsed time when available (migration
  * 124), otherwise falls back to the billed-minutes approximation.
  * Uses `durationWords` so the format matches the chat transcript ("2 min 30 secs").
@@ -173,6 +186,34 @@ export function usageKpis(rows: readonly UsageRow[]): UsageKpis | null {
 }
 
 /**
+ * D2: For a provider tree, split rows into earning and spending sides so both
+ * totals are visible. Returns null when the ledger is empty.
+ *
+ * A provider who has also had member sessions sees both totals rather than a
+ * single number that silently mixes the two directions. The split is by
+ * `i_am_member`: false = earned, true = spent.
+ */
+export interface ProviderLedgerTotals {
+  earned: number;
+  spent: number;
+  hasSpent: boolean;
+}
+
+export function providerLedgerTotals(rows: readonly UsageRow[]): ProviderLedgerTotals | null {
+  if (rows.length === 0) return null;
+  let earned = 0;
+  let spent = 0;
+  for (const r of rows) {
+    if (r.i_am_member) {
+      spent += r.tokens;
+    } else {
+      earned += r.tokens;
+    }
+  }
+  return { earned, spent, hasSpent: spent > 0 };
+}
+
+/**
  * One KPI card: the figure, then what the figure is.
  *
  * The two Texts are ONE accessibility node. "Describe each UI element" asks a
@@ -237,6 +278,9 @@ export function UsageLedgerScreen({ onBack }: Props) {
   // always sees "Earnings" language, not "Usage" language, even before their
   // first session.
   const earning = kpis?.earning ?? (profile?.role === 'provider');
+  // D2: provider tree shows split Earned / Spent totals.
+  const isProvider = profile?.role === 'provider';
+  const providerTotals = isProvider ? providerLedgerTotals(rows) : null;
   const flatRows = kpis !== null ? groupByMonth(rows) : [];
 
   return (
@@ -287,7 +331,9 @@ export function UsageLedgerScreen({ onBack }: Props) {
             /* Two up, above the rows. Equal `flex: 1` halves rather than a fixed
                width, so the pair survives every screen width without a
                breakpoint, and separated by the same space.xs the row list is
-               already gapped by — one rhythm down the screen, not two. */
+               already gapped by — one rhythm down the screen, not two.
+               D2: providers who have also spent as members see three cards:
+               Sessions, Earned, Spent. Members see the existing two. */
             <View style={styles.kpiRow}>
               <Kpi
                 value={formatCount(kpis.sessions)}
@@ -295,14 +341,37 @@ export function UsageLedgerScreen({ onBack }: Props) {
                 spoken={kpis.sessionsSpoken}
                 testID="usage-sessions"
               />
-              <Kpi
-                value={
-                  <RupeeAmount value={kpis.tokens} allowFontScaling style={styles.kpiValue} />
-                }
-                label={kpis.tokensLabel}
-                spoken={kpis.tokensSpoken}
-                testID="usage-total"
-              />
+              {providerTotals !== null ? (
+                <>
+                  <Kpi
+                    value={
+                      <RupeeAmount value={providerTotals.earned} allowFontScaling style={styles.kpiValue} />
+                    }
+                    label="Earned"
+                    spoken={`${formatRupees(providerTotals.earned)} earned`}
+                    testID="usage-earned"
+                  />
+                  {providerTotals.hasSpent ? (
+                    <Kpi
+                      value={
+                        <RupeeAmount value={providerTotals.spent} allowFontScaling style={styles.kpiValue} />
+                      }
+                      label="Spent"
+                      spoken={`${formatRupees(providerTotals.spent)} spent`}
+                      testID="usage-spent"
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <Kpi
+                  value={
+                    <RupeeAmount value={kpis.tokens} allowFontScaling style={styles.kpiValue} />
+                  }
+                  label={kpis.tokensLabel}
+                  spoken={kpis.tokensSpoken}
+                  testID="usage-total"
+                />
+              )}
             </View>
           }
           renderItem={({ item }) => {
@@ -352,10 +421,12 @@ export function UsageLedgerScreen({ onBack }: Props) {
                   <Text allowFontScaling style={styles.amountValue}>
                     {`${row.i_am_member ? '-' : '+'}${formatRupees(row.tokens)}`}
                   </Text>
-                  {/* Provider only: their share is accrued before it is paid. */}
-                  {row.earnings_status !== null && row.earnings_status !== undefined ? (
+                  {/* D2: provider earnings status in plain language instead of the
+                    raw DB word (pending → "Waiting to clear", cleared → "Ready
+                    for payout", paid → "Paid out", refunded → "Refunded"). */}
+                  {earningsStatusLabel(row.earnings_status) !== null ? (
                     <Text allowFontScaling style={styles.amountNote}>
-                      {row.earnings_status}
+                      {earningsStatusLabel(row.earnings_status)}
                     </Text>
                   ) : null}
                 </View>

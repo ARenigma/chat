@@ -32,10 +32,15 @@ insert into auth.users (id) values
   ('57100000-0000-4571-8000-000000000014'),  -- member M4, edits and surfaces
   ('57100000-0000-4571-8000-000000000015');  -- member M5, the window
 
-update public.profiles set display_name = 'Ada' where id = '57100000-0000-4571-8000-000000000001';
-insert into public.provider_applications (user_id, display_name, date_of_birth, languages)
-values ('57100000-0000-4571-8000-000000000001', 'Ada', (current_date - interval '30 years')::date, array['English']);
-select public.approve_provider_application('57100000-0000-4571-8000-000000000001');
+-- 191: approve_provider_application is retired. Set provider fields directly
+-- as a superuser (same pattern as provider Q below and other pgTAP suites).
+update public.profiles
+set role               = 'provider',
+    display_name       = 'Ada',
+    date_of_birth      = (current_date - interval '30 years')::date,
+    languages          = array['en'],
+    identity_verified_at = now()
+where id = '57100000-0000-4571-8000-000000000001';
 
 update public.profiles
 set role = 'provider', languages = array['en'], display_name = 'Bina',

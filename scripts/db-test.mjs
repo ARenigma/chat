@@ -215,6 +215,9 @@ const MIGRATIONS = [
   'supabase/migrations/186_provider_send_fix.sql',
   'supabase/migrations/187_request_peer_info_and_pending_flag.sql',
   'supabase/migrations/188_provider_photos_minimum_three_delete_guard.sql',
+  'supabase/migrations/189_provider_agreement_and_gender.sql',
+  'supabase/migrations/190_display_name_editing_profile_guard_earnings_split.sql',
+  'supabase/migrations/191_admin_provider_actions.sql',
 ];
 
 /**
@@ -1097,6 +1100,24 @@ const suites = [
     ),
     label:
       'a live provider cannot drop below three photos; members and account deletion are unaffected',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/189_provider_agreement_and_gender.sql'),
+    label:
+      'going live needs the provider agreement and a gender; members never see the agreement as pending',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/190_display_name_and_guard_and_earnings.sql',
+    ),
+    label:
+      'a provider renames only through the checked RPC, direct writes are refused, earnings split pending/paid, the ledger drops refunds',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/191_admin_provider_actions.sql'),
+    label:
+      'admin provider actions are admin-only and audited, delist hides from the directory, the old admit path is retired',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

@@ -24,13 +24,19 @@ where  id = 'cc185000-0000-4185-8000-000000000001';
 insert into public.provider_tax_profile (provider_id, verified_dob)
 values ('cc185000-0000-4185-8000-000000000001', (current_date - interval '30 years')::date);
 
+-- 189: accept terms, privacy AND the provider agreement so those gates don't
+-- interfere with what this suite is actually testing (the photo floor).
+select test.accept_current_policies('cc185000-0000-4185-8000-000000000001');
+
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub":"cc185000-0000-4185-8000-000000000001","role":"authenticated"}';
 
+select public.accept_current_provider_agreement();
+
 select throws_ok(
   $$select public.complete_provider_onboarding(
-      'Photos185', 'Here to listen', array['Hindi'], 'About me', 'listener')$$,
+      'Photos185', 'Here to listen', array['Hindi'], 'About me', 'listener', 'female')$$,
   '22023', 'add at least 3 photos of yourself',
   '1. no photos: refused'
 );
@@ -42,7 +48,7 @@ from   generate_series(1, 2) n;
 
 select throws_ok(
   $$select public.complete_provider_onboarding(
-      'Photos185', 'Here to listen', array['Hindi'], 'About me', 'listener')$$,
+      'Photos185', 'Here to listen', array['Hindi'], 'About me', 'listener', 'female')$$,
   '22023', 'add at least 3 photos of yourself',
   '2. two photos: refused'
 );
@@ -70,7 +76,7 @@ values ('cc185000-0000-4185-8000-000000000001',
 
 select lives_ok(
   $$select public.complete_provider_onboarding(
-      'Photos185', 'Here to listen', array['Hindi'], 'About me', 'listener')$$,
+      'Photos185', 'Here to listen', array['Hindi'], 'About me', 'listener', 'female')$$,
   '4. three photos: onboarding succeeds'
 );
 

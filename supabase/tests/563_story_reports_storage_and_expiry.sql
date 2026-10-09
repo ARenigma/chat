@@ -1303,6 +1303,7 @@ select is(
        where a.grantee = 0 and a.privilege_type = 'EXECUTE')
      and has_function_privilege('authenticated', p.oid, 'EXECUTE')
      and p.proname <> all (array[
+       'accept_current_provider_agreement',
        'accept_policy', 'accept_session_request', 'announce_chat_open', 'answer_call',
        'block_story_comment_author', 'block_story_commenter', 'block_target_known_to_me',
        'check_display_name', 'claim_daily_tokens', 'claim_member_profile',

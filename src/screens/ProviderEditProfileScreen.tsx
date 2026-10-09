@@ -10,6 +10,8 @@ import { MAX_EXPERTISE, expertiseFor, isExpertiseSelected, toggleExpertise } fro
 import { ContactGuardRefusalError } from '../lib/contactGuard';
 import {
   ABOUT_MAX,
+  DISPLAY_NAME_MAX,
+  DISPLAY_NAME_MIN,
   HEADLINE_MAX,
   MAX_PROVIDER_LANGUAGES,
   changedParts,
@@ -23,6 +25,7 @@ import {
 } from '../lib/providerProfileEdit';
 import { useProfile } from '../api/chat';
 import { useSaveProviderProfile } from '../api/provider';
+import { useCheckDisplayName } from '../api/profileSetup';
 import { BackButton } from '../components/BackButton';
 import { FilterChip } from '../components/Chip';
 import { M3Field } from '../components/TextField';
@@ -79,6 +82,7 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
   const save = useSaveProviderProfile();
 
   const initial = useMemo<ProfileEditDraft | null>(
+
     () => (profile ? draftFromProfile(profile) : null),
     [profile],
   );
@@ -97,6 +101,22 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
 
+  // C6: live uniqueness check for the display name, debounced and server-checked.
+  // We only enable it when the name has actually changed from the saved value,
+  // so arriving on the form does not fire a round trip for the existing name.
+  const nameChanged = initial !== null && draft !== null &&
+    initial.displayName.trim() !== (draft.displayName ?? '').trim();
+  const nameCheck = useCheckDisplayName(draft?.displayName ?? '', nameChanged);
+  // 'taken' is the only status that should block saving; 'invalid' from
+  // check_display_name means the server rejected the format, but our own
+  // validateProfileEdit has already caught that. Only 'taken' adds a new error.
+  const nameTakenError: string | null =
+    nameChanged && nameCheck.data?.status === 'taken' ? 'That name is already taken.' : null;
+  const nameCheckPending = nameChanged && nameCheck.isFetching;
+
+  const canSaveWithNameCheck =
+    canSave && nameTakenError === null && !nameCheckPending;
+
   const update = useCallback(
     (patch: Partial<ProfileEditDraft>) => {
       // Frozen while a save is in flight: its success clears the draft and
@@ -111,16 +131,20 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
   );
 
   const onSave = useCallback(() => {
-    if (!canSave || initial === null || draft === null) {
+    if (!canSaveWithNameCheck || initial === null || draft === null) {
       return;
     }
+    const parts = changedParts(initial, draft);
     save.mutate(
       {
         headline: draft.headline,
         about: draft.about,
         languages: [...draft.languages],
         expertise: [...draft.expertise],
-        parts: changedParts(initial, draft),
+        // C6: pass display name only when it actually changed so the server
+        // leaves the 30-day cooldown column untouched on headline-only saves.
+        displayName: parts.name ? draft.displayName : undefined,
+        parts,
       },
       {
         onSuccess: () => {
@@ -136,7 +160,8 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
         },
       },
     );
-  }, [canSave, initial, draft, save, onSaved]);
+  }, [canSaveWithNameCheck, initial, draft, save, onSaved]);
+
 
   const offeredTopics = expertiseFor(profile?.provider_category ?? 'listener');
   const languageOptions = withChosen(OFFERED_LANGUAGES, draft?.languages ?? []);
@@ -144,8 +169,13 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
   // Rules show once the provider has changed something, not on arrival, so
   // an empty legacy about does not open the page in red; from the first edit
   // every rule that holds Save back is on screen, next to its field.
-  const lineFor = (field: ProfileEditField): string | null =>
-    serverError?.field === field ? serverError.message : dirty ? errors[field] ?? null : null;
+  const lineFor = (field: ProfileEditField): string | null => {
+    if (serverError?.field === field) return serverError.message;
+    // Display name: also surface the live taken-check error in addition to
+    // local validation errors, so the provider knows before they hit Save.
+    if (field === 'displayName' && nameTakenError !== null) return nameTakenError;
+    return dirty ? errors[field] ?? null : null;
+  };
 
   return (
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: imeSpace }]} testID="edit-profile">
@@ -164,14 +194,14 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
             same word. */}
         <Pressable
           onPress={onSave}
-          disabled={!canSave}
+          disabled={!canSaveWithNameCheck}
           testID="edit-profile-save"
-          accessibilityLabel={save.isPending ? 'Saving' : 'Save'}
+          accessibilityLabel={save.isPending ? 'Saving' : nameCheckPending ? 'Checking name' : 'Save'}
           press="none"
           highlight="dim"
           style={styles.save}>
-          <Text allowFontScaling style={[styles.saveLabel, !canSave && styles.saveLabelDisabled]}>
-            {save.isPending ? 'Saving' : 'Save'}
+          <Text allowFontScaling style={[styles.saveLabel, !canSaveWithNameCheck && styles.saveLabelDisabled]}>
+            {save.isPending ? 'Saving' : nameCheckPending ? 'Checking…' : 'Save'}
           </Text>
         </Pressable>
       </View>
@@ -187,12 +217,34 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
           </Text>
         ) : null}
 
+        {/* C6: display name — the stage name members see everywhere. Validated
+            client-side (length, charset, reserved words, phone) and checked live
+            for uniqueness via check_display_name, same as onboarding. The 30-day
+            cooldown is enforced server-side; the error surfaces after save. */}
+        <M3Field
+          label="Display name"
+          testID="edit-profile-display-name"
+          value={draft?.displayName ?? ''}
+          onChangeText={displayName => update({ displayName })}
+          placeholder="Your stage name"
+          maxLength={DISPLAY_NAME_MAX}
+          editable={draft !== null}
+          supportingText={
+            nameCheckPending
+              ? 'Checking availability…'
+              : nameChanged && nameCheck.data?.status === 'available'
+                ? 'Available.'
+                : `${DISPLAY_NAME_MIN}-${DISPLAY_NAME_MAX} characters, letters and numbers only.`
+          }
+          error={lineFor('displayName')}
+        />
+
         <M3Field
           label="Headline"
           testID="edit-profile-headline"
           value={draft?.headline ?? ''}
           onChangeText={headline => update({ headline })}
-          placeholder={'“I listen more than I talk”'}
+          placeholder={'"I listen more than I talk"'}
           maxLength={HEADLINE_MAX}
           editable={draft !== null}
           supportingText={`${(draft?.headline ?? '').length} / ${HEADLINE_MAX}`}

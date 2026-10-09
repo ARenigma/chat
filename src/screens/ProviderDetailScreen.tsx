@@ -63,6 +63,13 @@ interface Props {
    * (https://reactnavigation.org/docs/native-stack-navigator#presentation).
    */
   sheet?: boolean;
+  /**
+   * C5: When true, hides every CTA (chat, call, video, notify) and the
+   * favourite heart. Passed from the provider tree's own-profile route so a
+   * provider previewing their own listing sees exactly what members see without
+   * being offered actions against themselves.
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -85,12 +92,17 @@ interface Props {
  * the stack's and pops it. Home's search back-guard (useSearchBack) is
  * focus-scoped and is not registered while this screen covers Home.
  */
-export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCall, sheet = false }: Props) {
+export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCall, sheet = false, readOnly = false }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const balance = useStore(s => s.balance);
-  useProfile();
+  // C5: detect whether the viewer is looking at their own profile. Used in
+  // combination with `readOnly` (passed by the provider tree's own-profile route)
+  // to hide CTAs and the favourite heart on self-view.
+  const { data: myProfile } = useProfile();
+  const isSelf = myProfile?.id === providerId;
+  const isReadOnly = readOnly || isSelf;
   const { data: killSwitches } = useKillSwitches();
   const { data: economics } = useEconomicsConfig();
   const voiceCallsEnabled =
@@ -245,9 +257,14 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
               tick();
               toggleFavorite(providerId);
             }}
+            showFavorite={!isReadOnly}
           />
 
-          <View style={styles.actions}>
+          {/* C5: no CTAs on the viewer's own profile — a provider cannot start
+              a session with themselves, and showing the buttons would be a
+              false affordance. `isReadOnly` is true when the provider tree
+              pushed this screen (readOnly prop) or the viewer's uid matches. */}
+          {isReadOnly ? null : <View style={styles.actions}>
             {away && !peerBack ? (
               /* One action, full width — the row's three slots collapse to one
                  because there is only one honest thing to offer. The bell and
@@ -353,7 +370,7 @@ export function ProviderDetailScreen({ providerId, onBack, onOpenChat, onStartCa
                 ) : null}
               </>
             )}
-          </View>
+          </View>}
 
           <View style={styles.hairline} />
 
@@ -515,11 +532,14 @@ function Hero({
   photos,
   favorite,
   onToggleFavorite,
+  showFavorite = true,
 }: {
   provider: ProviderSummary;
   photos: ProviderPhoto[];
   favorite: boolean;
   onToggleFavorite: () => void;
+  /** C5: false on the provider's own self-view to hide the heart. */
+  showFavorite?: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
@@ -712,9 +732,12 @@ function Hero({
           absolute` on it anchors to the Pressable's own bottom-pinned box rather
           than to the hero — which put the heart mid-right instead of top-right.
           No bounce/chip scale: both moved the glyph under the finger. */}
-      <View style={styles.favoriteSlot}>
-        <FavoriteButton favorite={favorite} onToggle={onToggleFavorite} accent={theme.color.bg.accent} />
-      </View>
+      {/* C5: hidden on self-view — a provider cannot favourite themselves. */}
+      {showFavorite ? (
+        <View style={styles.favoriteSlot}>
+          <FavoriteButton favorite={favorite} onToggle={onToggleFavorite} accent={theme.color.bg.accent} />
+        </View>
+      ) : null}
       <View style={styles.heroBody}>
         <View style={styles.heroNameRow}>
           <Text

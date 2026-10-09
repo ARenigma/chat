@@ -97,20 +97,26 @@ select 'cc065000-0000-4065-8000-000000000002',
        'https://example.test/storage/v1/object/public/avatars/cc065/' || n || '.jpg'
 from   generate_series(1, 3) n;
 
+-- 189: accept terms, privacy and the provider agreement so those gates don't
+-- interfere with what this suite tests (category handling).
+select test.accept_current_policies('cc065000-0000-4065-8000-000000000002');
+
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub":"cc065000-0000-4065-8000-000000000002","role":"authenticated"}';
 
+select public.accept_current_provider_agreement();
+
 select lives_ok(
   $$select public.complete_provider_onboarding(
-      'Astro065', 'Reads charts', array['Hindi'], 'About me', 'astrologer'
+      'Astro065', 'Reads charts', array['Hindi'], 'About me', 'astrologer', 'female'
     )$$,
   '7. onboarding writes the category'
 );
 
 select throws_ok(
   $$select public.complete_provider_onboarding(
-      'Astro065', 'Reads charts', array['Hindi'], 'About me', 'wizard'
+      'Astro065', 'Reads charts', array['Hindi'], 'About me', 'wizard', 'female'
     )$$,
   '22023', null,
   '8. onboarding refuses an unknown category'

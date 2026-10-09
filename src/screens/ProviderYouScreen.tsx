@@ -170,6 +170,9 @@ export function ProviderYouScreen({
   );
 
   const earned = earnings?.provider_tokens ?? 0;
+  // D1: pending vs paid split from the view's new columns (190).
+  const pendingTokens = earnings?.pending_tokens ?? 0;
+  const paidTokens = earnings?.paid_tokens ?? 0;
   const sharePercent =
     economics?.provider_share_percent ?? FALLBACK_ECONOMICS.provider_share_percent;
   const status = getPaidStatus(readiness, payoutAccount);
@@ -262,13 +265,24 @@ export function ProviderYouScreen({
               allowFontScaling
               style={styles.earnValue}
             />
-            {/* D1: share percent from the economics config; "60%" was hard-coded.
-                "Pending payout" — payouts are manual transfers, not automatic. */}
-            <Text allowFontScaling style={styles.earnSub}>
-              {earned > 0
-                ? 'Pending payout. Transfers land in your account.'
-                : `You keep ${sharePercent}% of every paid minute. It shows up here.`}
-            </Text>
+            {/* D1: show the pending/paid split when there is something to show.
+                Both figures come from the view's new columns (190 — pending_tokens
+                covers 'pending' and 'cleared'; paid_tokens covers 'paid').
+                The zero-earnings hint explains the share instead. */}
+            {earned > 0 ? (
+              <View style={styles.earnSplit}>
+                <Text allowFontScaling style={styles.earnSplitItem} testID="earn-pending">
+                  {`Pending payout ₹${pendingTokens.toLocaleString('en-IN')}`}
+                </Text>
+                <Text allowFontScaling style={styles.earnSplitItem} testID="earn-paid">
+                  {`Paid out ₹${paidTokens.toLocaleString('en-IN')}`}
+                </Text>
+              </View>
+            ) : (
+              <Text allowFontScaling style={styles.earnSub}>
+                {`You keep ${sharePercent}% of every paid minute. It shows up here.`}
+              </Text>
+            )}
             <View style={styles.stats}>
               <Stat label="Minutes" value={String(earnings?.minutes_billed ?? 0)} testID="stat-minutes" />
               <Stat label="People" value={String(earnings?.members_served ?? 0)} testID="stat-people" />
@@ -534,6 +548,15 @@ const makeStyles = (t: Theme) =>
       ...TOKENS.typography.bodySmall,
       color: t.color.text.onAccent,
       marginBottom: TOKENS.space.xs,
+    },
+    // D1: two short lines for the pending/paid split, same ink as earnSub.
+    earnSplit: {
+      gap: TOKENS.space.hair,
+      marginBottom: TOKENS.space.xs,
+    },
+    earnSplitItem: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.onAccent,
     },
     stats: {
       flexDirection: 'row',

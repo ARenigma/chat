@@ -177,6 +177,7 @@ describe('the Get paid row names the verification status', () => {
 
 describe('Edit profile validation matches the server CHECKs', () => {
   const base: ProfileEditDraft = {
+    displayName: 'TestName',
     headline: 'I listen more than I talk',
     about: 'Ten years of listening.',
     languages: ['English'],
@@ -225,15 +226,17 @@ describe('Edit profile validation matches the server CHECKs', () => {
     expect(isProfileEditDirty(base, { ...base })).toBe(false);
     expect(isProfileEditDirty(base, { ...base, headline: `${base.headline}  ` })).toBe(false);
     expect(isProfileEditDirty(base, { ...base, about: 'Different.' })).toBe(true);
-    expect(changedParts(base, { ...base, expertise: ['Grief'] })).toEqual({ fields: false, expertise: true });
+    expect(changedParts(base, { ...base, expertise: ['Grief'] })).toEqual({ fields: false, expertise: true, name: false });
     expect(changedParts(base, { ...base, languages: ['English', 'Hindi'] })).toEqual({
       fields: true,
       expertise: false,
+      name: false,
     });
   });
 
   it('seeds the draft from the profile row, nulls as empty', () => {
-    expect(draftFromProfile({ headline: null, about: null, languages: ['Hindi'], expertise: ['Grief'] })).toEqual({
+    expect(draftFromProfile({ display_name: null, headline: null, about: null, languages: ['Hindi'], expertise: ['Grief'] })).toEqual({
+      displayName: '',
       headline: '',
       about: '',
       languages: ['Hindi'],
@@ -250,12 +253,13 @@ describe('Edit profile validation matches the server CHECKs', () => {
 
 describe('Edit profile saves through the existing writers', () => {
   const rpc = supabase.rpc as jest.Mock;
-  const edit = (parts: { fields: boolean; expertise: boolean }) => ({
+  const edit = (parts: { fields: boolean; expertise: boolean; name?: boolean }) => ({
+    displayName: 'TestName',
     headline: '  New headline  ',
     about: ' About ',
     languages: ['English'],
     expertise: ['Grief'],
-    parts,
+    parts: { name: false, ...parts },
   });
 
   beforeEach(() => {
@@ -321,7 +325,7 @@ describe('Edit profile guards unsaved changes', () => {
 
   it('disables Save until the draft changed and is valid, and shows errors inline', () => {
     expect(screen).toContain('const canSave = dirty && !hasErrors(errors) && !save.isPending;');
-    expect(screen).toContain('disabled={!canSave}');
+    expect(screen).toContain('disabled={!canSaveWithNameCheck}');
     expect(screen).toContain('testID="edit-profile-save"');
     expect(screen).toContain("error={lineFor('headline')}");
     expect(screen).toContain("error={lineFor('about')}");

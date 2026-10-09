@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { SquaresFour as LayoutDashboard, Flag, Gear as Settings, Scroll as ScrollText, SignOut as LogOut, Users, Wallet } from '@phosphor-icons/react/dist/ssr';
+import { SquaresFour as LayoutDashboard, Flag, Gear as Settings, Scroll as ScrollText, SignOut as LogOut, Users, Wallet, Queue, UserCircle } from '@phosphor-icons/react/dist/ssr';
 import {
   Sheet,
   SheetContent,
@@ -13,8 +13,10 @@ import { cn } from '@/lib/utils';
 
 const NAV = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/providers', label: 'Providers', icon: UserCircle },
   { href: '/applications', label: 'Applications', icon: Users },
   { href: '/payouts', label: 'Payouts', icon: Wallet },
+  { href: '/queues', label: 'Queues', icon: Queue },
   { href: '/moderation', label: 'Moderation', icon: Flag },
   { href: '/config', label: 'Config', icon: Settings },
   { href: '/audit', label: 'Audit log', icon: ScrollText },

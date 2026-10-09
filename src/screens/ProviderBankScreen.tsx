@@ -155,7 +155,8 @@ export function ProviderBankScreen({ onBack }: Props) {
         <View style={styles.note}>
           <Text allowFontScaling style={styles.noteText}>
             Add where you want to be paid. We verify it before your first payout.
-            Until payouts go live, your details are saved and shown as pending.
+            We'll confirm your account with your bank. You'll see it here when
+            it's done.
           </Text>
         </View>
 

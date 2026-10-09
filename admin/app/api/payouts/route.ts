@@ -60,14 +60,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'providerId is required' }, { status: 400 });
   }
 
+  const actor = (gate as { email: string }).email;
+
   // Invoke the Edge function with the founder's session so it re-checks the
   // allowlist and holds the Cashfree secrets + the money-critical SQL.
   const supabase = await createSessionClient();
   const { data, error } = await supabase.functions.invoke('cashfree-payout', {
-    body: { providerId: body.providerId, ignoreMinimum: body.ignoreMinimum ?? false },
+    body: {
+      providerId: body.providerId,
+      ignoreMinimum: body.ignoreMinimum ?? false,
+    },
   });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 502 });
   }
+
+  // 191: record who started the payout on the batch the function created, and
+  // write an audit row. The batch function itself is left as it is: the
+  // payout function depends on its arguments and its result shape.
+  const svc = createServiceClient();
+  const batchId = (data as { batchId?: string } | null)?.batchId;
+  if (batchId) {
+    await svc.from('provider_payout_batches').update({ initiated_by: actor }).eq('id', batchId);
+  }
+  await svc.schema('admin').from('audit_log').insert({
+    action: 'payout_initiated',
+    target_id: body.providerId,
+    target_type: 'payout',
+    actor,
+    reason: 'manual payout from admin console',
+    metadata: { ignoreMinimum: body.ignoreMinimum ?? false, response: data },
+  });
+
   return NextResponse.json(data);
 }

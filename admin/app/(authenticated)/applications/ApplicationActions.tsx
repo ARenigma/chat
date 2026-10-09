@@ -51,15 +51,7 @@ export function ApplicationActions({ userId, status }: Props) {
           {pending === 'claim' ? 'Claiming…' : 'Claim'}
         </Button>
       )}
-      {(status === 'under_review' || status === 'submitted') && (
-        <Button
-          size="sm"
-          disabled={pending !== null}
-          onClick={() => act('admit')}
-        >
-          {pending === 'admit' ? 'Admitting…' : 'Admit'}
-        </Button>
-      )}
+      {/* 191 E4: Admit removed — providers onboard themselves via complete_provider_onboarding */}
       {(status === 'under_review' || status === 'submitted' || status === 'needs_info') && (
         <Button
           size="sm"

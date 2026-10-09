@@ -119,6 +119,12 @@ export interface ProviderProfileDraft {
    * of the two is forced rather than incidental.
    */
   expertise: string[];
+  /**
+   * C4 (189): required so member cards never show a blank gender.
+   * Written by complete_provider_onboarding (SECURITY DEFINER) because
+   * guard_pii_columns (012) blocks direct client writes to profiles.gender.
+   */
+  gender: 'female' | 'male' | 'other';
 }
 
 /**
@@ -152,6 +158,9 @@ export function useCompleteProviderOnboarding() {
         p_languages: draft.languages,
         p_about: draft.about,
         p_provider_category: draft.category,
+        // C4 (189): gender is now required; written server-side by the SECURITY
+        // DEFINER RPC because guard_pii_columns blocks client profile.gender writes.
+        p_gender: draft.gender,
       });
       if (error) {
         const refusal = contactGuardRefusalFromError(error);
@@ -219,16 +228,43 @@ export function useCompleteProviderOnboarding() {
               ? 'You must be 18 or older to be a provider.'
               : /verify your identity/i.test(err.message)
                 ? 'Please verify your identity before going live.'
-                : /*
-                   * Display names are unique across every profile
-                   * (`profiles_display_name_lower_unique`), so a provider can pick a
-                   * stage name a member already holds. "Please try again" was a dead
-                   * end for exactly this case: the retry it asks for fails forever.
-                   */
-                  isDuplicateDisplayName(err.message)
-                  ? 'That name is already taken. Pick another one.'
-                  : 'Could not finish setup. Please try again.',
+                // C3 (189): should not reach a user who went through the normal
+                // flow (the button is gated on the checkbox), but guards old builds
+                // and direct RPC calls.
+                : /accept the provider agreement/i.test(err.message)
+                  ? 'Accept the provider agreement before going live.'
+                  // C4 (189): should not reach a user who went through the normal
+                  // flow (the button is gated on a gender chip selection).
+                  : /choose a gender/i.test(err.message)
+                    ? 'Select your gender before going live.'
+                    : /*
+                       * Display names are unique across every profile
+                       * (`profiles_display_name_lower_unique`), so a provider can pick a
+                       * stage name a member already holds. "Please try again" was a dead
+                       * end for exactly this case: the retry it asks for fails forever.
+                       */
+                      isDuplicateDisplayName(err.message)
+                      ? 'That name is already taken. Pick another one.'
+                      : 'Could not finish setup. Please try again.',
       );
+    },
+  });
+}
+
+/**
+ * C3 (189): accept the current provider agreement.
+ *
+ * Called before complete_provider_onboarding when the provider presses Go live.
+ * The RPC is idempotent (ON CONFLICT DO NOTHING), so a retry after a network
+ * failure is safe. The server validates acceptance inside
+ * complete_provider_onboarding as a second, authoritative gate.
+ */
+export function useAcceptProviderAgreement() {
+  return useMutation({
+    mutationFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.rpc as any)('accept_current_provider_agreement');
+      if (error) throw new Error(error.message);
     },
   });
 }
@@ -290,8 +326,13 @@ export interface ProviderProfileEdit {
   about: string;
   languages: string[];
   expertise: string[];
+  /**
+   * C6: optional display name change. Passed only when the provider edited the
+   * name field; omitted otherwise so the server leaves the existing name alone.
+   */
+  displayName?: string;
   /** From `changedParts`: only the write that changed is sent. */
-  parts: { fields: boolean; expertise: boolean };
+  parts: { fields: boolean; expertise: boolean; name: boolean };
 }
 
 /**
@@ -299,11 +340,16 @@ export interface ProviderProfileEdit {
  * fields RPC first, then the tags, each only when it changed.
  */
 export async function saveProviderProfile(edit: ProviderProfileEdit): Promise<void> {
-  if (edit.parts.fields) {
+  // Call update_provider_profile when fields changed OR when the display name changed
+  // (C6). The 4th param defaults to null server-side, so omitting it is safe.
+  if (edit.parts.fields || edit.parts.name) {
     const { error } = await supabase.rpc('update_provider_profile', {
       p_headline: edit.headline.trim(),
       p_about: edit.about.trim(),
       p_languages: edit.languages,
+      ...(edit.parts.name && edit.displayName !== undefined
+        ? { p_display_name: edit.displayName.trim() }
+        : {}),
     });
     if (error) {
       const refusal = contactGuardRefusalFromError(error);

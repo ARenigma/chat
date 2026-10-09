@@ -154,6 +154,10 @@ begin
     select distinct on (kind) id, kind
     from public.policy_versions
     where effective_at <= now()
+      -- Member policies only (189): the provider agreement is accepted on the
+      -- provider path, so a suite that needs it calls
+      -- accept_current_provider_agreement() itself.
+      and not is_provider_only
     order by kind, version desc
   ) as current_policy
   on conflict (user_id, policy_kind, version_id) do nothing;
