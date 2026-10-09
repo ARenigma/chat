@@ -1210,7 +1210,6 @@ describe('device coverage matrix', () => {
       'CallsRoute',
       'YouRoute',
       'ChatsListRoute',
-      'ApplicationStatusRoute',
       'BlockedRoute',
       'UsageRoute',
       'InvoicesRoute',

@@ -17,8 +17,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { ENV } from '../lib/env';
 import type {
-  
-  MyApplication,
   Profile,
   ProviderEarnings,
   ProviderPhoto,
@@ -36,7 +34,6 @@ import { keys, useProfile } from './chat';
 import type { ProviderCategory } from '../lib/providerFilters';
 
 export const providerKeys = {
-  application: ['my-application'] as const,
   earnings: ['provider-earnings'] as const,
   payoutAccount: ['provider-payout-account'] as const,
   payoutReadiness: ['provider-payout-readiness'] as const,
@@ -90,20 +87,6 @@ export interface PayoutAccountDraft {
   accountNumber?: string;
   ifsc?: string;
   accountHolderName?: string;
-}
-
-/** Null when this account has never applied. */
-export function useMyApplication() {
-  return useQuery<MyApplication | null>({
-    queryKey: providerKeys.application,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('my_application').select('*').limit(1);
-      if (error) {
-        throw new Error(error.message);
-      }
-      return data.length > 0 ? (data[0] as MyApplication) : null;
-    },
-  });
 }
 
 export interface ProviderProfileDraft {

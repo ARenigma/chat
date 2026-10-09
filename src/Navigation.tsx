@@ -96,7 +96,6 @@ import { ChatRoute } from './screens/routes/ChatRoute';
 import {
   AppearanceRoute,
   AboutRoute,
-  ApplicationStatusRoute,
   ApplyRoute,
   BlockedRoute,
   CallsRoute,
@@ -219,7 +218,6 @@ function memberScreens(Stack: typeof HomeStack, background: string) {
       <Stack.Screen name="Call" getComponent={() => CallRoute} options={CALL_OPTIONS} />
       <Stack.Screen name="Wallet" getComponent={() => WalletRoute} options={sheet} />
       <Stack.Screen name="Apply" getComponent={() => ApplyRoute} />
-      <Stack.Screen name="ApplicationStatus" getComponent={() => ApplicationStatusRoute} />
       <Stack.Screen name="Blocked" getComponent={() => BlockedRoute} />
       <Stack.Screen name="Usage" getComponent={() => UsageRoute} />
       <Stack.Screen name="Invoices" getComponent={() => InvoicesRoute} />

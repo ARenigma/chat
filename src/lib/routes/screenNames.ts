@@ -44,7 +44,6 @@ export const LEGACY_KIND: Record<string, LegacyKind> = {
   ProviderProfile: 'providerDetail',
   Wallet: 'wallet',
   Apply: 'apply',
-  ApplicationStatus: 'applicationStatus',
   Invoices: 'invoices',
   Transactions: 'transactions',
   AppearanceSettings: 'appearanceSettings',

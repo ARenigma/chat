@@ -48,8 +48,7 @@ export type MemberScreenParams = CommonParams & {
   ProviderDetail: { providerId: string };
   ProviderProfile: { providerId: string };
   Wallet: undefined;
-  Apply: { from: 'home' | 'settings' | 'applicationStatus' };
-  ApplicationStatus: undefined;
+  Apply: { from: 'home' | 'settings' };
   Invoices: undefined;
   Transactions: undefined;
   HomeSuggestion: { suggestionId: string };

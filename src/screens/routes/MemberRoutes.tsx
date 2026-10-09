@@ -30,7 +30,6 @@ import { ChatsListScreen } from '../ChatsListScreen';
 import { ProviderDetailScreen } from '../ProviderDetailScreen';
 import { WalletScreen } from '../RechargeScreen';
 import { ProviderApplicationScreen, type ApplyGuard } from '../ProviderApplicationScreen';
-import { ProviderStatusScreen } from '../ProviderStatusScreen';
 import { BlockedUsersScreen } from '../BlockedUsersScreen';
 import { UsageLedgerScreen } from '../UsageLedgerScreen';
 import { InvoicesScreen } from '../InvoicesScreen';
@@ -295,18 +294,6 @@ export function ApplyRoute({ navigation }: RouteProps<'Apply'>) {
           onProviderOnboarded();
         }}
         onGuard={onGuard}
-      />
-    </Layout.Screen>
-  );
-}
-
-export function ApplicationStatusRoute({ navigation }: RouteProps<'ApplicationStatus'>) {
-  const nav = useNavigationDeduped();
-  return (
-    <Layout.Screen>
-      <ProviderStatusScreen
-        onBack={() => navigation.goBack()}
-        onEdit={() => nav.push('Apply', { from: 'applicationStatus' })}
       />
     </Layout.Screen>
   );

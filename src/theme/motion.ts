@@ -285,10 +285,6 @@ export const fadeSwapOutFast = FadeOut.duration(DURATION.fast * 0.75)
   .easing(EMPH_ACCEL)
   .reduceMotion(ReduceMotion.System);
 
-/** The `base`-paced sibling, for a swap that is read rather than glanced at. */
-export const fadeSwapOut = FadeOut.duration(DURATION.base * 0.75)
-  .easing(EMPH_ACCEL)
-  .reduceMotion(ReduceMotion.System);
 
 /**
  * Opening and closing search: a CROSSFADE in place, both directions, 350ms on
