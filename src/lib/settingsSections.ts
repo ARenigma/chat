@@ -11,6 +11,7 @@ export type SettingsRowId =
   | 'edit-profile'
   | 'photos'
   | 'get-paid'
+  | 'become-provider'
   | 'usage'
   | 'transactions'
   | 'invoices'
@@ -48,6 +49,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionModel[] = [
       'transactions',
       'invoices',
       'get-paid',
+      // Member tree only: the way back into the provider application for a
+      // member who backed out of it (sweep B3, 2026-10-09).
+      'become-provider',
       'notifications',
       'theme',
       'blocked',

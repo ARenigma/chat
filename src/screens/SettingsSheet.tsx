@@ -61,6 +61,12 @@ interface Props {
   /** Pushes the About screen (policies, version). Hidden when absent. */
   onAbout?: () => void;
   /**
+   * Opens the provider application. Member tree only: before this the only
+   * entry was "Become a partner" ahead of sign-in, so a member who backed out
+   * had no way back in (sweep B3, 2026-10-09).
+   */
+  onBecomeProvider?: () => void;
+  /**
    * Provider-only controls (availability, what they offer, photos, earnings,
    * stats) rendered between the profile hero and the settings list. This is how
    * the provider's "You" tab is the SAME single settings surface as the member's
@@ -258,6 +264,7 @@ export function SettingsSheet({
   onUsage,
   onAppearance,
   onAbout,
+  onBecomeProvider,
   topSection,
   extraRows,
   bottomOffset,
@@ -436,7 +443,8 @@ export function SettingsSheet({
               : 'What each conversation cost',
             onPress: onUsage,
             testID: 'settings-usage',
-            accessibilityLabel: 'Usage by session',
+            // Follows the title: TalkBack read "Usage by session" to providers.
+            accessibilityLabel: isProvider ? 'Earnings by session' : 'Usage by session',
           },
     // The money ledger. Its detail line does not claim invoices: those are
     // the next row, and two rows promising one thing is how a member ends up
@@ -498,6 +506,17 @@ export function SettingsSheet({
             onPress: onBlocked,
             testID: 'settings-blocked',
             accessibilityLabel: 'Blocked People',
+          },
+    'become-provider':
+      onBecomeProvider === undefined || isProvider
+        ? undefined
+        : {
+            icon: 'listener',
+            title: 'Become a provider',
+            detail: 'Earn by listening or reading charts',
+            onPress: onBecomeProvider,
+            testID: 'settings-become-provider',
+            accessibilityLabel: 'Become a provider',
           },
     // Bluesky's last root row (CircleInfo), opening AboutSettings: where the
     // policy links and the version live now (social-app Settings.tsx).

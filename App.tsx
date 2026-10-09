@@ -353,15 +353,17 @@ async function bootPhaseAfterAuth(profile: Profile | null): Promise<PostAuthBoot
    * decision point is the whole point: a caller cannot forget a rule it does
    * not have to know.
    *
-   * Two signals, because either alone has a hole. `identity_state` is the
-   * durable server-side one (migration 054: "THE single signal both the app and
-   * complete_provider_onboarding read") and survives a reinstall; the persisted
-   * intent covers someone who tapped "Become a partner" and has not reached the
-   * PAN step yet, whose `identity_state` is still 'none'.
+   * The persisted intent (`PROVIDER_INTENT_KEY`) is the single signal here.
+   * identity_state is NOT checked: a member who verified their PAN (which sets
+   * identity_state='verified') and then backed out of provider onboarding would
+   * have identity_state='verified' with no intent flag, and must go through the
+   * normal member profile-setup gates — not be silently locked on the provider
+   * path forever. The intent flag is set when "Become a partner" is tapped and
+   * cleared on every exit from the Apply route, so it only lives for the duration
+   * of a genuine signup. identity_state is still read by complete_provider_onboarding
+   * server-side (migration 054) and by the role-transition effect in SignedIn.
    */
-  const onProviderPath =
-    storage.get(PROVIDER_INTENT_KEY) === '1' ||
-    (p?.identity_state !== undefined && p.identity_state !== 'none');
+  const onProviderPath = storage.get(PROVIDER_INTENT_KEY) === '1';
 
   if (!onProviderPath && (needsUsername || needsAge || needsLanguages)) {
     return { phase: 'profileSetup', needsAge, needsUsername, needsLanguages };
@@ -1337,6 +1339,28 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
   const [restore] = useState(takeRestoreState);
   const pendingProviderApply = useStore(s => s.pendingProviderApply);
   const signedInRole: 'member' | 'provider' = role === 'provider' ? 'provider' : 'member';
+
+  /*
+   * When provider onboarding completes, the RPC flips role='provider' and the
+   * profile query is invalidated. The navigator remounts on the provider tree
+   * (key={signedInRole}), which unmounts the Apply route BEFORE the "Go to my
+   * home" button can fire onSubmitted → clearProviderIntent + onProviderOnboarded.
+   * This effect is the fallback: the moment the role transitions to 'provider'
+   * with the intent flag still set, it clears the flag and re-runs the post-auth
+   * gate so the new provider sees the policy and permissions screens.
+   * onSubmitted does the same; at most one of the two will find the flag set.
+   */
+  const prevRole = useRef<'member' | 'provider'>(signedInRole);
+  useEffect(() => {
+    if (prevRole.current !== 'provider' && signedInRole === 'provider') {
+      if (storage.get(PROVIDER_INTENT_KEY) === '1') {
+        storage.remove(PROVIDER_INTENT_KEY);
+        useStore.getState().setPendingProviderApply(false);
+        onProviderOnboarded();
+      }
+    }
+    prevRole.current = signedInRole;
+  }, [signedInRole, onProviderOnboarded]);
 
   // Realtime ring: enqueue and let the intent queue apply glare + dedup.
   const onIncoming = useCallback(

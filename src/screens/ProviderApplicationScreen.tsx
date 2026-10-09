@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Keyboard,
   ScrollView,
@@ -39,7 +39,6 @@ import {
   stageNamePiiMessage,
   suggestStageName,
 } from '../lib/stageName';
-import { useStore } from '../store/useStore';
 import { Button } from '../components/Button';
 import { Chip, FilterChip } from '../components/Chip';
 import { Icon } from '../components/Icon';
@@ -222,8 +221,6 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
   // Lifts the whole column — fields AND the footer button — clear of the IME.
   // See useImeSpace for why KeyboardAvoidingView could never do this on Android.
   const imeSpace = useImeSpace();
-  const setNotice = useStore(s => s.setNotice);
-
   const [phase, setPhase] = useState<Phase>('verify');
   const [displayName, setDisplayName] = useState('');
   const [headline, setHeadline] = useState('');
@@ -251,10 +248,10 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
   // Only read AFTER the PAN check, for the verified name. `refetch` rather than
   // the cached value: the row is written by `verify-pan` server-side, so the
   // cache cannot know the name until it is asked again.
-  const { refetch: refetchTax } = useTaxProfile();
+  const { data: taxData, refetch: refetchTax } = useTaxProfile();
   // Same reason as the tax profile: `name_at_bank` is written by
   // `verify-payout-account` server-side, so it has to be re-read.
-  const { refetch: refetchPayout } = usePayoutAccount();
+  const { data: payoutData, refetch: refetchPayout } = usePayoutAccount();
   const [pan, setPan] = useState('');
   const [panError, setPanError] = useState<string | null>(null);
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('upi');
@@ -268,6 +265,56 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
   const [panStep, setPanStep] = useState<StepState>('waiting');
   const [payoutStep, setPayoutStep] = useState<StepState>('waiting');
   const [fetched, setFetched] = useState<Fetched | null>(null);
+
+  /*
+   * B3(a): resume at the confirm step when both checks already passed.
+   *
+   * On a cold cache the queries start undefined; the effect fires once they
+   * resolve. The `hasResumed` ref ensures it runs at most once — a later
+   * refetch (e.g. from the network becoming available) must not jump the user
+   * forward if they already navigated to another phase.
+   */
+  const hasResumed = useRef(false);
+  useEffect(() => {
+    if (hasResumed.current || phase !== 'verify') {
+      return;
+    }
+    if (
+      taxData?.status === 'verified' &&
+      taxData.verified_dob !== null &&
+      payoutData != null
+    ) {
+      hasResumed.current = true;
+      if (taxData.pan !== null) {
+        setPan(taxData.pan);
+      }
+      const confirmed = payoutData.verification_status === 'verified';
+      if (!confirmed) {
+        setPayoutNote('Saved. We are still confirming this with your bank, so carry on setting up.');
+      }
+      setPanStep('ok');
+      setPayoutStep('ok');
+      setFetched({
+        name: taxData.pan_name,
+        dob: taxData.verified_dob,
+        nameAtBank: payoutData.name_at_bank,
+        destination:
+          payoutData.method === 'upi'
+            ? (payoutData.upi_vpa ?? '')
+            : `${maskAccount(payoutData.account_number ?? '')} · ${payoutData.ifsc ?? ''}`,
+        payoutConfirmed: confirmed,
+      });
+      setPhase('confirm');
+    }
+  }, [taxData, payoutData, phase]);
+
+  /*
+   * B11: a run ID ref so async verify results that arrive after the user presses
+   * "Change my details" are discarded rather than pulling them to 'confirm'.
+   * Each `onVerifyAndContinue` call captures the current id; `onEditDetails`
+   * increments it, invalidating any in-flight async block.
+   */
+  const runIdRef = useRef(0);
   const complete = useCompleteProviderOnboarding();
   const { data: self } = useProfile();
   const { data: photos } = useProviderPhotos(self?.id ?? null);
@@ -357,30 +404,39 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
     setPayoutStep('waiting');
     setPhase('checking');
 
+    // Capture this run's id. onEditDetails increments runIdRef, so any result
+    // that arrives after Back is pressed is discarded (B11).
+    const thisRun = ++runIdRef.current;
+
     void (async () => {
       // ── Rung 1: the PAN ──────────────────────────────────────────────────
-      let panStatus: 'verified' | 'failed' | 'pending';
+      let panStatus: 'verified' | 'failed' | 'pending' | 'no-dob';
       try {
         panStatus = await savePan.mutateAsync(pan);
       } catch {
+        if (runIdRef.current !== thisRun) return;
         setPanStep('failed');
         setPanError('Something went wrong. Please try again.');
         return;
       }
+      if (runIdRef.current !== thisRun) return;
       if (panStatus !== 'verified') {
         setPanStep('failed');
-        // Only a real verification advances. A 'pending' or 'failed' PAN that
-        // moved the user on would let them fill the whole profile and be
-        // refused by `complete_provider_onboarding` at the very end, with no
+        // Only a real verification advances. A 'pending', 'failed', or 'no-dob'
+        // PAN that moved the user on would let them fill the whole profile and
+        // be refused by `complete_provider_onboarding` at the very end, with no
         // way back to the step that failed.
         setPanError(
-          panStatus === 'failed'
-            ? 'That PAN could not be verified. Check the number and try again.'
-            : 'We could not reach the verification service. Please try again.',
+          panStatus === 'no-dob'
+            ? 'Your PAN is valid, but the verification returned no date of birth. You cannot register as a provider with this PAN.'
+            : panStatus === 'failed'
+              ? 'That PAN could not be verified. Check the number and try again.'
+              : 'We could not reach the verification service. Please try again.',
         );
         return;
       }
       const taxProfile = await refetchTax();
+      if (runIdRef.current !== thisRun) return;
       const verifiedName = taxProfile.data?.pan_name ?? null;
       const verifiedDob = taxProfile.data?.verified_dob ?? null;
       setPanStep('ok');
@@ -400,10 +456,12 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
           accountHolderName: verifiedName ?? undefined,
         });
       } catch {
+        if (runIdRef.current !== thisRun) return;
         setPayoutStep('failed');
         setPayoutError('We could not save that. Check the details and try again.');
         return;
       }
+      if (runIdRef.current !== thisRun) return;
       if (payoutStatus === 'failed') {
         setPayoutStep('failed');
         setPayoutError(
@@ -414,6 +472,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
         return;
       }
       const payoutRow = await refetchPayout();
+      if (runIdRef.current !== thisRun) return;
       setPayoutStep('ok');
 
       // 'pending' means the DETAILS ARE SAVED but Cashfree Payouts has not
@@ -458,6 +517,9 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
 
   /** Back to the form with the ladder reset, from a failed rung or a rejection. */
   const onEditDetails = useCallback(() => {
+    // Invalidate any in-flight async block so its results do not pull the user
+    // forward after they have already pressed Back (B11).
+    runIdRef.current++;
     setPanStep('waiting');
     setPayoutStep('waiting');
     setFetched(null);
@@ -529,6 +591,25 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
     languages.length > 0 &&
     about.trim().length > 0 &&
     photoCount >= MIN_PROVIDER_PHOTOS;
+
+  /**
+   * A comma-separated list of what is still needed, shown inline under the
+   * "Go live" button when it is disabled (B11 inline line). Small and secondary
+   * — it names the problem, not a direction; the fields are visible above it.
+   */
+  const missingItems: string[] = [];
+  if (displayName.trim().length === 0) {
+    missingItems.push('a stage name');
+  } else if (namePii === 'phone' || nameTaken) {
+    missingItems.push('a valid stage name');
+  }
+  if (headline.trim().length === 0) missingItems.push('a headline');
+  if (languages.length === 0) missingItems.push('at least one language');
+  if (about.trim().length === 0) missingItems.push('an about');
+  const photosShort = MIN_PROVIDER_PHOTOS - photoCount;
+  if (photosShort > 0) {
+    missingItems.push(`${photosShort} more photo${photosShort !== 1 ? 's' : ''}`);
+  }
 
   const onGoLive = useCallback(() => {
     Keyboard.dismiss();
@@ -1054,22 +1135,23 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
       <View style={[styles.footer, { paddingBottom: (imeSpace > 0 ? 0 : insets.bottom) + TOKENS.space.md }]}>
         <Button
           label="Go live"
-          onPress={() => {
-            if (!profileReady) {
-              setNotice(
-                photoCount < MIN_PROVIDER_PHOTOS
-                  ? `Add at least ${MIN_PROVIDER_PHOTOS} photos to go live.`
-                  : 'Fill your name, headline, a language, and about to go live.',
-              );
-              return;
-            }
-            onGoLive();
-          }}
+          onPress={onGoLive}
           disabled={!profileReady}
           busy={complete.isPending}
           busyLabel="Going live"
           testID="provider-golive"
         />
+        {/* Inline notice listing what is still needed, visible while the button
+            is disabled. The button's own disabled state is the gate; this line
+            names the remaining items so the user does not have to guess. */}
+        {!profileReady && missingItems.length > 0 ? (
+          <Text
+            allowFontScaling
+            style={styles.missingItems}
+            testID="provider-golive-missing">
+            {`Still needed: ${missingItems.join(', ')}.`}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -1234,6 +1316,14 @@ const makeStyles = (t: Theme) =>
     verifyError: {
       ...TOKENS.typography.bodyMedium,
       color: t.color.text.accent,
+    },
+    /* Inline list of what is still needed for Go live. Secondary/tertiary ink
+       — it supplements the disabled button, not replaces the error colour. */
+    missingItems: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+      textAlign: 'center' as const,
+      marginTop: TOKENS.space.xs,
     },
     methodRow: { flexDirection: 'row', gap: TOKENS.space.xs },
     /*

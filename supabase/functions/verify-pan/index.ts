@@ -172,12 +172,31 @@ Deno.serve(async (request: Request) => {
     // Both are accepted so a rollback to the plain endpoint still works.
     const verified = res.ok && (cf.valid === true || cf.status === 'VALID');
 
+    /*
+     * Our problem, or theirs?
+     *
+     * Mirroring the same guard in verify-payout-account: when Cashfree refuses
+     * to talk to US — bad credentials, 2FA not satisfied, IP not allow-listed —
+     * writing 'failed' to the DB tells the provider their PAN is wrong. That is
+     * a false accusation. 'pending' is honest: the details are saved, we simply
+     * could not verify them right now.
+     *
+     * https://www.cashfree.com/docs/api-reference/vrs/v2/authentication
+     */
+    const reason = cf.message ?? 'PAN not verified';
+    const ourFault =
+      !verified &&
+      (res.status === 401 ||
+        res.status === 403 ||
+        /ip not whitelisted|signature|two.?factor|2fa|unauthoriz|authentication|invalid client/i.test(reason));
+    const taxStatus = verified ? 'verified' : ourFault ? 'pending' : 'failed';
+
     await admin
       .from('provider_tax_profile')
       .update({
-        status: verified ? 'verified' : 'failed',
+        status: taxStatus,
         pan_name: cf.registered_name ?? null,
-        failure_reason: verified ? null : cf.message ?? 'PAN not verified',
+        failure_reason: verified ? null : reason,
         verified_at: verified ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
@@ -239,7 +258,9 @@ Deno.serve(async (request: Request) => {
     }
 
     return Response.json({
-      status: verified ? 'verified' : 'failed',
+      // Use taxStatus so the client knows whether the non-verified state is
+      // 'failed' (provider's fault) or 'pending' (our fault — ourFault path).
+      status: verified ? 'verified' : taxStatus,
       name: verified ? cf.registered_name ?? cf.name_pan_card : undefined,
       identity,
       error: verified
@@ -248,14 +269,19 @@ Deno.serve(async (request: Request) => {
           : identity === 'write-failed'
           ? 'Your PAN is valid but we could not save the result. Please try again.'
           : undefined
-        : cf.message ?? 'PAN not verified',
+        : ourFault
+        ? "We couldn't reach the verification service. Try again in a few minutes."
+        : reason,
     });
   } catch (err) {
     console.error('verify-pan failed:', (err as Error).message);
+    // An internal exception is our fault: write 'pending', not 'failed'.
+    // 'failed' accuses the provider's PAN number; 'pending' says we could not
+    // check it — which is exactly what happened.
     await admin
       .from('provider_tax_profile')
-      .update({ status: 'failed', failure_reason: 'internal error' })
+      .update({ status: 'pending', failure_reason: 'internal error' })
       .eq('provider_id', providerId);
-    return Response.json({ error: 'internal error' }, { status: 500 });
+    return Response.json({ status: 'pending', error: "We couldn't reach the verification service. Try again in a few minutes." }, { status: 500 });
   }
 });

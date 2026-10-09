@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,8 +9,6 @@ import {
   useTaxProfile,
   useSavePayoutAccount,
   useSavePan,
-  useCashfreeVerification,
-  cashfreeVerificationAvailable,
   type PayoutMethod,
 } from '../api/provider';
 import { Button } from '../components/Button';
@@ -50,18 +48,45 @@ export function ProviderBankScreen({ onBack }: Props) {
   const { data: tax } = useTaxProfile();
   const saveAccount = useSavePayoutAccount();
   const savePan = useSavePan();
-  const verify = useCashfreeVerification();
-  // The native sheet is the preferred path — one consent fills a verified PAN and
-  // bank, so nothing below is typed. It is only present in a device build with the
-  // Cashfree SDK; in Jest and any build without it, the manual form is all there is.
-  const canVerifyWithCashfree = cashfreeVerificationAvailable();
 
-  const [method, setMethod] = useState<PayoutMethod>(account?.method ?? 'upi');
-  const [vpa, setVpa] = useState(account?.upi_vpa ?? '');
-  const [accountNumber, setAccountNumber] = useState(account?.account_number ?? '');
-  const [ifsc, setIfsc] = useState(account?.ifsc ?? '');
-  const [holder, setHolder] = useState(account?.account_holder_name ?? '');
-  const [pan, setPan] = useState(tax?.pan ?? '');
+  const [method, setMethod] = useState<PayoutMethod>('upi');
+  const [vpa, setVpa] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [ifsc, setIfsc] = useState('');
+  const [holder, setHolder] = useState('');
+  const [pan, setPan] = useState('');
+
+  /*
+   * B10(a): populate the form when data first arrives from the cache.
+   *
+   * `useState` initial values are read once at mount; if `account` and `tax`
+   * are undefined at that point (cold cache), all fields start blank. The
+   * refs below fill each half once, so nothing the user has typed since is
+   * clobbered.
+   */
+  const accountFilled = useRef(false);
+  const panFilled = useRef(false);
+  useEffect(() => {
+    // Each half fills once, when ITS query resolves: the two load
+    // independently, and waiting for "either" left the account fields blank
+    // whenever the tax profile happened to arrive first.
+    if (!accountFilled.current && account !== undefined) {
+      accountFilled.current = true;
+      if (account !== null) {
+        setMethod(account.method);
+        setVpa(account.upi_vpa ?? '');
+        setAccountNumber(account.account_number ?? '');
+        setIfsc(account.ifsc ?? '');
+        setHolder(account.account_holder_name ?? '');
+      }
+    }
+    if (!panFilled.current && tax !== undefined) {
+      panFilled.current = true;
+      if (tax !== null) {
+        setPan(tax.pan ?? '');
+      }
+    }
+  }, [account, tax]);
 
   const accountValid =
     method === 'upi'
@@ -71,7 +96,11 @@ export function ProviderBankScreen({ onBack }: Props) {
   const canSave = accountValid && panValid && !saveAccount.isPending && !savePan.isPending;
 
   const onSave = (): void => {
-    if (panValid) {
+    // B10(b): only call savePan when the PAN value has actually changed.
+    // Calling it on every save resets a verified PAN to 'pending' and triggers
+    // another paid Cashfree check for no reason.
+    const panChanged = pan.toUpperCase() !== (tax?.pan ?? '').toUpperCase();
+    if (panValid && panChanged) {
       savePan.mutate(pan.toUpperCase());
     }
     if (accountValid) {
@@ -130,31 +159,9 @@ export function ProviderBankScreen({ onBack }: Props) {
           </Text>
         </View>
 
-        {/* Preferred path: Cashfree 1-Click. One consent verifies PAN + bank, so
-            the manual form below is the fallback rather than the main event. */}
-        {canVerifyWithCashfree ? (
-          <View style={styles.verifyBlock}>
-            <Button
-              label="Verify with Cashfree"
-              onPress={() => verify.mutate()}
-              busy={verify.isPending}
-              busyLabel="Verifying"
-              testID="bank-verify-cashfree"
-            />
-            <Text allowFontScaling style={styles.verifyHint}>
-              Confirm your PAN and bank in one tap. Nothing to type.
-            </Text>
-            <View style={styles.orRow}>
-              <View style={styles.orLine} />
-              <Text allowFontScaling style={styles.orText}>
-                or enter manually
-              </Text>
-              <View style={styles.orLine} />
-            </View>
-          </View>
-        ) : null}
-
-        {/* Method toggle */}
+        {/* Method toggle — Cashfree 1-Click removed (B10c, 2026-10-09):
+            their consent page sends `x-session-id` to their own API, which
+            rejects it in the CORS preflight; the sheet cannot complete. */}
         <View style={styles.tabs}>
           {(['upi', 'bank'] as const).map(m => (
             <Pressable

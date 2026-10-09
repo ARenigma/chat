@@ -152,6 +152,13 @@ export function YouRoute() {
         onUsage={() => nav.push('Usage')}
         onAppearance={() => nav.push('AppearanceSettings')}
         onAbout={() => nav.push('AboutSettings')}
+        onBecomeProvider={() => {
+          // The same intent the pre-sign-in "Become a partner" sets, so the
+          // role-transition effect in App.tsx re-runs the post-auth gate when
+          // onboarding finishes. Leaving Apply clears it (clearProviderIntent).
+          storage.set(PROVIDER_INTENT_KEY, '1');
+          nav.push('Apply', { from: 'settings' });
+        }}
       />
     </Layout.Screen>
   );

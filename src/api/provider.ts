@@ -31,11 +31,6 @@ import {
   ContactGuardRefusalError,
   contactGuardRefusalFromError,
 } from '../lib/contactGuard';
-import {
-  cashfreeOnboardingAvailable,
-  CashfreeOnboardingError,
-  startCashfreeOnboarding,
-} from '../lib/cashfreeOnboarding';
 import { useStore } from '../store/useStore';
 import { keys, useProfile } from './chat';
 import type { ProviderCategory } from '../lib/providerFilters';
@@ -200,25 +195,39 @@ export function useCompleteProviderOnboarding() {
     onSuccess: () => {
       tick();
       // Role is now 'provider'; useRole re-reads and App renders the provider tree.
+      // The intent is NOT cleared here: SignedIn's role-transition effect (App.tsx)
+      // clears it when the role flips AND re-runs the post-auth gate, and it only
+      // does that while it still finds the flag set. Clearing it here first would
+      // skip the policy gate for this session.
       void queryClient.invalidateQueries({ queryKey: keys.profile });
       void queryClient.invalidateQueries({ queryKey: keys.providers });
     },
     onError: err => {
       errorTick();
       setNotice(
-        /18 or older/.test(err.message)
-          ? 'You must be 18 or older to be a provider.'
-          : /verify your identity/.test(err.message)
-            ? 'Please verify your identity first.'
-            : /*
-               * Display names are unique across every profile
-               * (`profiles_display_name_lower_unique`), so a provider can pick a
-               * stage name a member already holds. "Please try again" was a dead
-               * end for exactly this case: the retry it asks for fails forever.
-               */
-              isDuplicateDisplayName(err.message)
-              ? 'That name is already taken. Pick another one.'
-              : 'Could not finish setup. Please try again.',
+        /*
+         * 22023 (invalid_parameter_value) refusals from complete_provider_onboarding
+         * each carry a specific sentence the DB raises (migration 051/185). Map them
+         * to the exact thing to fix rather than the generic fallback, which points
+         * nowhere.
+         */
+        /add at least 3 photos|photos of yourself/i.test(err.message)
+          ? 'Add at least 3 photos of yourself before going live.'
+          : /date of birth missing/i.test(err.message)
+            ? 'Your verification is missing a date of birth. Go back and re-verify your PAN.'
+            : /18 or older/i.test(err.message)
+              ? 'You must be 18 or older to be a provider.'
+              : /verify your identity/i.test(err.message)
+                ? 'Please verify your identity before going live.'
+                : /*
+                   * Display names are unique across every profile
+                   * (`profiles_display_name_lower_unique`), so a provider can pick a
+                   * stage name a member already holds. "Please try again" was a dead
+                   * end for exactly this case: the retry it asks for fails forever.
+                   */
+                  isDuplicateDisplayName(err.message)
+                  ? 'That name is already taken. Pick another one.'
+                  : 'Could not finish setup. Please try again.',
       );
     },
   });
@@ -544,7 +553,7 @@ export function useSavePayoutAccount() {
 /** Save a PAN (format-checked in SQL) then trigger Cashfree verification. */
 export function useSavePan() {
   const queryClient = useQueryClient();
-  return useMutation<'verified' | 'failed' | 'pending', Error, string>({
+  return useMutation<'verified' | 'failed' | 'pending' | 'no-dob', Error, string>({
     mutationFn: async pan => {
       const { error: rpcErr } = await supabase.rpc('set_my_pan', { p_pan: pan });
       if (rpcErr) {
@@ -557,12 +566,32 @@ export function useSavePan() {
         if (error) {
           return 'pending';
         }
-        const status = (data as { status?: 'verified' | 'failed' })?.status ?? 'pending';
+        const payload = data as {
+          status?: 'verified' | 'failed';
+          /** Set when PAN is valid but the age-gate DOB is unavailable or not written. */
+          identity?: 'verified' | 'no-dob' | 'write-failed' | null;
+        } | null;
+        const status = payload?.status ?? 'pending';
         if (status === 'verified') {
+          const identity = payload?.identity;
+          if (identity === 'no-dob') {
+            // PAN is valid at Cashfree but the Income Tax Department returned
+            // no usable date of birth. complete_provider_onboarding needs the
+            // DOB for its 18+ gate, so this PAN cannot complete onboarding.
+            // Reported as a distinct status so the screen can name the problem.
+            errorTick();
+            return 'no-dob';
+          }
+          if (identity === 'write-failed') {
+            // DOB was returned but our DB write failed — transient. 'pending'
+            // is honest: the PAN row is saved, just not fully confirmed yet.
+            errorTick();
+            return 'pending';
+          }
           tick();
-        } else {
-          errorTick();
+          return 'verified';
         }
+        errorTick();
         return status;
       } catch {
         return 'pending';
@@ -574,116 +603,14 @@ export function useSavePan() {
   });
 }
 
-/** Whether the native Cashfree sheet exists in this build (false in Jest). */
-export function cashfreeVerificationAvailable(): boolean {
-  return cashfreeOnboardingAvailable();
-}
-
-/**
- * How a 1-Click attempt ended, for the screen to react to.
- *
- * `cancelled` is not an error and stays silent — someone closed the sheet.
- * `pending` means the consent + auth_code succeeded but the server could not
- * finalize (e.g. `cashfree-onboarding-complete` not deployed yet), so the details
- * are in flight rather than lost. `unavailable` falls back to the manual form.
+/*
+ * useCashfreeVerification and cashfreeVerificationAvailable were removed (B10c,
+ * 2026-10-09). Cashfree's own consent page sends `x-session-id` to their API,
+ * which rejects it in the CORS preflight (reproduced with curl on 2026-09-05), so
+ * the 1-Click sheet cannot complete in any WebView. The JS bridge was deleted
+ * with it; the native module (CashfreeOnboardingModule.kt) is left in place
+ * for when Cashfree fix it.
  */
-export type CashfreeVerifyOutcome =
-  | 'verified'
-  | 'pending'
-  | 'cancelled'
-  | 'unavailable';
-
-/**
- * The 1-Click Onboarding flow, end to end from the button:
- *   1. `cashfree-onboarding-start` mints a session (server, provider JWT).
- *   2. The native SDK opens the Cashfree sheet on that session; the user
- *      consents once (mobile OTP) and we get a one-time `authCode`.
- *   3. `cashfree-onboarding-complete` exchanges it server-side for the verified
- *      PAN + bank and writes them (the client never sees the KYC data).
- *
- * Best-effort at the edges for the same reason as `useSavePan`: a missing native
- * module or an undeployed `complete` must not lose a consent the user already
- * gave, so those land as `unavailable` / `pending` rather than a hard failure.
- * See docs/provider-payouts.md.
- */
-export function useCashfreeVerification() {
-  const queryClient = useQueryClient();
-  const setNotice = useStore(s => s.setNotice);
-
-  return useMutation<CashfreeVerifyOutcome, Error, void>({
-    mutationFn: async () => {
-      if (!cashfreeOnboardingAvailable()) {
-        return 'unavailable';
-      }
-
-      // 1. Mint a session server-side.
-      const { data: startData, error: startErr } = await supabase.functions.invoke(
-        'cashfree-onboarding-start',
-        { body: {} },
-      );
-      const start = startData as
-        | { sessionId?: string; environment?: 'sandbox' | 'production' }
-        | null;
-      if (startErr || !start?.sessionId) {
-        throw new Error('start');
-      }
-
-      // 2. Open the native sheet; the auth_code comes back on consent.
-      let authCode: string;
-      try {
-        const result = await startCashfreeOnboarding(
-          start.sessionId,
-          start.environment ?? 'sandbox',
-        );
-        authCode = result.authCode;
-      } catch (err) {
-        if (err instanceof CashfreeOnboardingError) {
-          if (err.reason === 'cancelled') {
-            return 'cancelled';
-          }
-          if (err.reason === 'unavailable') {
-            return 'unavailable';
-          }
-        }
-        throw err instanceof Error ? err : new Error('sheet');
-      }
-
-      // 3. Exchange + persist server-side. Best-effort: while `complete` is not
-      // deployed this returns an error and the consent lands as 'pending'.
-      try {
-        const { data, error } = await supabase.functions.invoke(
-          'cashfree-onboarding-complete',
-          { body: { authCode } },
-        );
-        if (error) {
-          return 'pending';
-        }
-        return (data as { status?: string })?.status === 'verified' ? 'verified' : 'pending';
-      } catch {
-        return 'pending';
-      }
-    },
-    onSuccess: outcome => {
-      if (outcome === 'verified') {
-        tick();
-        setNotice('Verified with Cashfree.', 'confirm');
-      } else if (outcome === 'pending') {
-        tick();
-        setNotice('Details received. Verification is being finalised.', 'confirm');
-      } else if (outcome === 'unavailable') {
-        setNotice('Cashfree verification is not available here. Enter details below.');
-      }
-      // 'cancelled' stays silent — the user chose to close the sheet.
-      void queryClient.invalidateQueries({ queryKey: providerKeys.payoutAccount });
-      void queryClient.invalidateQueries({ queryKey: providerKeys.tax });
-      void queryClient.invalidateQueries({ queryKey: providerKeys.payoutReadiness });
-    },
-    onError: () => {
-      errorTick();
-      setNotice('Verification could not start. Try again, or enter details below.');
-    },
-  });
-}
 
 /**
  * Set the profile photo to a bundled DiceBear "clay" avatar. Writes the

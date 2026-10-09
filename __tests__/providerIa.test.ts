@@ -43,7 +43,7 @@ describe('the settings list is one Bluesky-style list', () => {
     expect(SETTINGS_SECTIONS).toHaveLength(1);
     expect(SETTINGS_SECTIONS[0]?.rows).toEqual([
       'edit-profile', 'photos', 'usage', 'transactions', 'invoices', 'get-paid',
-      'notifications', 'theme', 'blocked', 'about',
+      'become-provider', 'notifications', 'theme', 'blocked', 'about',
     ]);
   });
 
