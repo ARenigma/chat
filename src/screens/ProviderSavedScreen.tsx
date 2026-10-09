@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useReducedMotion } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSoftReset } from '../lib/routes/useSoftReset';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -14,8 +15,10 @@ import { useConversations } from '../api/chat';
 import { useConversationLabels } from '../api/conversationLabels';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Pressable } from '../components/Pressable';
 import { useServerFavorites } from '../store/useFavorites';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 // The inbox's own avatar size, not a shared directory constant: see the note on
 // THREAD_AVATAR in ProviderChatsScreen. Saved is the same inbox, filtered.
 import { THREAD_AVATAR } from './ProviderChatsScreen';
@@ -27,8 +30,15 @@ import { THREAD_AVATAR } from './ProviderChatsScreen';
  * those whose `peer_id` is in the server favorites list. Split out of
  * ProviderHomeScreen in navigation step 6 (it was the inline
  * ProviderFavouritesTab); it reads the same cached queries its host used to
- * hand it, so it can become the SavedTab root without a prop from a sibling. An empty state guides the provider
- * to favourite a member from a chat header.
+ * hand it, so it can become the SavedTab root without a prop from a sibling.
+ *
+ * D7 fixes applied:
+ *  - top inset: `useSafeAreaInsets().top` so the header clears the status bar.
+ *  - bottom padding: `useBottomBarOffset` so the last row clears the bottom bar.
+ *  - loading state: `LoadingIndicator` while the conversations query is pending,
+ *    so the empty state is never shown while data is in flight.
+ *  - empty copy: guides providers to the ⋯ menu in a chat rather than the old
+ *    chat-header instruction.
  */
 export function ProviderSavedScreen({
   onOpenConversation,
@@ -39,7 +49,14 @@ export function ProviderSavedScreen({
   const listRef = useRef<FlashListRef<ConversationSummary> | null>(null);
   // Re-tap Saved at its root: back to the top (step 9, nav-migration §6).
   useSoftReset(() => listRef.current?.scrollToOffset({ offset: 0, animated: !reducedMotion }));
-  const { data: allThreads } = useConversations();
+  // D7: top inset so the header row does not draw under the status bar, matching
+  // ProviderChatsScreen's `{ paddingTop: insets.top + TOKENS.space.xs }` pattern.
+  // https://developer.android.com/develop/ui/views/layout/edge-to-edge
+  const insets = useSafeAreaInsets();
+  // D7: bottom padding clears the absolute bottom bar (useBottomBarOffset), same
+  // as ProviderChatsScreen's FlashList contentContainerStyle.
+  const barOffset = useBottomBarOffset(TOKENS.space.md);
+  const { data: allThreads, isPending } = useConversations();
   const { data: conversationLabels } = useConversationLabels();
   const threads = allThreads ?? [];
   const { data: favorites = [] } = useServerFavorites();
@@ -48,13 +65,23 @@ export function ProviderSavedScreen({
   const styles = useStyles(makeStyles);
   const theme = useTheme();
 
+  // D7: loading state — never show the empty state while data is still in flight.
+  if (isPending) {
+    return (
+      <View style={[styles.centre, { paddingTop: insets.top }]} testID="provider-saved-loading">
+        <LoadingIndicator size={48} />
+      </View>
+    );
+  }
+
   if (saved.length === 0) {
     return (
-      <View style={styles.listEmpty} testID="provider-favourites-empty">
+      <View style={[styles.listEmpty, { paddingTop: insets.top }]} testID="provider-favourites-empty">
         <Icon name="heart" size={TOKENS.icon.xl} color={theme.color.text.tertiary} />
         <Text allowFontScaling style={styles.emptyTitle}>No saved members yet</Text>
+        {/* D7: guide providers to the ⋯ menu in a chat, not the old header mention. */}
         <Text allowFontScaling style={styles.emptyBody}>
-          {'Open a chat and use the ··· menu to save a member here.'}
+          {'Save a member from the ⋯ menu in your chat with them.'}
         </Text>
       </View>
     );
@@ -122,6 +149,12 @@ export function ProviderSavedScreen({
         );
       }}
       showsVerticalScrollIndicator={false}
+      // D7: top inset as contentContainerStyle so the list header row clears the
+      // status bar; bottom padding from useBottomBarOffset for the absolute bar.
+      contentContainerStyle={{
+        paddingTop: insets.top + TOKENS.space.xs,
+        paddingBottom: barOffset,
+      }}
       {...SCROLL_PHYSICS}
     />
   );
@@ -129,6 +162,11 @@ export function ProviderSavedScreen({
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
+    centre: {
+      flex: 1,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+    },
     emptyTitle: {
       ...TOKENS.typography.titleMediumEmphasized,
       color: t.color.text.primary,

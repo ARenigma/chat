@@ -41,10 +41,26 @@ export function ProviderShell({ children }: { children: ReactNode }) {
   const ringing = useStore(s => s.incomingRequest);
   const ringingId = ringing?.requestId ?? null;
   const ringingPeer = ringing?.peerId ?? null;
+  const callUp = useStore(s => s.activeCall !== null);
   useEffect(() => {
     if (ringingId !== null && ringingPeer !== null) {
       enqueueIntent({ type: 'chatRequest', requestId: ringingId, peerId: ringingPeer });
     }
   }, [ringingId, ringingPeer]);
-  return <ProviderPushGateProvider>{children}</ProviderPushGateProvider>;
+  return (
+    <ProviderPushGateProvider>
+      {children}
+      {/*
+       * B9: a provider's own member-side threads bill them as a member, so
+       * the refill sheet and the session feedback sheet must be reachable from
+       * the provider tree too. Both are store-flag-driven Modals; neither
+       * needs a navigation route. Note: Wallet (WalletScreen) is NOT in the
+       * provider navigator stack (Navigation.tsx), so `openWallet()` would be
+       * a no-op for providers — openRefill() (the sheet path) is the correct
+       * entry point for provider-side balance top-ups.
+       */}
+      <RechargeScreen />
+      <SessionFeedbackSheet held={callUp} />
+    </ProviderPushGateProvider>
+  );
 }

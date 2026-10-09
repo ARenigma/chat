@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { SCROLL_PHYSICS } from '../lib/scroll';
+import { MIN_PROVIDER_PHOTOS } from '../lib/database.types';
 import { useProfile } from '../api/chat';
 import { BackButton } from '../components/BackButton';
 import { ProviderPhotoGallery } from '../components/ProviderPhotoGallery';
@@ -55,7 +56,10 @@ export function ProviderPhotosScreen({ onBack }: Props) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: barOffset }]}
       >
-        <ProviderPhotoGallery providerId={profile?.id ?? null} />
+        {/* C2: pass the minimum so the gallery hides remove controls when
+            at the floor and the server trigger (migration 188) never has to
+            be the first refusal a live provider encounters. */}
+        <ProviderPhotoGallery providerId={profile?.id ?? null} minimum={MIN_PROVIDER_PHOTOS} />
       </ScrollView>
     </View>
   );
@@ -71,9 +75,12 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
+    // D7: 48dp minimum touch target — "each interactive UI element [should]
+    // have a focusable area of at least 48dp x 48dp".
+    // https://developer.android.com/guide/topics/ui/accessibility/apps
     barIcon: {
-      width: 28,
-      height: 40,
+      width: 48,
+      height: 48,
       alignItems: 'center',
       justifyContent: 'center',
     },

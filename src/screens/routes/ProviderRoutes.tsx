@@ -54,8 +54,10 @@ export function ProviderYouRoute() {
   const { onSignedOut } = useSignedInActions();
   useDismissKeyboardOnBlur();
   return (
+    // B6: The push gate is NOT placed on the You tab so providers can go
+    // offline, view earnings, sign out, and delete their account while
+    // notifications are off. The gate covers only Chats and Saved.
     <Layout.Screen>
-      <ProviderPushGate />
       <ProviderYouScreen
         onOpenPayout={() => nav.push('Payout')}
         onOpenPhotos={() => nav.push('ProviderPhotos')}
@@ -64,6 +66,8 @@ export function ProviderYouRoute() {
         onOpenBlocked={() => nav.push('Blocked')}
         onOpenAppearance={() => nav.push('AppearanceSettings')}
         onOpenAbout={() => nav.push('AboutSettings')}
+        // C5: push the provider's own public profile for a self-preview.
+        onOpenOwnProfile={(providerId) => nav.push('ProviderProfile', { providerId })}
         onSignedOut={onSignedOut}
         onDeleted={onSignedOut}
       />

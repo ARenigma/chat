@@ -247,6 +247,13 @@ function providerScreens(Stack: typeof ChatsStack) {
       <Stack.Screen name="AboutSettings" getComponent={() => AboutRoute} />
       <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
       <Stack.Screen name="StoryCreate" getComponent={() => StoryCreateRoute} />
+      {/* C5: The provider's own public profile, so they can see what members
+          see. Uses the same full-page route as the member tree (ProviderProfile
+          is a non-sheet push; ProviderDetail is the sheet variant). The CTAs
+          on ProviderDetailScreen will be visible — ProviderDetailScreen has no
+          readOnly prop yet (see report); a self-chat/call attempt is refused
+          server-side. */}
+      <Stack.Screen name="ProviderProfile" getComponent={() => ProviderProfileRoute} />
     </>
   );
 }

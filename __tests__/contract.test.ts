@@ -3288,11 +3288,13 @@ describe('calling ships visible and on, wired to a real media layer', () => {
     // switch together with this provider's own (`canStartAudio`/`canStartVideo`),
     // so the assertion follows it there rather than pinning the raw name at the
     // button. Both halves must still be in the composition.
+    // C10 (186): provider side gates on ownProfile rather than provider (which
+    // is a member ID on the provider tree). Member side still gates on provider.
     expect(chat).toMatch(
-      /const canStartAudio =\s*\(killSwitches\?\.voice_calls_enabled \?\? true\) &&\s*CALLS_ENABLED &&\s*\(provider\?\.audio_enabled \?\? true\);/,
+      /const canStartAudio =\s*\(killSwitches\?\.voice_calls_enabled \?\? true\) &&\s*CALLS_ENABLED &&\s*\(isMemberSide \? \(provider\?\.audio_enabled \?\? true\) : \(ownProfile\?\.audio_enabled \?\? true\)\);/,
     );
     expect(chat).toMatch(
-      /const canStartVideo =\s*\(killSwitches\?\.video_calls_enabled \?\? true\) &&\s*CALLS_ENABLED &&\s*\(provider\?\.video_enabled \?\? true\);/,
+      /const canStartVideo =\s*\(killSwitches\?\.video_calls_enabled \?\? true\) &&\s*CALLS_ENABLED &&\s*\(isMemberSide \? \(provider\?\.video_enabled \?\? true\) : \(ownProfile\?\.video_enabled \?\? true\)\);/,
     );
     // Chat session is an upgrade path, not a block: only a NON-chat
     // activeSession disables the buttons (migration 073 ends the chat session
@@ -7723,7 +7725,8 @@ describe('the member always starts the session, whoever wrote first', () => {
   });
 
   it('names the incoming member call Start session, the provider Accept', () => {
-    expect(call).toContain("label={isMemberSide ? 'Start session' : 'Accept'}");
+    // S4 (186): guard on peerThread so the label is not shown before useConversations resolves.
+    expect(call).toContain("label={peerThread !== undefined && isMemberSide ? 'Start session' : 'Accept'}");
     expect(call).toContain('testID="call-accept"');
     expect(call).toContain('wants a voice chat');
     expect(call).toContain('wants a video chat');
@@ -9118,8 +9121,16 @@ describe('navigation step 6: provider split', () => {
     for (const screen of ['ProviderChatsScreen', 'ProviderSavedScreen', 'ProviderYouScreen']) {
       expect(routes).toMatch(new RegExp(`<${screen}[\\s/>]`));
     }
-    expect(routes.match(/<ProviderPushGate \/>/g)?.length).toBe(3);
-    expect(withoutComments(read('src/shell/index.tsx'))).toContain('<ProviderPushGateProvider>{children}</ProviderPushGateProvider>');
+    // B6: the push gate is no longer placed on the You tab so providers can
+    // go offline, view earnings, sign out and delete their account while
+    // notifications are off. Only Chats and Saved carry the gate (2 routes).
+    expect(routes.match(/<ProviderPushGate \/>/g)?.length).toBe(2);
+    // B9 (2026-10-09): ProviderShell now wraps children in ProviderPushGateProvider
+    // AND mounts RechargeScreen + SessionFeedbackSheet (modal sheets for
+    // member-side threads in the provider tree). The gate still wraps everything.
+    expect(withoutComments(read('src/shell/index.tsx'))).toContain('<ProviderPushGateProvider>');
+    expect(withoutComments(read('src/shell/index.tsx'))).toContain('<RechargeScreen />');
+    expect(withoutComments(read('src/shell/index.tsx'))).toContain('<SessionFeedbackSheet');
     const nav = withoutComments(read('src/Navigation.tsx'));
     expect(nav).toContain('<ChatsStack.Screen name="Chats" getComponent={() => ChatsRoute} />');
     expect(nav).toContain('<SavedStack.Screen name="Saved" getComponent={() => SavedRoute} />');
@@ -9350,6 +9361,9 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'AboutSettings',
       'StoryViewer',
       'StoryCreate',
+      // C5: provider self-profile preview, registered alongside the member-tree
+      // route so providers can see what members see from the You tab.
+      'ProviderProfile',
     ]);
     for (const stack of ['ChatsStack', 'SavedStack', 'ProviderYouStack']) {
       expect(nav).toContain(`{providerScreens(${stack})}`);

@@ -462,6 +462,13 @@ export type ConversationSummary = {
    * threads they paid for. See migration 007.
    */
   i_am_member: boolean;
+  /**
+   * True when there is a live, unanswered chat request from the peer directed at
+   * the caller as recipient. Only meaningful for provider-side rows
+   * (`i_am_member = false`); always false on member-side threads.
+   * Added by migration 187 (C14, 2026-10-09).
+   */
+  peer_request_pending?: boolean;
 };
 
 /**

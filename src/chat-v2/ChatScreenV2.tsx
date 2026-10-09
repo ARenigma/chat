@@ -45,6 +45,7 @@ import { openRefill } from '../lib/routes/actions';
 import { MAX_MESSAGE_CHARS } from '../lib/tokenLedger';
 import type { VoiceDraft } from '../lib/voice';
 import { useChatKeyboardFrozen } from './useChatKeyboardFrozen';
+import { useFavorites } from '../store/useFavorites';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStore } from '../store/useStore';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
@@ -466,13 +467,40 @@ export function ChatScreenV2({
     onBack();
   }, [onBack, purgeDraft]);
 
+  /* ---- B8 (186): save/unsave the member (provider side only) ------------ */
+  // `providerId` is the PEER's id; on the provider tree it is the member's id.
+  // useFavorites persists to MMKV and the server (migration 125). Absent on the
+  // member tree and benchmark route — the header omits the menu item when the
+  // callbacks are undefined.
+  const isMemberSaved = useFavorites(s =>
+    !chat.isMemberSide && !benchmarkReadOnly ? s.ids.includes(providerId) : false,
+  );
+  const toggleSave = useFavorites(s => s.toggle);
+  const onToggleSave =
+    !chat.isMemberSide && !benchmarkReadOnly
+      ? () => toggleSave(providerId)
+      : undefined;
+
+  /* ---- C9 (186): provider confirm before placing a call ----------------- */
+  // The member already sees a price confirm in CallScreen. The provider
+  // initiates from this header; a confirm here mirrors the same gesture and
+  // says what the member will be charged ("They're charged"), not the provider.
+  const [providerCallConfirm, setProviderCallConfirm] = useState<{
+    channel: 'audio' | 'video';
+  } | null>(null);
+
   /* ---- calls ------------------------------------------------------------ */
   const startCall = useCallback(
     (channel: 'audio' | 'video') => {
+      // C9 (186): provider side gets a confirm before the call is placed.
+      if (!chat.isMemberSide) {
+        setProviderCallConfirm({ channel });
+        return;
+      }
       purgeDraft();
       mutationOnStartCall?.(channel);
     },
-    [mutationOnStartCall, purgeDraft],
+    [chat.isMemberSide, mutationOnStartCall, purgeDraft],
   );
   const onCallBack = useCallback(
     (medium: 'voice' | 'video') => {
@@ -793,10 +821,12 @@ export function ChatScreenV2({
     peerName: chat.displayName,
     theyOpenedTheChat: chat.theyOpenedTheChat,
   });
+  // D6 (186): provider copy omits charge language; member copy unchanged.
   const leaveCopy = chatV2LeaveCopy({
     intent: leaveIntent,
     sessionIsActive: chat.sessionIsActive,
     clock: chat.sessionElapsedClock,
+    isMemberSide: chat.isMemberSide,
   });
 
   return (
@@ -838,8 +868,12 @@ export function ChatScreenV2({
         }
         onStartCall={mutationOnStartCall === undefined ? undefined : startCall}
         onEndSession={requestEnd}
+        isMemberSaved={isMemberSaved}
+        onToggleSave={onToggleSave}
       />
 
+      {/* C7 (186): providerElapsedClock is non-null once a paid session has
+          started on the provider side; the bar renders for them only. */}
       <ChatSessionBarV2
         peerNotified={chat.peerNotified}
         displayName={chat.displayName}
@@ -848,6 +882,11 @@ export function ChatScreenV2({
         remaining={chat.sessionRemaining}
         onRecharge={openRefill}
         onDismissExtend={() => setExtendDismissed(true)}
+        providerElapsedClock={
+          !chat.isMemberSide && chat.sessionIsActive
+            ? chat.sessionElapsedClock
+            : undefined
+        }
       />
 
       <KeyboardGestureArea
@@ -1180,6 +1219,26 @@ export function ChatScreenV2({
         busyLabel="Ending…"
         onCancel={() => setLeaveVisible(false)}
         onConfirm={confirmLeave}
+      />
+
+      {/* C9 (186): provider-side confirm before placing a call.
+          Body tells the provider the member is charged, not them, so neither
+          side is surprised by the economics. Reuses ConfirmDialog, the same
+          component the member sees in CallScreen. */}
+      <ConfirmDialog
+        visible={providerCallConfirm !== null}
+        testID="chat-v2-provider-call-confirm"
+        title={`Call ${chat.displayName}?`}
+        body="They're charged per minute once they pick up."
+        cancelLabel="Not now"
+        confirmLabel="Call"
+        onCancel={() => setProviderCallConfirm(null)}
+        onConfirm={() => {
+          const ch = providerCallConfirm?.channel ?? 'audio';
+          setProviderCallConfirm(null);
+          purgeDraft();
+          mutationOnStartCall?.(ch);
+        }}
       />
 
       <MediaViewer image={viewerImage} onClose={closeImage} />

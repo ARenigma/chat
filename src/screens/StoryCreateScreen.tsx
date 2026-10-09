@@ -25,6 +25,15 @@
  * Refusals map to one line each: the cap (30 live), the kill switch, too
  * long, the contact guard on the caption.
  *
+ * D7 fixes:
+ *  - IME handling: `useImeSpace` pads the root so the caption field is not
+ *    covered by the keyboard, matching ProviderEditProfileScreen.
+ *    https://developer.android.com/develop/ui/views/layout/insets#ime-animations
+ *  - Discard confirm: `usePreventRemove` holds back-navigation when there is
+ *    a draft, a non-empty caption, or an upload in progress, showing a
+ *    ConfirmDialog rather than silently dropping the work.
+ *    https://reactnavigation.org/docs/preventing-going-back
+ *
  * Motion: none. The screen is a push (the platform's transition); the
  * progress bar is the shared ProgressBar, a determinate M3 indicator.
  */
@@ -33,12 +42,15 @@ import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { launchImageLibrary, type Asset } from 'react-native-image-picker';
 import Video from 'react-native-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePreventRemove, type NavigationAction } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 
 import { useContactGuardMode, useKillSwitches } from '../api/appConfig';
 import { useSelfId } from '../api/chat';
 import { postStory, useInvalidateStories, type PostAttempt } from '../api/stories';
 import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ProgressBar } from '../components/ProgressBar';
 import { TextField } from '../components/TextField';
 import { contactGuardNotice, precheckContactGuard } from '../lib/contactGuard';
@@ -49,6 +61,7 @@ import {
   storyNotice,
   type StoryDraft,
 } from '../lib/stories';
+import { useImeSpace } from '../lib/useImeSpace';
 import { SCROLL_PHYSICS } from '../lib/scroll';
 import { useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -83,6 +96,10 @@ export function StoryCreateScreen({ onBack, onPosted }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  // D7: IME space so the caption field is never covered by the keyboard.
+  // https://developer.android.com/develop/ui/views/layout/insets#ime-animations
+  const imeSpace = useImeSpace();
+  const navigation = useNavigation();
   const { data: selfId } = useSelfId();
   const { data: kill } = useKillSwitches();
   const storiesOn = kill?.stories_enabled !== false;
@@ -96,6 +113,16 @@ export function StoryCreateScreen({ onBack, onPosted }: Props) {
   const [posting, setPosting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [attempt, setAttempt] = useState<PostAttempt | null>(null);
+
+  // D7: discard guard — hold back-navigation when there is a draft, a
+  // non-empty caption, or an upload in progress.
+  // https://reactnavigation.org/docs/preventing-going-back
+  const hasDraft = draft !== null || caption.trim().length > 0 || posting;
+  const [heldAction, setHeldAction] = useState<NavigationAction | null>(null);
+
+  usePreventRemove(hasDraft, ({ data }) => {
+    setHeldAction(data.action);
+  });
 
   const pick = useCallback(async () => {
     const result = await launchImageLibrary({
@@ -159,7 +186,9 @@ export function StoryCreateScreen({ onBack, onPosted }: Props) {
   };
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    // D7: paddingBottom is the IME space when the keyboard is up, else the
+    // safe-area bottom inset (matching ProviderEditProfileScreen's pattern).
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: imeSpace > 0 ? imeSpace : insets.bottom }]}>
       <View style={styles.bar}>
         <BackButton onPress={onBack} />
         <Text
@@ -225,6 +254,33 @@ export function StoryCreateScreen({ onBack, onPosted }: Props) {
           testID="story-create-post"
         />
       </View>
+
+      {/* D7: discard confirm — shown when back is pressed while there is a
+          draft, a caption, or an upload in progress. The held action is
+          replayed on "Discard" so hardware back, the header arrow and a tab
+          re-press all land here. Same pattern as EditProfileRoute.
+          https://reactnavigation.org/docs/preventing-going-back */}
+      <ConfirmDialog
+        visible={heldAction !== null}
+        title="Discard story?"
+        body={
+          posting
+            ? 'Your story is still uploading. Leaving will cancel it.'
+            : 'Your draft will be lost.'
+        }
+        cancelLabel="Keep editing"
+        confirmLabel="Discard"
+        destructive
+        onCancel={() => setHeldAction(null)}
+        onConfirm={() => {
+          const action = heldAction;
+          setHeldAction(null);
+          if (action !== null) {
+            navigation.dispatch(action);
+          }
+        }}
+        testID="story-create-discard-confirm"
+      />
     </View>
   );
 }

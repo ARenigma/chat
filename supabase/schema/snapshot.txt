@@ -178,6 +178,7 @@ COLUMN conversation_summaries.peer_last_active_at timestamp with time zone null=
 COLUMN conversation_summaries.peer_last_seen_at timestamp with time zone null=YES default=-
 COLUMN conversation_summaries.peer_online boolean null=YES default=-
 COLUMN conversation_summaries.peer_presence USER-DEFINED null=YES default=-
+COLUMN conversation_summaries.peer_request_pending boolean null=YES default=-
 COLUMN conversation_summaries.unread_count_member integer null=YES default=-
 COLUMN conversation_summaries.unread_count_provider integer null=YES default=-
 COLUMN conversation_thread_meta.conversation_id uuid null=NO default=-
@@ -1465,6 +1466,7 @@ FUNCTION get_my_favorites() returns jsonb security=definer
 FUNCTION get_pending_session_request(p_conversation_id uuid) returns jsonb security=definer
 FUNCTION get_provider_ratings(p_provider_id uuid, p_recent_limit integer) returns jsonb security=definer
 FUNCTION get_public_config(p_domain text) returns jsonb security=definer
+FUNCTION get_request_peer_info(p_request_id uuid) returns TABLE(peer_display_name text, peer_avatar_url text, first_message_preview text) security=definer
 FUNCTION get_session_billing_snapshot(p_channel text) returns TABLE(rate_tokens_per_min integer, provider_share_percent integer, payout_hold_days integer, economics_version_id uuid) security=definer
 FUNCTION get_usage_ledger(p_limit integer, p_before timestamp with time zone) returns jsonb security=definer
 FUNCTION get_user_id_by_phone(p_phone text) returns uuid security=definer
@@ -2023,6 +2025,7 @@ FUNCTION presence_heartbeat(p_online boolean) returns void security=definer
 FUNCTION provider_busy_waits(p_provider_ids uuid[]) returns TABLE(provider_id uuid, wait_minutes integer) security=definer
 FUNCTION provider_is_listed(p_provider_id uuid) returns boolean security=definer
 FUNCTION provider_offers_channel(p_provider_id uuid, p_channel session_channel) returns boolean security=definer
+FUNCTION provider_photos_delete_guard() returns trigger security=definer
 FUNCTION provider_photos_single_primary() returns trigger security=definer
 FUNCTION provider_photos_sync_avatar() returns trigger security=definer
 FUNCTION public_display_name(p profiles) returns text security=invoker
@@ -2528,6 +2531,7 @@ TRIGGER profiles.sync_provider_presence_after_availability_change
 TRIGGER profiles.sync_token_balance
 TRIGGER provider_applications.guard_application_transitions
 TRIGGER provider_photos.guard_provider_photo_columns
+TRIGGER provider_photos.provider_photos_delete_guard
 TRIGGER provider_photos.provider_photos_single_primary
 TRIGGER provider_photos.provider_photos_sync_avatar
 TRIGGER reviews.refresh_provider_rating

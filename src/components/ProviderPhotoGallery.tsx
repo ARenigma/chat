@@ -184,23 +184,33 @@ export function ProviderPhotoGallery({ providerId, minimum }: Props) {
                     ancestor, and Fabric unions a child's hitSlop into the
                     parent's overflow inset (YogaLayoutableShadowNode.cpp:777).
                     https://reactnative.dev/docs/pressable#hitslop */}
-              <View style={styles.photoRemoveSlot}>
-                <Pressable
-                  onPress={() => setPendingDelete(p)}
-                  testID={`photo-remove-${i}`}
-                  accessibilityLabel={`Remove photo ${i + 1}`}
-                  press="none"
-                  highlight="dim"
-                  size={REMOVE_BADGE}
-                  style={styles.photoRemove}
-                >
-                  <Icon
-                    name="close"
-                    size={TOKENS.icon.xs}
-                    color={theme.color.text.onInverse}
-                  />
-                </Pressable>
-              </View>
+              {/* C2: when a minimum is set (live provider's "Your photos" page)
+                  and the gallery is already at that floor, hide the whole
+                  remove slot — the server trigger (migration 188) will also
+                  refuse the delete, so the UI says so first.
+                  THE OUTER VIEW IS OMITTED when hidden so the test that checks
+                  "View→Pressable structure" still finds the correct pattern
+                  when the slot IS rendered.
+                  https://developer.android.com/guide/topics/ui/accessibility/apps */}
+              {minimum !== undefined && gallery.length <= minimum ? null : (
+                <View style={styles.photoRemoveSlot}>
+                  <Pressable
+                    onPress={() => setPendingDelete(p)}
+                    testID={`photo-remove-${i}`}
+                    accessibilityLabel={`Remove photo ${i + 1}`}
+                    press="none"
+                    highlight="dim"
+                    size={REMOVE_BADGE}
+                    style={styles.photoRemove}
+                  >
+                    <Icon
+                      name="close"
+                      size={TOKENS.icon.xs}
+                      color={theme.color.text.onInverse}
+                    />
+                  </Pressable>
+                </View>
+              )}
             </View>
           ))}
           {remaining > 0 ? (
@@ -237,6 +247,10 @@ export function ProviderPhotoGallery({ providerId, minimum }: Props) {
           only while there IS a survivor. On the last photo the same trigger
           nulls the mirrored scalar instead (pgTAP 320, case 13), and the
           profile hero then draws the provider's initial. */}
+      {/* C2: when the gallery is at the minimum the remove buttons are hidden,
+          so this dialog can only appear when there is headroom. The copy on
+          the last-photo branch acknowledges the minimum only when one is set
+          (live provider page), otherwise uses the original neutral copy. */}
       <ConfirmDialog
         visible={pendingDelete !== null}
         title="Remove this photo?"
@@ -245,6 +259,8 @@ export function ProviderPhotoGallery({ providerId, minimum }: Props) {
             ? 'Members will no longer see it on your profile.'
             : gallery.length > 1
             ? 'It is your main photo. The next one becomes your main photo.'
+            : minimum !== undefined
+            ? 'Keep at least 3 photos. Add another before removing one.'
             : 'It is your only photo. Members will see your initial until you add another.'
         }
         cancelLabel="Keep"

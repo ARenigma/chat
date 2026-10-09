@@ -31,6 +31,14 @@ interface Props {
   remaining: number | null;
   onRecharge: () => void;
   onDismissExtend: () => void;
+  /**
+   * C7 (186): For the provider side, the elapsed mm:ss since the session
+   * started (from the controller's `sessionElapsedClock`). When non-null the
+   * provider session bar is shown. Member side passes undefined; only one of
+   * showRecharge/showExtend/providerElapsedClock is ever active at once.
+   * Tabular digits (`numeralMedium`) match CallScreen's timer style.
+   */
+  providerElapsedClock?: string | null;
 }
 
 export function ChatSessionBarV2({
@@ -41,12 +49,37 @@ export function ChatSessionBarV2({
   remaining,
   onRecharge,
   onDismissExtend,
+  providerElapsedClock,
 }: Props) {
   const styles = useStyles(makeStyles);
   const theme = useTheme();
 
   return (
     <>
+      {/*
+       * C7 (186): Provider session bar — shown once a paid session has
+       * started (sessionElapsedClock becomes non-null), so the provider knows
+       * the chat is live and billed. No balance/amount shown: the member's
+       * wallet is never revealed to the provider. Neutral tone (bg.sunken),
+       * tabular digits (numeralMedium), same bar height as the member's band.
+       * "Session started" owns the band while active; member controls live
+       * on the member side only.
+       */}
+      {providerElapsedClock != null ? (
+        <View style={styles.providerSessionBar} testID="chat-v2-provider-session-bar">
+          <View style={styles.talkDot} />
+          <Text
+            allowFontScaling={false}
+            testID="chat-v2-provider-session-timer"
+            style={styles.providerTimer}
+          >
+            {providerElapsedClock}
+          </Text>
+          <Text allowFontScaling style={styles.providerSessionLabel}>
+            Session started
+          </Text>
+        </View>
+      ) : null}
       {peerNotified ? (
         <View style={styles.notifiedBar} testID="chat-v2-peer-notified">
           <Text allowFontScaling style={styles.notifiedText}>
@@ -151,6 +184,25 @@ export function ChatSessionBarV2({
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
+    // C7 (186): provider session bar — neutral sunken tone, no accent wash.
+    providerSessionBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.xs,
+      paddingHorizontal: TOKENS.space.md,
+      paddingVertical: TOKENS.space.xs,
+      backgroundColor: t.color.bg.sunken,
+    },
+    providerTimer: {
+      ...TOKENS.typography.numeralMedium,
+      color: t.color.text.primary,
+      minWidth: 42,
+    },
+    providerSessionLabel: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+      flex: 1,
+    },
     notifiedBar: {
       paddingHorizontal: TOKENS.space.md,
       paddingVertical: TOKENS.space.xs,

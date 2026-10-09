@@ -98,6 +98,12 @@ interface Props {
   onOpenSafety?: () => void;
   /** Absent until the conversation exists: there is nothing to label before then. */
   onRename?: () => void;
+  /**
+   * B8 (186): Provider side only — save or unsave the member from the ⋯ menu.
+   * Absent on the member tree and the benchmark route.
+   */
+  isMemberSaved?: boolean;
+  onToggleSave?: () => void;
   onStartCall?: (channel: 'audio' | 'video') => void;
   onEndSession: () => void;
   /**
@@ -124,6 +130,8 @@ export function ChatHeaderV2({
   onRename,
   onStartCall,
   onEndSession,
+  isMemberSaved,
+  onToggleSave,
   focused = true,
 }: Props) {
   const styles = useStyles(makeStyles);
@@ -155,7 +163,7 @@ export function ChatHeaderV2({
     }
   }, [focused]);
   const menuHasItems =
-    onRename !== undefined || onOpenSafety !== undefined;
+    onRename !== undefined || onOpenSafety !== undefined || onToggleSave !== undefined;
 
   /*
    * The avatar, the name and the presence line, built once and then wrapped in
@@ -356,6 +364,14 @@ export function ChatHeaderV2({
             anchorKind="trigger"
             onClose={() => setMenuVisible(false)}
             items={([] as PaperMenuItem[]).concat(
+              // B8 (186): save/unsave the member — provider side only.
+              onToggleSave !== undefined
+                ? [{
+                    key: 'save',
+                    label: isMemberSaved ? 'Remove from saved' : 'Save member',
+                    onPress: () => { setMenuVisible(false); onToggleSave(); },
+                  }]
+                : [],
               onRename !== undefined
                 ? [{ key: 'rename', label: 'Rename chat', onPress: () => { setMenuVisible(false); onRename(); } }]
                 : [],

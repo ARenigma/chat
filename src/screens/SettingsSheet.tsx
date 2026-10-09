@@ -67,6 +67,12 @@ interface Props {
    */
   onBecomeProvider?: () => void;
   /**
+   * C1: Provider-only. When present the avatar tap on the profile hero opens
+   * the provider's own photo gallery instead of the clay-avatar picker, and
+   * the badge glyph changes from "+" to a camera icon.
+   */
+  onOpenPhotos?: () => void;
+  /**
    * Provider-only controls (availability, what they offer, photos, earnings,
    * stats) rendered between the profile hero and the settings list. This is how
    * the provider's "You" tab is the SAME single settings surface as the member's
@@ -103,6 +109,12 @@ interface SettingsRowSpec {
    * detail's own words say "Action needed" (WCAG 1.4.1, use of colour).
    */
   detailTone?: 'default' | 'attention';
+  /**
+   * Show the detail as a badge even in the default tone. Rows are one line
+   * (the Bluesky port), so only a row whose detail is live STATE sets this:
+   * Get paid's status and the photo count (sweep D3).
+   */
+  showDetail?: boolean;
   /** Drawn before the chevron: the photos row's thumbnail strip. */
   trailing?: React.ReactNode;
   onPress: () => void;
@@ -135,6 +147,7 @@ interface SettingsRowContentProps {
   title: string;
   detail?: string;
   detailTone?: 'default' | 'attention';
+  showDetail?: boolean;
   trailing?: React.ReactNode;
   selected?: boolean;
   danger?: boolean;
@@ -163,6 +176,7 @@ function SettingsRow({ spec }: { spec: SettingsRowSpec }) {
         title={spec.title}
         detail={spec.detail}
         detailTone={spec.detailTone}
+        showDetail={spec.showDetail}
         trailing={spec.trailing}
       />
     </Pressable>
@@ -180,6 +194,7 @@ function SettingsRowContent({
   title,
   detail,
   detailTone = 'default',
+  showDetail = false,
   trailing,
   selected = false,
   danger = false,
@@ -211,11 +226,13 @@ function SettingsRowContent({
       >
         {title}
       </Text>
-      {detail && detailTone === 'attention' ? (
+      {/* One-line rows (the Bluesky port): the detail shows only when it
+          needs attention or is live state the row opts into (showDetail). */}
+      {detail && (detailTone === 'attention' || showDetail) ? (
         <Text
           allowFontScaling
           numberOfLines={1}
-          style={[styles.rowBadge, styles.rowDetailAttention]}
+          style={[styles.rowBadge, detailTone === 'attention' && styles.rowDetailAttention]}
         >
           {detail}
         </Text>
@@ -265,6 +282,7 @@ export function SettingsSheet({
   onAppearance,
   onAbout,
   onBecomeProvider,
+  onOpenPhotos,
   topSection,
   extraRows,
   bottomOffset,
@@ -576,13 +594,20 @@ export function SettingsSheet({
               the reference app / iOS Settings / Notion use: the identity sits on the page
               itself, not on a wallpaper band. */}
             <View style={styles.profileIdentity}>
-              {/* Both roles can now change their photo (Amit, 2026-09-02): tap the
-                avatar to open the photo sheet rather than launching the picker
-                straight away, so "remove" and "choose" are one deliberate step. */}
+              {/* C1: providers tap the avatar to open "Your photos" (their real
+                gallery), not the clay-avatar picker — a provider's face must be
+                a real photo, never a clay avatar (rule from the owner).
+                Members still get the clay picker sheet. */}
               <Pressable
-                onPress={() => setAvatarSheet(true)}
+                onPress={() => {
+                  if (isProvider && onOpenPhotos !== undefined) {
+                    onOpenPhotos();
+                  } else {
+                    setAvatarSheet(true);
+                  }
+                }}
                 testID="settings-avatar"
-                accessibilityLabel="Change avatar"
+                accessibilityLabel={isProvider ? 'Edit your photos' : 'Change avatar'}
                 press="none"
                 highlight="dim"
                 disabled={setClayAvatar.isPending}
@@ -594,10 +619,10 @@ export function SettingsSheet({
                   uri={profile?.avatar_url ?? null}
                 />
                 <View style={styles.profileCamera}>
-                  {/* A "+" edit affordance, not a camera: tapping the avatar opens
-                    the DiceBear picker, not a photo/camera upload. */}
+                  {/* Camera glyph for providers (opens the photo gallery); "+"
+                    for members (opens the DiceBear clay picker). */}
                   <Icon
-                    name="plus"
+                    name={isProvider ? 'camera' : 'plus'}
                     size={TOKENS.icon.sm}
                     color={theme.color.text.onAccent}
                   />

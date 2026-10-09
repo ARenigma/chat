@@ -165,6 +165,8 @@ export interface EngagementPush {
   readonly title: string;
   readonly body: string;
   readonly avatarUrl: string | null;
+  /** The opener's name as the server wrote it into title and body. */
+  readonly senderName: string;
 }
 
 /** Read an engagement payload, or `null` if it is not one. */
@@ -186,6 +188,7 @@ export function readEngagementPush(
     title,
     body: asString('body'),
     avatarUrl: asString('senderAvatar') || null,
+    senderName: asString('senderName'),
   };
 }
 

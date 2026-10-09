@@ -87,6 +87,12 @@ values ('authenticated', 'presence_heartbeat');
 insert into expected_callable (role, proname)
 values ('authenticated', 'update_provider_profile');
 
+-- 187: the provider ring reads peer display name, avatar and first-message
+-- preview for a brand-new member absent from the conversation cache (C11).
+-- Signed in only; the function gates on the caller being the request's recipient.
+insert into expected_callable (role, proname)
+values ('authenticated', 'get_request_peer_info');
+
 -- Every public function a role can execute, extension functions aside (pgTAP
 -- here, whatever the platform installs live).
 create temporary view actual_callable as

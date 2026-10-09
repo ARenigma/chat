@@ -737,25 +737,26 @@ export function useIncomingChatRequests(
         // the member confirms, so every resubscribe rang it again.
         .is('responded_at', null)
         .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()) as {
-        data: { id: string; conversation_id: string; initiator_id: string; expires_at: string; created_at?: string } | null;
+        // C14: fetch ALL pending requests so every queued ring can be surfaced,
+        // not only the first one. The store's de-dup guard handles repeats.
+        // Oldest first so the longest-waiting member rings first.
+        .order('created_at', { ascending: true })) as {
+        data: { id: string; conversation_id: string; initiator_id: string; expires_at: string; created_at?: string }[] | null;
         error: unknown;
       };
-      // Best-effort recovery of a request that arrived while the socket was down;
+      // Best-effort recovery of requests that arrived while the socket was down;
       // a persistent failure means silently missed chat requests. (2026-09-10 audit)
       if (result.error) {
         reportSwallowed('recoverPending', result.error);
         return;
       }
-      if (result.data) {
+      for (const row of result.data ?? []) {
         onIncoming({
-          requestId: result.data.id,
-          conversationId: result.data.conversation_id,
-          initiatorId: result.data.initiator_id,
-          expiresAt: result.data.expires_at,
-          createdAt: result.data.created_at,
+          requestId: row.id,
+          conversationId: row.conversation_id,
+          initiatorId: row.initiator_id,
+          expiresAt: row.expires_at,
+          createdAt: row.created_at,
         });
       }
     }
@@ -870,6 +871,38 @@ export function useConfirmChatSession() {
 }
 
 /** Accept an incoming session request. */
+/** Who is asking, for the provider's ring (migration 187). */
+export interface RequestPeerInfo {
+  peer_display_name: string | null;
+  peer_avatar_url: string | null;
+  first_message_preview: string | null;
+}
+
+/**
+ * The requester's name, avatar and the message that came with the request, for
+ * the ring a provider sees (sweep C11). Read once per request: a brand-new
+ * member is not in the cached inbox yet, which is why the ring used to say
+ * "Member abcd" while the chat said their name. The server answers only the
+ * request's recipient and never returns a message hidden by an earlier session.
+ */
+export function useRequestPeerInfo(requestId: string | null) {
+  return useQuery<RequestPeerInfo | null>({
+    queryKey: ['request-peer-info', requestId],
+    enabled: requestId !== null,
+    staleTime: Infinity,
+    queryFn: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = (await (supabase.rpc as any)('get_request_peer_info', {
+        p_request_id: requestId,
+      })) as { data: RequestPeerInfo[] | null; error: { message: string } | null };
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data?.[0] ?? null;
+    },
+  });
+}
+
 export function useAcceptSessionRequest() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -894,6 +927,11 @@ export function useAcceptSessionRequest() {
       void queryClient.invalidateQueries({
         queryKey: sessionKeys.pendingRequest(conversationId),
       });
+      // B5: accepting a brand-new member's request whose conversation was not
+      // yet in the provider's cached list would leave the chat resolver with
+      // nothing to navigate to for up to 60 s (poll interval). Force an
+      // immediate refetch so the row exists before the chat route mounts.
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
     },
   });
 }

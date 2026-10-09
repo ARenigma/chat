@@ -152,13 +152,34 @@ export interface ChatV2LeaveCopy {
  * `clock` is null only in the window before billing starts, where the body says
  * so instead; the `0:00` fallback exists so a race between the two can never
  * print a blank into the sentence.
+ *
+ * D6 (186): Provider copy omits the charge language (they earn, not pay) and
+ * uses "Not started yet" when the clock is null (the session has not billed
+ * because the provider has not replied yet, per migration 181).
  */
 export function chatV2LeaveCopy(input: {
   intent: ChatV2LeaveIntent;
   sessionIsActive: boolean;
   clock: string | null;
+  isMemberSide: boolean;
 }): ChatV2LeaveCopy {
   const ending = input.intent === 'end';
+  if (!input.isMemberSide) {
+    // Provider copy: no charge language, "Not started yet" when clock is null
+    // (migration 181: billing deferred to first provider reply).
+    return {
+      title: ending ? 'Done for now?' : 'Leave this chat?',
+      body: input.sessionIsActive
+        ? input.clock !== null
+          ? 'End this chat? This ends the paid chat.'
+          : 'Not started yet'
+        : ending
+        ? 'You are still connecting. Stopping now cancels it.'
+        : 'You are still connecting. Leaving will end it.',
+      cancelLabel: ending ? 'Keep going' : 'Stay',
+      confirmLabel: 'End chat',
+    };
+  }
   return {
     title: ending ? 'Done for now?' : 'Leave this chat?',
     body: input.sessionIsActive
@@ -236,61 +257,11 @@ export function chatV2ReviewOnEnd(input: {
   return input.previousLiveId;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Back                                                                        */
-/* -------------------------------------------------------------------------- */
-
-export interface ChatV2BackState {
-  /** The leave/end confirmation itself. */
-  leaveDialogOpen: boolean;
-  /** The reaction strip or the owner menu. */
-  actionsOpen: boolean;
-  /** Edit, delete, report, rename, or the photo viewer. */
-  sheetOpen: boolean;
-  replyOpen: boolean;
-  sessionActive: boolean;
-}
-
-export type ChatV2BackStep =
-  | 'closeLeaveDialog'
-  | 'closeActions'
-  | 'closeSheet'
-  | 'clearReply'
-  | 'confirmLeave'
-  | 'pop';
-
-/**
- * One press per thing that is open, innermost first, and then the screen.
+/*
+ * chatV2BackStep and ChatV2BackState were removed in 186.
  *
- * The ORDER lives here rather than in the order the guards were registered,
- * because a reply bar and a paid session can appear in either order and
- * "what does back do" must not depend on which happened first — that was the
- * defect the shared back stack was built to remove (src/lib/backGuard.ts).
- *
- * `pop` is the only rung that DECLINES: a chat with nothing open and nothing to
- * protect falls through to App's route handler, which is the same landing the
- * app-bar arrow reaches. Android's guidance is to intercept only in the state
- * that needs a decision.
- * https://developer.android.com/guide/navigation/custom-back/predictive-back-gesture
- *
- * The three surface rungs are belt and braces: each is hosted in a `Modal`,
- * which consumes the press itself via `onRequestClose`, so in practice they are
- * reached only if that ever stops being true. They are in the ladder anyway
- * because the cost of being wrong is leaving a paid session behind an open
- * sheet, and the cost of being redundant is nothing.
+ * ChatScreenV2 migrated to react-navigation's usePreventRemove (nav §4 3a) in
+ * nav-migration, so the back ladder is now owned by ChatRoute and BackHandler
+ * directly — each Modal consumes its own back press via onRequestClose. The
+ * ladder here was dead code: ChatScreenV2 only referenced it in a comment.
  */
-export function chatV2BackStep(state: ChatV2BackState): ChatV2BackStep {
-  if (state.leaveDialogOpen) {
-    return 'closeLeaveDialog';
-  }
-  if (state.actionsOpen) {
-    return 'closeActions';
-  }
-  if (state.sheetOpen) {
-    return 'closeSheet';
-  }
-  if (state.replyOpen) {
-    return 'clearReply';
-  }
-  return state.sessionActive ? 'confirmLeave' : 'pop';
-}

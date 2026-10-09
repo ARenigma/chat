@@ -212,6 +212,9 @@ const MIGRATIONS = [
   'supabase/migrations/183_unread_count_sync_on_read.sql',
   'supabase/migrations/184_unread_recount_per_statement.sql',
   'supabase/migrations/185_provider_onboarding_requires_three_photos.sql',
+  'supabase/migrations/186_provider_send_fix.sql',
+  'supabase/migrations/187_request_peer_info_and_pending_flag.sql',
+  'supabase/migrations/188_provider_photos_minimum_three_delete_guard.sql',
 ];
 
 /**
@@ -1073,6 +1076,27 @@ const suites = [
     ),
     label:
       'provider onboarding: fewer than three photos is refused, three succeed with one main',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/186_provider_send_fix.sql'),
+    label:
+      'a provider with their own chat channel off can still send, and no request is opened',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/187_request_peer_info_and_pending_flag.sql',
+    ),
+    label:
+      'the request ring reads the requester for its recipient only, and the inbox flags a pending request',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/188_provider_photos_minimum_three_delete_guard.sql',
+    ),
+    label:
+      'a live provider cannot drop below three photos; members and account deletion are unaffected',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

@@ -74,7 +74,9 @@ describe('every surface that names a person uses it', () => {
     // What a provider sees of a member.
     ['src/screens/ProviderChatsScreen.tsx', /firstName\(item\.peer_display_name\)/],
     ['src/screens/ProviderSavedScreen.tsx', /firstName\(item\.peer_display_name\)/],
-    ['src/components/ChatRequestScreen.tsx', /\{firstName\(incoming\.peerName\)/],
+    // C11 (2026-10-09): label-resolved displayName is computed with firstName;
+    // the render now reads `{displayName}` but the firstName call is still there.
+    ['src/components/ChatRequestScreen.tsx', /firstName\(incoming\.peerName\)/],
     ['src/screens/BlockedUsersScreen.tsx', /\{firstName\(p\.display_name\)/],
     ['src/screens/StoryViewerScreen.tsx', /name: firstName\(p\?\.display_name\)/],
     ['src/screens/StoryViewerScreen.tsx', /name=\{firstName\(v\.display_name\)/],

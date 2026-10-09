@@ -16,7 +16,11 @@ import {
   useProviderPhotos,
   useSetChannels,
 } from '../api/provider';
+// D1: read the provider share from the economics config (same source as
+// ProviderDetailScreen's pricing) rather than hardcoding 60.
+import { useEconomicsConfig, FALLBACK_ECONOMICS } from '../api/appConfig';
 import { Icon, type IconName } from '../components/Icon';
+import { Pressable } from '../components/Pressable';
 import { RupeeAmount } from '../components/RupeeAmount';
 import { Toggle } from '../components/Toggle';
 import { SettingsSheet } from './SettingsSheet';
@@ -38,6 +42,12 @@ interface Props {
   /** Appearance and About, the same pushed screens the member tree opens. */
   onOpenAppearance: () => void;
   onOpenAbout: () => void;
+  /**
+   * C5: Opens the provider's own public profile in a full-page push, so they
+   * can see exactly what members see. The route is the member-tree
+   * ProviderProfile, registered in the provider stack as of migration sweep.
+   */
+  onOpenOwnProfile?: (providerId: string) => void;
   /** Sign-out and account deletion, forwarded into SettingsSheet. */
   onSignedOut: () => void;
   onDeleted: () => void;
@@ -84,6 +94,7 @@ export function ProviderYouScreen({
   onOpenBlocked,
   onOpenAppearance,
   onOpenAbout,
+  onOpenOwnProfile,
   onSignedOut,
   onDeleted,
   bottomOffset,
@@ -92,6 +103,8 @@ export function ProviderYouScreen({
   const theme = useTheme();
   const { data: profile } = useProfile();
   const { data: earnings } = useEarnings();
+  // D1: provider share from the admin economics config, 60 as fallback.
+  const { data: economics } = useEconomicsConfig();
   const { toggle, pending: availabilityPending } = useAvailabilityToggle();
   const setChannels = useSetChannels();
   const { data: photos } = useProviderPhotos(profile?.id ?? null);
@@ -157,6 +170,8 @@ export function ProviderYouScreen({
   );
 
   const earned = earnings?.provider_tokens ?? 0;
+  const sharePercent =
+    economics?.provider_share_percent ?? FALLBACK_ECONOMICS.provider_share_percent;
   const status = getPaidStatus(readiness, payoutAccount);
   const thumbs = gallery.slice(0, THUMB_COUNT);
 
@@ -169,6 +184,8 @@ export function ProviderYouScreen({
       onBlocked={onOpenBlocked}
       onAppearance={onOpenAppearance}
       onAbout={onOpenAbout}
+      // C1: provider avatar tap opens "Your photos", not the clay picker.
+      onOpenPhotos={onOpenPhotos}
       extraRows={{
         'edit-profile': {
           icon: 'person',
@@ -185,6 +202,7 @@ export function ProviderYouScreen({
             gallery.length === 0
               ? 'Add photos members see on your profile'
               : `${gallery.length} of ${MAX_PROVIDER_PHOTOS}`,
+          showDetail: true,
           trailing:
             thumbs.length > 0 ? (
               <View style={styles.thumbs} importantForAccessibility="no-hide-descendants">
@@ -208,6 +226,7 @@ export function ProviderYouScreen({
           title: 'Get paid',
           detail: status.label,
           detailTone: status.tone === 'action' ? 'attention' : 'default',
+          showDetail: true,
           trailing:
             status.tone === 'verified' ? (
               <Icon name="badgeCheck" size={TOKENS.icon.sm} color={theme.color.text.accent} />
@@ -243,10 +262,12 @@ export function ProviderYouScreen({
               allowFontScaling
               style={styles.earnValue}
             />
+            {/* D1: share percent from the economics config; "60%" was hard-coded.
+                "Pending payout" — payouts are manual transfers, not automatic. */}
             <Text allowFontScaling style={styles.earnSub}>
               {earned > 0
-                ? 'Held for payout. Transfers land in your account.'
-                : 'You keep 60% of every paid minute. It shows up here.'}
+                ? 'Pending payout. Transfers land in your account.'
+                : `You keep ${sharePercent}% of every paid minute. It shows up here.`}
             </Text>
             <View style={styles.stats}>
               <Stat label="Minutes" value={String(earnings?.minutes_billed ?? 0)} testID="stat-minutes" />
@@ -383,6 +404,30 @@ export function ProviderYouScreen({
               </Animated.View>
             ) : null}
           </View>
+
+          {/* C5: Let the provider see exactly what members see on their profile.
+              The ProviderProfile route (member-tree full-page push) is now also
+              registered in the provider stack (Navigation.tsx providerScreens).
+              CTAs (chat, call) are rendered by ProviderDetailScreen but a
+              provider cannot start a session with themselves — the server
+              rejects such attempts. ProviderDetailScreen.tsx has no readOnly
+              prop today; one is needed to hide the CTAs: see the report. */}
+          {onOpenOwnProfile !== undefined && profile?.id !== undefined ? (
+            <Pressable
+              onPress={() => onOpenOwnProfile(profile.id)}
+              testID="you-see-profile"
+              accessibilityLabel="See your public profile"
+              press="none"
+              highlight="dim"
+              style={styles.seeProfileRow}
+            >
+              <Icon name="person" size={TOKENS.icon.sm} color={theme.color.text.secondary} />
+              <Text allowFontScaling style={styles.seeProfileLabel}>
+                See your profile
+              </Text>
+              <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
+            </Pressable>
+          ) : null}
         </View>
       }
     />
@@ -500,6 +545,24 @@ const makeStyles = (t: Theme) =>
     stat: { gap: TOKENS.space.hair },
     statValue: { ...TOKENS.typography.titleLargeEmphasized, color: t.color.text.onAccent },
     statLabel: { ...TOKENS.typography.bodySmall, color: t.color.text.onAccent },
+    // C5: "See your profile" row — a lightweight tap target that opens the
+    // public profile preview, sitting at the foot of the provider-only block.
+    seeProfileRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+      minHeight: TOKENS.interaction.minTarget,
+      paddingHorizontal: TOKENS.space.md,
+      paddingVertical: TOKENS.space.xs,
+      borderRadius: TOKENS.radius.field,
+      borderCurve: 'continuous',
+      backgroundColor: t.color.bg.sunken,
+    },
+    seeProfileLabel: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+      flex: 1,
+    },
     // The photos row's strip: a few thumbnails before the chevron, the row's
     // preview of what the sub-page holds. Decorative, hidden from TalkBack;
     // the row's label carries the count.

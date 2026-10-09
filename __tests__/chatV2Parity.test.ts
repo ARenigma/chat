@@ -30,14 +30,12 @@ import {
   chatV2OwnsOpeners,
 } from '../src/chat-v2/openers';
 import {
-  chatV2BackStep,
   chatV2ConsentCopy,
   chatV2HasLiveProviderMessage,
   chatV2LeaveCopy,
   chatV2ReviewOnEnd,
   chatV2SessionBand,
   chatV2SessionStartedAt,
-  type ChatV2BackState,
 } from '../src/chat-v2/session';
 import { chatV2ConsentFailure } from '../src/chat-v2/cells';
 import type { TranscriptMessage } from '../src/lib/transcript';
@@ -547,6 +545,7 @@ describe('chatV2LeaveCopy', () => {
       intent: 'end',
       sessionIsActive: true,
       clock: '2:13',
+      isMemberSide: true,
     });
     expect(copy.title).toBe('Done for now?');
     expect(copy.body).toContain('2:13');
@@ -560,6 +559,7 @@ describe('chatV2LeaveCopy', () => {
       intent: 'leave',
       sessionIsActive: true,
       clock: '2:13',
+      isMemberSide: true,
     });
     expect(copy.title).toBe('Leave this chat?');
     expect(copy.body).toContain('2:13');
@@ -569,18 +569,18 @@ describe('chatV2LeaveCopy', () => {
 
   it('says "still connecting" before billing has started', () => {
     expect(
-      chatV2LeaveCopy({ intent: 'leave', sessionIsActive: false, clock: null })
+      chatV2LeaveCopy({ intent: 'leave', sessionIsActive: false, clock: null, isMemberSide: true })
         .body,
     ).toBe('You are still connecting. Leaving will end it.');
     expect(
-      chatV2LeaveCopy({ intent: 'end', sessionIsActive: false, clock: null })
+      chatV2LeaveCopy({ intent: 'end', sessionIsActive: false, clock: null, isMemberSide: true })
         .body,
     ).toBe('You are still connecting. Stopping now cancels it.');
   });
 
   it('never prints a blank clock', () => {
     expect(
-      chatV2LeaveCopy({ intent: 'end', sessionIsActive: true, clock: null })
+      chatV2LeaveCopy({ intent: 'end', sessionIsActive: true, clock: null, isMemberSide: true })
         .body,
     ).toContain('0:00');
   });
@@ -649,66 +649,14 @@ describe('chatV2ReviewOnEnd', () => {
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* The back ladder                                                             */
-/* -------------------------------------------------------------------------- */
-
-describe('chatV2BackStep', () => {
-  const nothing: ChatV2BackState = {
-    leaveDialogOpen: false,
-    actionsOpen: false,
-    sheetOpen: false,
-    replyOpen: false,
-    sessionActive: false,
-  };
-
-  it('pops the screen when nothing is open and nothing is at stake', () => {
-    expect(chatV2BackStep(nothing)).toBe('pop');
-  });
-
-  it('closes the innermost surface first, one press per thing', () => {
-    expect(chatV2BackStep({ ...nothing, leaveDialogOpen: true })).toBe(
-      'closeLeaveDialog',
-    );
-    expect(chatV2BackStep({ ...nothing, actionsOpen: true })).toBe(
-      'closeActions',
-    );
-    expect(chatV2BackStep({ ...nothing, sheetOpen: true })).toBe('closeSheet');
-    expect(chatV2BackStep({ ...nothing, replyOpen: true })).toBe('clearReply');
-  });
-
-  it('asks before leaving a paid session', () => {
-    expect(chatV2BackStep({ ...nothing, sessionActive: true })).toBe(
-      'confirmLeave',
-    );
-  });
-
-  it('clears every surface before it offers to leave', () => {
-    // The whole point of a ladder: a reply bar and a paid session can appear in
-    // either order, and back must not skip the reply bar because money is at
-    // stake — nor leave without asking because a reply bar happens to be up.
-    const all: ChatV2BackState = {
-      leaveDialogOpen: false,
-      actionsOpen: true,
-      sheetOpen: true,
-      replyOpen: true,
-      sessionActive: true,
-    };
-    expect(chatV2BackStep(all)).toBe('closeActions');
-    expect(chatV2BackStep({ ...all, actionsOpen: false })).toBe('closeSheet');
-    expect(chatV2BackStep({ ...all, actionsOpen: false, sheetOpen: false })).toBe(
-      'clearReply',
-    );
-    expect(
-      chatV2BackStep({
-        ...all,
-        actionsOpen: false,
-        sheetOpen: false,
-        replyOpen: false,
-      }),
-    ).toBe('confirmLeave');
-  });
-});
+/*
+ * chatV2BackStep tests removed in 186.
+ *
+ * chatV2BackStep and ChatV2BackState were deleted from src/chat-v2/session.ts
+ * because ChatScreenV2 migrated to react-navigation's usePreventRemove (nav §4
+ * 3a): each Modal handles its own back press via onRequestClose, and the route
+ * adapter owns hardware back. The ladder was never reached in practice.
+ */
 
 /* -------------------------------------------------------------------------- */
 /* Openers: one owner, ever                                                    */
@@ -808,10 +756,11 @@ describe('the draft is purged on an intentional exit', () => {
 
   it('routes every exit through those two, never the raw props', () => {
     const screen = codeOnly(v2('ChatScreenV2.tsx'));
-    // `onBack` and `onStartCall` are read exactly once each — inside the
-    // wrappers above. A second call site is a purge waiting to be missed.
+    // `onBack` is read exactly once — inside the wrapper above.
+    // `mutationOnStartCall?.(` appears twice: once in the member startCall
+    // wrapper, and once in the provider call-confirm dialog's onConfirm (C9).
     expect(screen.match(/\bonBack\(\)/g) ?? []).toHaveLength(1);
-    expect(screen.match(/mutationOnStartCall\?\.\(/g) ?? []).toHaveLength(1);
+    expect(screen.match(/mutationOnStartCall\?\.\(/g) ?? []).toHaveLength(2);
   });
 
   it('clears the stored draft through the shared helper', () => {

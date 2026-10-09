@@ -64,6 +64,13 @@ export type ProviderScreenParams = CommonParams & {
   EditProfile: undefined;
   /** Pick, preview, caption, post. Provider tree only: members never post. */
   StoryCreate: undefined;
+  /**
+   * C5: The provider's own public profile — the same full-page push the member
+   * tree uses — so they can preview exactly what members see. Registered in
+   * providerScreens() in Navigation.tsx; uses ProviderProfileRoute from
+   * MemberRoutes (re-exported into the provider stack).
+   */
+  ProviderProfile: { providerId: string };
 };
 
 export type MemberTabParams = {

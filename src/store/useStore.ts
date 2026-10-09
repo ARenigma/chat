@@ -78,6 +78,17 @@ export interface IncomingRequest {
    * clock (Greptile P1 on 6bb4114).
    */
   createdAt?: string;
+  /**
+   * The member's avatar URL (may be a `clay:<seed>` sentinel). Populated from
+   * the cached conversation list when the member is known, or from the
+   * `get_request_peer_info` RPC for a brand-new contact (C11, 2026-10-09).
+   */
+  peerAvatarUrl?: string | null;
+  /**
+   * First ≤120 chars of the member's opening message, for the ring preview.
+   * Null when not yet fetched or when there is no readable first message.
+   */
+  peerPreview?: string | null;
 }
 
 interface AppState {
@@ -133,6 +144,12 @@ interface AppState {
   rungRequestIds: readonly string[];
   notice: string | null;
   noticeTone: NoticeTone;
+  /**
+   * What tapping the notice does, or null for a plain notice that takes no
+   * touch. Only a notice that leads somewhere has one (the "member opened your
+   * chat" alert opens that chat on a TAP, never on arrival; sweep C12).
+   */
+  noticeAction: (() => void) | null;
   playing: PlayingVoice | null;
   /**
    * M3 linear-determinate progress for media uploads, keyed by the pending
@@ -185,7 +202,7 @@ interface AppState {
    * Tone defaults to `error` because most notices are failures and a failure
    * mis-styled as a confirmation is the worse of the two mistakes.
    */
-  setNotice: (notice: string | null, tone?: NoticeTone) => void;
+  setNotice: (notice: string | null, tone?: NoticeTone, action?: () => void) => void;
   setPendingProviderApply: (pending: boolean) => void;
   /**
    * Record a 0–1 upload fraction for a pending message.  Called from XHR
@@ -231,6 +248,7 @@ const INITIAL = {
   queuedRequests: [] as readonly IncomingRequest[],
   rungRequestIds: [] as readonly string[],
   notice: null,
+  noticeAction: null,
   noticeTone: 'error' as NoticeTone,
   playing: null,
   uploadProgress: {} as Record<string, number>,
@@ -357,7 +375,8 @@ export const useStore = create<AppState>()(set => ({
         rungRequestIds: next === null ? state.rungRequestIds : [...state.rungRequestIds, next.requestId],
       };
     }),
-  setNotice: (notice, tone = 'error') => set({ notice, noticeTone: tone }),
+  setNotice: (notice, tone = 'error', action) =>
+    set({ notice, noticeTone: tone, noticeAction: action ?? null }),
   setPendingProviderApply: pending => set({ pendingProviderApply: pending }),
   setUploadProgress: (id, fraction) =>
     set(s => ({ uploadProgress: { ...s.uploadProgress, [id]: fraction } })),
@@ -376,6 +395,7 @@ export const useStore = create<AppState>()(set => ({
         : state.peerActivity,
       peerActivityBy: withActivity(state.peerActivityBy, conversationId, null),
       notice: null,
+      noticeAction: null,
       playing: null,
       uploadProgress: {},
     })),

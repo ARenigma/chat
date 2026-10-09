@@ -38,7 +38,10 @@ export const AVAILABILITY = {
   off: {
     head: 'Offline',
     title: 'Not Taking New Conversations',
-    sub: 'You are not listed. Existing chats still work.',
+    // D4: the directory still lists closed providers as "Notify only", so
+    // "not listed" was false. The honest claim is that new conversations are
+    // blocked; existing chats are unaffected.
+    sub: "Members can't start new conversations with you. Existing chats still work.",
   },
 } as const;
 

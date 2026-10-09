@@ -316,7 +316,8 @@ export function useChatV2Controller(
 ): ChatV2Controller {
   // Mirrors the authoritative balance into the store, which is what both send
   // paths gate on before they spend anything.
-  useProfile();
+  // C10 (186): also used below to gate the provider's own call-channel flags.
+  const { data: ownProfile } = useProfile();
   const setNotice = useStore(s => s.setNotice);
   const requestReview = useStore(s => s.requestReview);
   const { data: selfId } = useSelfId();
@@ -629,10 +630,16 @@ export function useChatV2Controller(
         ? null
         : {
             at: notifiedAt,
-            text: `${displayName} has been notified. They'll join you here soon.`,
+            // C8 (186): provider side omits the promise ("They'll join you
+            // here soon") — the provider is not waiting for the member in
+            // the same way, and the line is a promise that can be broken.
+            // Member side unchanged.
+            text: isMemberSide
+              ? `${displayName} has been notified. They'll join you here soon.`
+              : `${displayName} has been notified.`,
             icon: 'bell',
           },
-    [notifiedAt, displayName, peerJoined],
+    [notifiedAt, displayName, peerJoined, isMemberSide],
   );
   /** Whether a push really went out, which is what the header bar renders. */
   const peerNotified = openAlert?.alerted === true;
@@ -849,14 +856,22 @@ export function useChatV2Controller(
   /* ---- session, consent, and what the composer may do ------------------- */
   const { data: killSwitches } = useKillSwitches();
   const peerOffersChat = provider?.chat_enabled ?? true;
+  /*
+   * C10 (186): On the provider side `provider` is undefined (the directory
+   * only lists providers, but `providerId` is a member id on the provider
+   * tree), so `provider?.audio_enabled ?? true` always defaulted to true —
+   * the provider's own channel flags were never checked. Gate the PROVIDER's
+   * own call buttons on their own profile (ownProfile, fetched above), not on
+   * the peer's directory entry. Member side is unchanged: uses the peer.
+   */
   const canStartAudio =
     (killSwitches?.voice_calls_enabled ?? true) &&
     CALLS_ENABLED &&
-    (provider?.audio_enabled ?? true);
+    (isMemberSide ? (provider?.audio_enabled ?? true) : (ownProfile?.audio_enabled ?? true));
   const canStartVideo =
     (killSwitches?.video_calls_enabled ?? true) &&
     CALLS_ENABLED &&
-    (provider?.video_enabled ?? true);
+    (isMemberSide ? (provider?.video_enabled ?? true) : (ownProfile?.video_enabled ?? true));
   /*
    * A call already in progress on another channel. Offering a call-back from a
    * missed-call row while one is live would dead-end at the call screen, which

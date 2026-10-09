@@ -811,6 +811,11 @@ async function sendMessageWith(
   setSending(false);
 
   const result = sendResultFrom(data, error);
+  // Used below: a provider's own channel being off (P0009 → CHANNEL_DISABLED_BY_PROVIDER)
+  // should never surface as "They are not taking chats right now." — that copy is
+  // about the PEER's channel, not the sender's own. B4 (186): the migration fix
+  // prevents P0009 from being raised at all for providers; this is belt-and-braces.
+  const senderIsMember = memberPaysInThread(queryClient, conversationId);
 
   if (result === null || !result.success) {
     /*
@@ -845,14 +850,28 @@ async function sendMessageWith(
      * code/hint for client-side network errors since those fields are meant
      * for upstream service errors"). Any OTHER non-empty code is a genuine,
      * if unmapped, server response.
+     *
+     * B4 (186): CHANNEL_DISABLED_BY_PROVIDER means the PEER's channel is
+     * off — that copy only applies when the sender is the member. When the
+     * provider receives this code (e.g. their own channel is off and the
+     * migration fix has not run yet), suppress the misleading line.
      */
-    setNotice(
+    const noticeMap: Partial<Record<string, string>> =
+      !senderIsMember && code === 'CHANNEL_DISABLED_BY_PROVIDER'
+        ? { ...NOTICE, CHANNEL_DISABLED_BY_PROVIDER: undefined }
+        : NOTICE;
+    // When the provider's own channel is off (CHANNEL_DISABLED_BY_PROVIDER),
+    // noticeMap[code] is undefined (B4 suppression) so notice can be undefined.
+    // In that case skip the toast: the failed bubble stays on screen without copy.
+    const notice =
       code !== undefined
-        ? (sendNotice(result, NOTICE) ?? NOTICE[code])
+        ? (sendNotice(result, noticeMap) ?? noticeMap[code])
         : error?.code === ''
           ? 'Could not send. Check your connection.'
-          : 'Something went wrong on our side. Please try again.',
-    );
+          : 'Something went wrong on our side. Please try again.';
+    if (notice !== undefined) {
+      setNotice(notice);
+    }
     errorTick();
     if (code === 'INSUFFICIENT_BALANCE') {
       showRefill();

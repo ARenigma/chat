@@ -2589,7 +2589,10 @@ describe('the chat-request ring takes its notification with it', () => {
     jest.doMock('../src/api/sessions', () => ({
       useAcceptSessionRequest: () => accept,
       useDeclineSessionRequest: () => decline,
+      // The requester's name, avatar and preview (C11): nothing known yet.
+      useRequestPeerInfo: () => ({ data: null }),
     }));
+    jest.doMock('../src/api/chat', () => ({ useSelfId: () => ({ data: undefined }) }));
     for (const leaf of ['Avatar', 'CallRing', 'Icon', 'Pressable']) {
       jest.doMock(`../src/components/${leaf}`, () => ({ [leaf]: () => null }));
     }

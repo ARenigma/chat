@@ -178,6 +178,8 @@ const START_NOTICE: Record<string, string> = {
   NOT_FOUND: 'That conversation is gone.',
   VOICE_CALLS_DISABLED: 'Voice chats are taking a short break.',
   VIDEO_CALLS_DISABLED: 'Video chats are taking a short break.',
+  // C10 (186): policy gate applies to providers too.
+  POLICY_REQUIRED: 'Accept the latest Terms and Privacy Policy to continue.',
   SERVER_ERROR: SERVER_ERROR_NOTICE,
 };
 
@@ -567,7 +569,16 @@ export function CallScreen({
           return;
         }
         if (code === 'INSUFFICIENT_BALANCE' && !isMemberSide) {
-          setNotice('Their balance is too low to start this call.');
+          // C13 (186): "Their balance is too low" reveals the member's wallet
+          // to the provider. Use a neutral copy instead.
+          setNotice(`${name} can't take a call right now.`);
+        } else if (code === 'CHANNEL_DISABLED_BY_PROVIDER' && !isMemberSide) {
+          // C10 (186): provider's own channel is off — name the right side.
+          setNotice(
+            medium === 'video'
+              ? 'You have video calls turned off.'
+              : 'You have voice calls turned off.',
+          );
         } else {
           setNotice(code ? (START_NOTICE[code] ?? 'Could not start the call.') : 'Could not start just now. Check your connection.');
           if (code === 'INSUFFICIENT_BALANCE') {
@@ -580,7 +591,7 @@ export function CallScreen({
     return () => {
       live = false;
     };
-  }, [direction, resolvedConversationId, callId, medium, isMemberSide, incomingCallId, memberConsented, onEnd, setNotice]);
+  }, [direction, resolvedConversationId, callId, medium, isMemberSide, incomingCallId, memberConsented, onEnd, setNotice, name]);
 
   /*
    * Hard timeout for outgoing calls that never receive a server call_id.
@@ -1490,9 +1501,24 @@ export function CallScreen({
             <CallingDots />
           </View>
         )}
-        {phase === 'incoming' && isMemberSide ? (
+        {/* S4 (186): guard on peerThread so the conduct line is not shown to
+            a provider before their side resolves (isMemberSide defaults to
+            true before threads load). C9: per-minute rate line for the member
+            seeing an incoming provider call — same info the member's outgoing
+            confirm carries ("Charging starts when they pick up"). */}
+        {phase === 'incoming' && peerThread !== undefined && isMemberSide ? (
           <Text allowFontScaling style={styles.status}>
             Keep it kind. No sexual or abusive talk
+          </Text>
+        ) : null}
+        {/* C9: the provider called, so the member is told how it is billed
+            before "Start session". No figure: this screen shows only prices
+            the server quoted for this call (the video-switch rule below), and
+            there is no quote for an incoming call; the rate is on the
+            provider's profile, where the member saw it. */}
+        {phase === 'incoming' && peerThread !== undefined && isMemberSide ? (
+          <Text allowFontScaling style={styles.status} testID="call-incoming-rate">
+            Charged per minute from when you start
           </Text>
         ) : null}
         {/*
@@ -1559,7 +1585,11 @@ export function CallScreen({
             <CallAction
               testID="call-accept"
               glyph="call"
-              label={isMemberSide ? 'Start session' : 'Accept'}
+              // S4 (186): before useConversations resolves, peerThread is
+              // undefined and isMemberSide defaults to true, so a provider
+              // briefly sees "Start session". Use neutral "Accept" until the
+              // side is known (peerThread !== undefined).
+              label={peerThread !== undefined && isMemberSide ? 'Start session' : 'Accept'}
               tone="accept"
               onPress={accept}
             />

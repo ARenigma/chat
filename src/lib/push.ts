@@ -851,7 +851,18 @@ export async function handleBackgroundPush(
   }
   const nudge = readEngagementPush(remote.data);
   if (nudge !== null) {
-    await notifyEngagement(nudge);
+    // C12: substitute a private label when the provider has named this member.
+    // The engagement payload carries peerId (not conversationId), so the peer
+    // index (getLabelByPeer) is the only lookup path — same as calls above.
+    const engUserId = storedAccountId();
+    const engLabel = engUserId !== null ? getLabelByPeer(engUserId, nudge.peerId) : null;
+    // The name inside the server's sentence is swapped, not the whole title:
+    // "Hey, {name} is here" keeps its words with the provider's own label in it.
+    const swap = (text: string): string =>
+      nudge.senderName === '' ? text : text.split(nudge.senderName).join(engLabel ?? nudge.senderName);
+    const resolvedNudge =
+      engLabel !== null ? { ...nudge, title: swap(nudge.title), body: swap(nudge.body) } : nudge;
+    await notifyEngagement(resolvedNudge);
     return;
   }
   const push = readConversationPush(remote.data);

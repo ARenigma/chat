@@ -14,7 +14,9 @@ import { listStamp } from '../lib/datetime';
 import { AVAILABILITY, useAvailabilityToggle } from '../lib/providerAvailability';
 import { useConversations, useProfile, useSelfId } from '../api/chat';
 import { useConversationLabels } from '../api/conversationLabels';
+import { useBottomBarOffset } from '../shell/useBottomBarOffset';
 import { Avatar } from '../components/Avatar';
+import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
 import { LoadingIndicator } from '../components/LoadingIndicator';
 import { Pressable } from '../components/Pressable';
@@ -56,6 +58,8 @@ type ProviderRow = ConversationSummary | string;
 const SECTION_MINE = 'Your own conversations';
 
 function threadLabel(thread: ConversationSummary): string {
+  // C14: a live, unanswered chat request is the most time-sensitive state.
+  if (!thread.i_am_member && thread.peer_request_pending) return 'Wants to chat';
   if (thread.last_session_status === 'active') return 'Active session';
   if (thread.last_session_status === 'pending_leases') return 'Connecting session';
   if (thread.last_preview_kind === 'voice') return 'Voice note';
@@ -87,8 +91,13 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
 
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  // D7: match every other tab screen's bottom padding rather than a fixed 32dp.
+  // https://developer.android.com/develop/ui/views/layout/insets
+  const bottomOffset = useBottomBarOffset();
   const { data: profile } = useProfile();
-  const { data: allThreads, isPending } = useConversations();
+  // D7: expose the error state so a failed load shows a Retry rather than the
+  // calm empty watermark, which reads as "nothing yet" when something did fail.
+  const { data: allThreads, isPending, isError, refetch } = useConversations();
   const { data: conversationLabels } = useConversationLabels();
   const { toggle, pending: availabilityPending } = useAvailabilityToggle();
   const available = profile?.is_available ?? false;
@@ -164,11 +173,20 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
         conversationLabels?.get(item.conversation_id) ??
         (firstName(item.peer_display_name) || null) ??
         `Member ${item.peer_id.slice(0, 4)}`;
+      const preview = threadLabel(item);
+      // D7: include unread count and preview so TalkBack can announce what the
+      // row is about without requiring navigation into the thread.
+      // https://developer.android.com/guide/topics/ui/accessibility/apps#describe-ui-elements
+      const a11yLabel = [
+        label,
+        preview,
+        unread ? `${unreadCount} unread` : null,
+      ].filter(Boolean).join(', ');
       return (
         <Pressable
           onPress={() => onOpenConversation(item.peer_id)}
           testID={`provider-thread-${item.peer_id}`}
-          accessibilityLabel={`${label}${unread ? ', waiting for a reply' : ''}`}
+          accessibilityLabel={a11yLabel}
           press="none"
           highlight="dim"
           style={styles.row}>
@@ -206,7 +224,7 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
                 allowFontScaling
                 numberOfLines={1}
                 style={[styles.rowPreview, unread && styles.rowPreviewUnread]}>
-                {threadLabel(item)}
+                {preview}
               </Text>
               {unread ? (
                 <View testID="waiting-dot" style={styles.unread}>
@@ -279,6 +297,20 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
         <View style={styles.centre}>
           <LoadingIndicator size={48} />
         </View>
+      ) : isError ? (
+        // D7: a failed load shows a Retry rather than the calm empty watermark.
+        <View style={styles.empty}>
+          <View style={styles.emptyMark}>
+            <Icon name="chat" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
+          </View>
+          <Text
+            maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+            allowFontScaling
+            style={styles.emptyTitle}>
+            Could not load chats
+          </Text>
+          <Button label="Retry" onPress={() => { void refetch(); }} />
+        </View>
       ) : rows.length === 0 ? (
         // The watermark a brand-new provider sees. Clean and calm, not "0".
         <View style={styles.empty}>
@@ -299,6 +331,24 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
                 'Turn on availability above so members can reach you.'}
           </Text>
         </View>
+      ) : work.length === 0 ? (
+        // D7: all threads are member-side — provider has had no work yet.
+        <View style={styles.empty}>
+          <View style={styles.emptyMark}>
+            <Icon name="chat" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
+          </View>
+          <Text
+            maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
+            allowFontScaling
+            style={styles.emptyTitle}>
+            No provider conversations yet
+          </Text>
+          <Text allowFontScaling style={styles.emptyBody}>
+            {available
+              ? 'When a member starts a conversation with you, it appears here.'
+              : 'Turn on availability above so members can reach you.'}
+          </Text>
+        </View>
       ) : (
         <FlashList
           ref={listRef}
@@ -309,7 +359,7 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
           getItemType={getItemType}
           stickyHeaderIndices={stickyHeaderIndices}
           ItemSeparatorComponent={separator}
-          contentContainerStyle={[styles.list, { paddingBottom: TOKENS.space['2xl'] }]}
+          contentContainerStyle={[styles.list, { paddingBottom: bottomOffset }]}
           showsVerticalScrollIndicator={false}
         />
       )}

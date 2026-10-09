@@ -13,7 +13,7 @@
 -- 10. ...and sees nothing at all for a provider who is not listed
 -- 11. the seventh photo is refused by the database, not by the client
 -- 12. deleting the primary promotes a survivor, and avatar_url follows it
--- 13. emptying the gallery nulls avatar_url
+-- 13. a live provider cannot empty the gallery (188; it used to null avatar_url)
 
 \set ON_ERROR_STOP on
 begin;
@@ -232,14 +232,13 @@ select ok(
   '12. deleting the primary promotes the oldest survivor, and avatar_url follows'
 );
 
-delete from public.provider_photos
-where provider_id = 'cc070000-0000-4070-8000-000000000002';
-
-select is(
-  (select avatar_url from public.profiles
-   where id = 'cc070000-0000-4070-8000-000000000002'),
-  null::text,
-  '13. emptying the gallery nulls avatar_url'
+-- 188: a live provider keeps at least three photos, so emptying the gallery
+-- is refused rather than nulling the face (it used to null avatar_url here).
+select throws_ok(
+  $$delete from public.provider_photos
+    where provider_id = 'cc070000-0000-4070-8000-000000000002'$$,
+  '22023', null,
+  '13. a live provider cannot empty the gallery (188)'
 );
 
 select * from finish();

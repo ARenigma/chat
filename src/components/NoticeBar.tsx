@@ -21,6 +21,7 @@ import Animated, { FadeInUp, FadeOut, ReduceMotion } from 'react-native-reanimat
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { useStore } from '../store/useStore';
+import { Pressable } from './Pressable';
 import { DURATION, EASE_OUT } from '../theme/motion';
 
 /**
@@ -45,6 +46,7 @@ function NoticeBar() {
   const styles = useStyles(makeStyles);
   const notice = useStore(s => s.notice);
   const tone = useStore(s => s.noticeTone);
+  const action = useStore(s => s.noticeAction);
   const setNotice = useStore(s => s.setNotice);
 
   useEffect(() => {
@@ -59,12 +61,45 @@ function NoticeBar() {
     return null;
   }
 
+  const text = (
+    <Text allowFontScaling style={[styles.text, tone === 'confirm' && styles.textConfirm]}>
+      {notice}
+    </Text>
+  );
+
+  // A notice that leads somewhere is a button for its 4 seconds: tapping it
+  // runs the action and dismisses it. Every other notice takes no touch.
+  if (action !== null) {
+    return (
+      <Animated.View
+        entering={noticeIn}
+        exiting={noticeOut}
+        testID="notice-bar"
+        accessibilityLiveRegion="polite">
+        <Pressable
+          onPress={() => {
+            setNotice(null);
+            action();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={notice}
+          accessibilityHint="Opens the conversation"
+          press="none"
+          highlight="dim"
+          testID="notice-bar-action"
+          style={[styles.bar, styles.barAction]}>
+          {text}
+        </Pressable>
+      </Animated.View>
+    );
+  }
+
   return (
     <Animated.View
       entering={noticeIn}
       exiting={noticeOut}
       style={styles.bar}
-      // No action on a notice, so it never takes a touch: it can sit over a
+      // No action on this notice, so it never takes a touch: it can sit over a
       // header control and the tap still reaches the control.
       pointerEvents="none"
       testID="notice-bar"
@@ -72,9 +107,7 @@ function NoticeBar() {
       // A confirmation is not an alert; polite gets it announced without
       // interrupting. react-native has no `status` role so the absence is correct.
       accessibilityRole={tone === 'confirm' ? undefined : 'alert'}>
-      <Text allowFontScaling style={[styles.text, tone === 'confirm' && styles.textConfirm]}>
-        {notice}
-      </Text>
+      {text}
     </Animated.View>
   );
 }
@@ -125,6 +158,12 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderRadius: TOKENS.radius.field,
     borderCurve: 'continuous',
     backgroundColor: t.color.bg.sunken,
+  },
+  // A tappable notice is a 48dp target, Android's minimum.
+  // https://developer.android.com/guide/topics/ui/accessibility/apps#large-controls
+  barAction: {
+    minHeight: TOKENS.interaction.minTarget,
+    justifyContent: 'center',
   },
   text: {
     ...TOKENS.typography.bodyLarge,

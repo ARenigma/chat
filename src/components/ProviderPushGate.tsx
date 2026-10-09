@@ -3,6 +3,8 @@ import { AppState, Linking, StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { notificationsGranted } from '../lib/push';
+import { useProfile } from '../api/chat';
+import { useAvailabilityToggle } from '../lib/providerAvailability';
 import { Pressable } from './Pressable';
 
 /**
@@ -42,10 +44,24 @@ function useProviderPushOk(): boolean {
  * The full-cover gate: chats and calls cannot reach a provider with
  * notifications off, so nothing else on the surface is worth showing until it
  * is fixed. Drawn by whoever hosts the provider screens, over all of them.
+ *
+ * B6: The gate now also offers a "Go offline" action next to "Turn on
+ * notifications". A provider who cannot receive calls but is listed as
+ * available is unreachable — their availability switch says "open" while the
+ * OS says "blocked". Going offline removes them from the directory until
+ * they fix notifications and come back online, which is the honest state.
+ *
+ * B6: The gate is NOT placed on the You tab (ProviderYouRoute) so providers
+ * can still go offline, view earnings, sign out, and delete their account
+ * while notifications are off.
  */
 export function ProviderPushGate() {
   const styles = useStyles(makeStyles);
   const pushOk = useProviderPushOk();
+  const { data: profile } = useProfile();
+  const { toggle, pending } = useAvailabilityToggle();
+  const available = profile?.is_available ?? false;
+
   if (pushOk) {
     return null;
   }
@@ -74,6 +90,24 @@ export function ProviderPushGate() {
           Open settings
         </Text>
       </Pressable>
+      {/* B6: "Go offline" so a listed-but-unreachable provider can at least
+          stop appearing available while they sort their notification
+          permissions. Only shown when they are actually online — once
+          offline, the gate covers Chats/Saved only and there is nothing
+          else to do here.
+          https://developer.android.com/guide/topics/ui/accessibility/apps */}
+      {available ? (
+        <Pressable
+          onPress={() => toggle(false)}
+          disabled={pending}
+          accessibilityLabel="Go offline"
+          press="button"
+          style={styles.pushGateButtonSecondary}>
+          <Text allowFontScaling style={styles.pushGateButtonSecondaryLabel}>
+            Go offline
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -130,5 +164,20 @@ const makeStyles = (t: Theme) =>
     pushGateButtonLabel: {
       ...TOKENS.typography.labelLarge,
       color: t.color.text.onAccent,
+    },
+    // B6: secondary action — same 48dp floor, outlined rather than filled so
+    // the hierarchy reads "Open settings" first, "Go offline" second.
+    pushGateButtonSecondary: {
+      height: TOKENS.interaction.minTarget,
+      paddingHorizontal: TOKENS.space.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: TOKENS.radius.pill,
+      borderWidth: 1,
+      borderColor: t.color.border.strong,
+    },
+    pushGateButtonSecondaryLabel: {
+      ...TOKENS.typography.labelLarge,
+      color: t.color.text.secondary,
     },
   });

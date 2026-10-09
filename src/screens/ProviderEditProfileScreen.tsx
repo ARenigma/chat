@@ -218,6 +218,9 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
             {`Languages (at least 1, up to ${MAX_PROVIDER_LANGUAGES})`}
           </Text>
           <View style={styles.chips} testID="edit-profile-languages">
+            {/* D7: disable unpicked chips once the cap is reached, matching
+                the expertise section's ceiling behaviour so both fields say
+                the rule before a tap rather than after. */}
             {languageOptions.map(l => {
               const picked = isLanguageSelected(draft?.languages ?? [], l);
               return (
@@ -226,7 +229,10 @@ export function ProviderEditProfileScreen({ onBack, onDirtyChange, onSaved }: Pr
                   label={l}
                   selected={picked}
                   onToggle={value => update({ languages: toggleLanguage(draft?.languages ?? [], value) })}
-                  disabled={draft === null}
+                  disabled={
+                    draft === null ||
+                    (!picked && (draft?.languages.length ?? 0) >= MAX_PROVIDER_LANGUAGES)
+                  }
                   accessibilityLabel={`${l}${picked ? ', selected' : ''}`}
                   testID={`edit-profile-language-${l}`}
                 />
@@ -285,7 +291,9 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.md,
       paddingBottom: TOKENS.space.xs,
     },
-    barIcon: { width: 28, height: 40, alignItems: 'center', justifyContent: 'center' },
+    // D7: 48dp minimum touch target.
+    // https://developer.android.com/guide/topics/ui/accessibility/apps
+    barIcon: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
     barTitle: { ...TOKENS.typography.textLgSemiBoldTight, color: t.color.text.primary, flex: 1 },
     // A 48dp target around a text action ("at least 48dp x 48dp",
     // developer.android.com/guide/topics/ui/accessibility/apps).

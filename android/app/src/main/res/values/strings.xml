@@ -27,8 +27,17 @@
     -->
     <string name="channel_conversations_in_app">Messages while using the app</string>
     <string name="channel_conversations_in_app_desc">A quiet banner for a chat you are not looking at</string>
-    <string name="channel_engagement">Suggestions</string>
-    <string name="channel_engagement_desc">Nudges when someone new is around to talk</string>
+    <!--
+      Channel name update (C12, 2026-10-09). The channel is write-once for
+      importance and sound, but name and description may be updated via a
+      subsequent createNotificationChannel call with the same id.
+      https://developer.android.com/develop/ui/views/notifications/channels
+      The previous name ("Suggestions") and description ("Nudges when someone
+      new is around to talk") were member-facing only and made no sense for a
+      provider receiving "member opened your chat" alerts on this same channel.
+    -->
+    <string name="channel_engagement">Activity</string>
+    <string name="channel_engagement_desc">Alerts about activity on your conversations and profile</string>
     <string name="channel_calls">Incoming calls</string>
     <string name="channel_calls_desc">Rings when someone calls you</string>
     <string name="channel_call_ongoing">Call in progress</string>

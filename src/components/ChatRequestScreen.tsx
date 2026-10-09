@@ -25,7 +25,13 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { firstName, initialOf } from '../lib/display';
 import { formatClock } from '../lib/sessionClock';
-import { useAcceptSessionRequest, useDeclineSessionRequest } from '../api/sessions';
+import {
+  useAcceptSessionRequest,
+  useDeclineSessionRequest,
+  useRequestPeerInfo,
+} from '../api/sessions';
+import { useSelfId } from '../api/chat';
+import { getLabelByPeer } from '../lib/conversationLabelCache';
 import { clearConversation, notifyConversation } from '../lib/conversations';
 import {
   getRingingConversation,
@@ -203,6 +209,10 @@ export function ChatRequestScreen({ request: incoming, onOpenConversation, held 
   const setNotice = useStore(s => s.setNotice);
   const accept = useAcceptSessionRequest();
   const decline = useDeclineSessionRequest();
+  // Who is asking (C11). Called up here, before the early return below, as
+  // hooks must run in the same order on every render.
+  const { data: selfId } = useSelfId();
+  const { data: info } = useRequestPeerInfo(incoming?.requestId ?? null);
   const [left, setLeft] = useState(CHAT_RING_SECONDS);
   /*
    * The requests whose Decline is on the wire. The clock does not stop for
@@ -506,6 +516,17 @@ export function ChatRequestScreen({ request: incoming, onOpenConversation, held 
     (accept.isPending && accept.variables?.requestId === incoming.requestId) ||
     (decline.isPending && decline.variables?.requestId === incoming.requestId);
 
+  // C11: who is asking. The provider's own label wins and is shown as typed;
+  // otherwise the requester's name from the server (first name only), and only
+  // then the name the ring was built with, which for a brand-new member is the
+  // "Member abcd" placeholder.
+  const label = selfId ? getLabelByPeer(selfId, incoming.peerId) : null;
+  const displayName =
+    label ??
+    (firstName(info?.peer_display_name) || firstName(incoming.peerName) || incoming.peerName);
+  const avatarUrl = info?.peer_avatar_url ?? incoming.peerAvatarUrl ?? null;
+  const preview = info?.first_message_preview ?? incoming.peerPreview ?? null;
+
   return (
     <View
       style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom + TOKENS.space.xl }]}
@@ -518,18 +539,31 @@ export function ChatRequestScreen({ request: incoming, onOpenConversation, held 
           maxFontSizeMultiplier={TOKENS.fontScaleCap.headlineSmallEmphasized}
           allowFontScaling
           style={styles.name}>
-          {firstName(incoming.peerName) || incoming.peerName}
+          {displayName}
         </Text>
         <Text allowFontScaling style={styles.sub} testID="chat-ring-countdown">
           {`wants to chat · ${formatClock(Math.max(0, left))}`}
         </Text>
+        {/* C11: first message preview, when available from the store or from
+            the get_request_peer_info RPC (migration 187). */}
+        {preview ? (
+          <Text allowFontScaling numberOfLines={2} style={styles.preview} testID="chat-ring-preview">
+            {preview}
+          </Text>
+        ) : null}
       </View>
 
       {/* 88 is the largest face the Avatar scale defines, and CallScreen's
           incoming state uses the same one — a ring that is bigger than the app's
-          own largest avatar would be a one-off size to maintain forever. */}
+          own largest avatar would be a one-off size to maintain forever.
+          C11: peer avatar carried in IncomingRequest; falls back to initial
+          when null (brand-new member whose photo has not loaded). */}
       <CallRing size={RING_FACE} active>
-        <Avatar initial={initialOf(firstName(incoming.peerName) || incoming.peerName)} size={RING_FACE} />
+        <Avatar
+          uri={avatarUrl ?? undefined}
+          initial={initialOf(displayName)}
+          size={RING_FACE}
+        />
       </CallRing>
 
       <View style={styles.actions}>
@@ -621,6 +655,14 @@ const makeStyles = (t: Theme) =>
     sub: {
       ...TOKENS.typography.bodyLarge,
       color: t.color.text.secondary,
+    },
+    // C11: first-message preview under the countdown — bodyMedium, capped at
+    // two lines so a long opener does not push the face and buttons down.
+    preview: {
+      ...TOKENS.typography.bodyMedium,
+      color: t.color.text.secondary,
+      textAlign: 'center',
+      marginTop: TOKENS.space['2xs'],
     },
     actions: {
       flexDirection: 'row',

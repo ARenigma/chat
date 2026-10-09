@@ -89,6 +89,7 @@ import {
   setVideoResolution,
 } from './src/api/callMedia/profile';
 import { keys, useConversations, useGlobalOutboxDrain, useSelfId } from './src/api/chat';
+import { getLabelByPeer } from './src/lib/conversationLabelCache';
 import { useProviderPresenceStream } from './src/api/presenceStream';
 import { useRole } from './src/api/provider';
 import { resetStore, useStore } from './src/store/useStore';
@@ -1396,14 +1397,26 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
     (request: { requestId: string; conversationId: string; initiatorId: string; expiresAt: string; createdAt?: string }) => {
       if (role !== 'provider') return;
       const conv = (conversations ?? []).find(c => c.conversation_id === request.conversationId);
+      // C11: private label wins over the cached display name; the label cache is
+      // keyed by peer id (getLabelByPeer) so it works even when the conversation
+      // is not yet in the list (brand-new member). Same precedence as the inbox.
       const peerName =
+        (selfId ? (getLabelByPeer(selfId, request.initiatorId) ?? null) : null) ??
         conv?.peer_display_name ??
         `Member ${request.initiatorId.replace(/-/g, '').slice(0, 4)}`;
+      // B5: a brand-new member's conversation may not be in the cached list
+      // yet (staleTime 10 s, poll 60 s). Force a refetch so the chat route
+      // resolves immediately after the provider accepts.
+      void queryClient.invalidateQueries({ queryKey: keys.conversationList });
       setIncomingRequest({
         requestId: request.requestId,
         conversationId: request.conversationId,
         peerId: request.initiatorId,
         peerName,
+        // C11: carry the peer's avatar from the cached conversation so the
+        // ring can display a face. For brand-new members this is null and the
+        // initial-fallback Avatar handles it gracefully.
+        peerAvatarUrl: conv?.peer_avatar_url ?? null,
         // An ABSOLUTE deadline, on purpose, even for a request that queues
         // behind another ring: a queued one is promoted with only the seconds
         // it really has left, and one that ran out while waiting is skipped
@@ -1412,7 +1425,7 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
         createdAt: request.createdAt,
       });
     },
-    [role, conversations, setIncomingRequest],
+    [role, selfId, conversations, setIncomingRequest],
   );
   useIncomingChatRequests(role === 'provider' ? selfId : undefined, onIncomingChatRequest);
   /*
@@ -1456,8 +1469,10 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
 
   /*
    * Foreground pushes. A call enqueues through the intent queue (glare +
-   * dedup handled there); a nudge becomes a notice over an app the person is
-   * already looking at.
+   * dedup handled there); an engagement nudge (e.g., "member opened your
+   * chat") goes through the intent queue too so a tap opens the chat rather
+   * than dismissing a notice bar with no action (C12, 2026-10-09).
+   * https://developer.android.com/develop/ui/views/notifications/conversations
    */
   useEffect(
     () =>
@@ -1469,7 +1484,14 @@ function SignedIn({ onSignedOut, onProviderOnboarded, takeRestoreState, onNavSta
             callId: push.callId,
             medium: push.medium === 'video' ? 'video' : 'voice',
           }),
-        onEngagement: push => setNotice(push.body || push.title, 'confirm'),
+        onEngagement: push => {
+          // Tappable, not automatic: the chat opens when the notice is TAPPED.
+          // Opening it on arrival would pull the person out of whatever they
+          // were doing every time someone opened a thread with them.
+          setNotice(push.body || push.title, 'confirm', () =>
+            enqueueIntent({ type: 'openChat', peerId: push.peerId }),
+          );
+        },
       }),
     [setNotice],
   );

@@ -1311,7 +1311,7 @@ select is(
        'delete_message', 'delete_story_comment', 'delete_user_account', 'edit_message',
        'end_call', 'end_session', 'get_active_config', 'get_active_session',
        'get_chat_consent', 'get_home_suggestions', 'get_my_favorites',
-       'get_pending_session_request', 'get_provider_ratings',
+       'get_pending_session_request', 'get_provider_ratings', 'get_request_peer_info',
        'get_usage_ledger', 'get_video_switch_quote',
        'heartbeat_call', 'insert_next_opener', 'mark_story_viewed', 'member_handle',
        'mock_recharge', 'my_first_recharge_discount_bps',
