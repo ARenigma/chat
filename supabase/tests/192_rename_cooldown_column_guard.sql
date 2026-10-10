@@ -3,10 +3,12 @@
 --   2. a member cannot write display_name_changed_at directly either
 --   3. update_provider_profile still stamps it on a real rename
 --   4. and that stamp then blocks a second rename (the cooldown holds)
+--   5. the write itself is refused inside the cooldown, so a second rename
+--      that passed the RPC's earlier read (a concurrent call) still fails
 
 \set ON_ERROR_STOP on
 begin;
-select plan(4);
+select plan(5);
 
 insert into auth.users (id) values
   ('c9200000-0000-4920-8000-000000000001'),  -- provider
@@ -62,6 +64,20 @@ select throws_like(
        array['English'], 'Again192') $$,
   '%30 days%',
   '4. the stamp blocks a second rename inside the cooldown');
+
+-- 5. Write-time check, as the owner (as a SECURITY DEFINER caller would be):
+-- a rename that stamps the column inside the cooldown is refused by the
+-- trigger itself, which is what stops the second of two concurrent renames.
+-- clock_timestamp(), not now(): now() is this transaction's start, equal to
+-- the stamp above; a concurrent call's own transaction stamps a later time.
+reset role;
+select throws_ok(
+  $$ update public.profiles
+     set display_name = 'Race192', display_name_changed_at = clock_timestamp()
+     where id = 'c9200000-0000-4920-8000-000000000001' $$,
+  '22023',
+  'display names can only change once every 30 days',
+  '5. a stamped rename inside the cooldown is refused at write time');
 
 select * from finish();
 rollback;

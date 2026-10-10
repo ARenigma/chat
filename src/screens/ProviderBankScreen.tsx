@@ -62,17 +62,20 @@ export function ProviderBankScreen({ onBack }: Props) {
    * `useState` initial values are read once at mount; if `account` and `tax`
    * are undefined at that point (cold cache), all fields start blank. The
    * refs below fill each half once, so nothing the user has typed since is
-   * clobbered.
+   * clobbered, and skip a half the user started typing into before its query
+   * resolved: what they typed wins over the saved row.
    */
   const accountFilled = useRef(false);
   const panFilled = useRef(false);
+  const accountEdited = useRef(false);
+  const panEdited = useRef(false);
   useEffect(() => {
     // Each half fills once, when ITS query resolves: the two load
     // independently, and waiting for "either" left the account fields blank
     // whenever the tax profile happened to arrive first.
     if (!accountFilled.current && account !== undefined) {
       accountFilled.current = true;
-      if (account !== null) {
+      if (account !== null && !accountEdited.current) {
         setMethod(account.method);
         setVpa(account.upi_vpa ?? '');
         setAccountNumber(account.account_number ?? '');
@@ -82,7 +85,7 @@ export function ProviderBankScreen({ onBack }: Props) {
     }
     if (!panFilled.current && tax !== undefined) {
       panFilled.current = true;
-      if (tax !== null) {
+      if (tax !== null && !panEdited.current) {
         setPan(tax.pan ?? '');
       }
     }
@@ -167,7 +170,10 @@ export function ProviderBankScreen({ onBack }: Props) {
           {(['upi', 'bank'] as const).map(m => (
             <Pressable
               key={m}
-              onPress={() => setMethod(m)}
+              onPress={() => {
+                accountEdited.current = true;
+                setMethod(m);
+              }}
               testID={`bank-method-${m}`}
               accessibilityRole="tab"
               checked={method === m}
@@ -187,7 +193,10 @@ export function ProviderBankScreen({ onBack }: Props) {
           <M3Field
             label="UPI ID"
             value={vpa}
-            onChangeText={setVpa}
+            onChangeText={t => {
+              accountEdited.current = true;
+              setVpa(t);
+            }}
             placeholder="yourname@upi"
             autoCapitalize="none"
             autoCorrect={false}
@@ -199,7 +208,10 @@ export function ProviderBankScreen({ onBack }: Props) {
             <M3Field
               label="Account number"
               value={accountNumber}
-              onChangeText={t => setAccountNumber(t.replace(/[^0-9]/g, ''))}
+              onChangeText={t => {
+                accountEdited.current = true;
+                setAccountNumber(t.replace(/[^0-9]/g, ''));
+              }}
               placeholder="Account number"
               inputMode="numeric"
               keyboardType="number-pad"
@@ -208,7 +220,10 @@ export function ProviderBankScreen({ onBack }: Props) {
             <M3Field
               label="IFSC"
               value={ifsc}
-              onChangeText={t => setIfsc(t.toUpperCase())}
+              onChangeText={t => {
+                accountEdited.current = true;
+                setIfsc(t.toUpperCase());
+              }}
               placeholder="HDFC0000001"
               autoCapitalize="characters"
               autoCorrect={false}
@@ -218,7 +233,10 @@ export function ProviderBankScreen({ onBack }: Props) {
             <M3Field
               label="Account holder name"
               value={holder}
-              onChangeText={setHolder}
+              onChangeText={t => {
+                accountEdited.current = true;
+                setHolder(t);
+              }}
               placeholder="As printed on the account"
               testID="bank-holder"
             />
@@ -240,7 +258,10 @@ export function ProviderBankScreen({ onBack }: Props) {
         <M3Field
           label="PAN"
           value={pan}
-          onChangeText={t => setPan(t.toUpperCase())}
+          onChangeText={t => {
+            panEdited.current = true;
+            setPan(t.toUpperCase());
+          }}
           placeholder="ABCPV1234D"
           autoCapitalize="characters"
           autoCorrect={false}
