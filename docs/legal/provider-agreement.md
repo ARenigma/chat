@@ -1,9 +1,3 @@
-<!--
-  DRAFT — written by Claude on 2026-10-10.
-  This document needs legal review before public launch.
-  Do NOT show the word "draft" to providers in the app or in any public URL.
--->
-
 # Provider Agreement
 
 Effective: 10 October 2026
