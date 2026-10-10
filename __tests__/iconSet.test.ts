@@ -232,12 +232,21 @@ describe('every icon name resolves to a glyph the font draws', () => {
     expect(unfilled).toEqual([]);
   });
 
+  it('draws every outline glyph in ONE weight, bold', () => {
+    // Owner, 2026-10-10, from a Phosphor regular / bold / Tabler comparison:
+    // bold (about 2.25px at 24dp) for the whole set, fills unchanged. The
+    // generator reads this and refuses anything but regular or bold.
+    expect((config as { outlineWeight?: string }).outlineWeight).toBe('bold');
+    expect(read('scripts/gen-icons-font.mjs')).toContain("const OUTLINE_WEIGHTS = new Set(['regular', 'bold']);");
+  });
+
   it('draws the provider-type marks as filled Phosphor glyphs', () => {
     // Astrologer = filled moon-stars (owner decision 2026-09-26). Listener =
-    // filled lotus since 2026-09-27 (Amit: "we are not sales support, find
-    // something therapy vibe"): the headset read as a call-centre agent. Not
-    // the ear or the sparkle, which `listen` and `unwind` already draw.
-    expect(config.glyphs.listener).toBe('flower-lotus-fill');
+    // filled flower since 2026-10-10 (Amit: "replace lotus with flower"),
+    // after the lotus (2026-09-27) that replaced a headset which read as a
+    // call-centre agent. Not the ear or the sparkle, which `listen` and
+    // `unwind` already draw.
+    expect(config.glyphs.listener).toBe('flower-fill');
     expect(config.glyphs.listener).not.toBe(config.glyphs.listen);
     expect(config.glyphs.listener).not.toBe(config.glyphs.unwind);
     expect(config.glyphs.astrologer).toBe('moon-stars-fill');

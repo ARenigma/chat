@@ -23,7 +23,8 @@
  * codepoint rather than a face.
  *
  * WHAT GOES IN THE FONT. Exactly the glyphs design/icons.json names: every
- * `glyphs` entry (regular weight, or fill for a name ending `-fill`), plus
+ * `glyphs` entry (the config's `outlineWeight`, or fill for a name ending
+ * `-fill`), plus
  * every `active` entry (always a `-fill`). A Phosphor name used by two semantic
  * entries is one glyph, not two.
  *
@@ -158,10 +159,25 @@ function phosphorVersion() {
   return JSON.parse(readFileSync(manifest, 'utf8')).version;
 }
 
-/** `heart` -> assets/regular/heart.svg; `heart-fill` -> assets/fill/heart-fill.svg. */
+/**
+ * The ONE outline weight every plain name draws in (design/icons.json
+ * `outlineWeight`): `regular` or `bold`. Bold since 2026-10-10 (owner, from a
+ * Phosphor regular / bold / Tabler comparison). One weight only: a second
+ * outline weight would be a second visual system inside one font.
+ */
+const OUTLINE_WEIGHTS = new Set(['regular', 'bold']);
+let outlineWeight = 'regular';
+
+/**
+ * `heart` -> assets/<outlineWeight>/heart(-bold).svg; `heart-fill` ->
+ * assets/fill/heart-fill.svg. Phosphor suffixes every weight but regular.
+ */
 function svgPath(name) {
-  const weight = name.endsWith('-fill') ? 'fill' : 'regular';
-  return join(PHOSPHOR, 'assets', weight, `${name}.svg`);
+  if (name.endsWith('-fill')) {
+    return join(PHOSPHOR, 'assets', 'fill', `${name}.svg`);
+  }
+  const file = outlineWeight === 'regular' ? name : `${name}-${outlineWeight}`;
+  return join(PHOSPHOR, 'assets', outlineWeight, `${file}.svg`);
 }
 
 function entries(map) {
@@ -174,6 +190,12 @@ async function main() {
     die(`design/icons.json "family" must be "${FAMILY}", got "${cfg.family}"`);
   }
   const version = phosphorVersion();
+  outlineWeight = cfg.outlineWeight ?? 'regular';
+  if (!OUTLINE_WEIGHTS.has(outlineWeight)) {
+    die(
+      `design/icons.json "outlineWeight" must be regular or bold, got "${outlineWeight}"`,
+    );
+  }
 
   const glyphs = entries(cfg.glyphs); // [semantic, phosphor]
   const active = entries(cfg.active); // [semantic, phosphor-fill]

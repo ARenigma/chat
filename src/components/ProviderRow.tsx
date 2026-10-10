@@ -991,7 +991,7 @@ function ProviderRowView({
                   Not a chip since 2026-09-26 (Amit): coloured text behind a
                   filled glyph, the "trophy + Wellness Guide" idiom. Hue tells
                   the two apart down a scrolling column, and the glyph says it a
-                  second way (lotus, moon-stars) for anyone who does not
+                  second way (flower, moon-stars) for anyone who does not
                   separate the hues. The ink is `text/listener` /
                   `text/astrologer`, the text-safe member of each category pair
                   on the card, registered in scripts/check-contrast.mjs. */}
