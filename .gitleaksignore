@@ -1,0 +1,13 @@
+# Reviewed gitleaks findings in history, accepted as not secret (2026-10-10).
+# They surfaced when the PII-scrubbed history was pushed to GitLab, whose old
+# tip shares no base with it, so the pre-push scan covered all 711 commits.
+#
+# Firebase Android client key. Public by design: it ships in every APK and is
+# restricted by package name and signing SHA.
+ef9c69ba1cd6bcedf66bbd9b2af08c0d5f85f857:android/app/google-services.json:gcp-api-key:23
+# Figma file key under its old field name; .gitleaks.toml allowlists the
+# current "fileKey" form.
+d2a6027aff5b0cd47beb27b49c3e547c873c2d0a:design/tokens.json:generic-api-key:5
+71c469a4455a89b2556905ae2861c0b7168637ca:design/tokens.json:generic-api-key:5
+# A config-registry key name (an identifier, not a value).
+aeb89ebbb5e9edd4299bb93156f4be0bec2da6c8:admin/lib/config-registry.ts:generic-api-key:331
