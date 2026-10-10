@@ -2,6 +2,10 @@
 # They surfaced when the PII-scrubbed history was pushed to GitLab, whose old
 # tip shares no base with it, so the pre-push scan covered all 711 commits.
 #
+# Each entry is a gitleaks fingerprint, commit:file:rule:line. It silences that
+# one finding in that one historical commit only; it is not a value allowlist.
+# The same key in any other commit, file or line is still reported.
+#
 # Firebase Android client key. Public by design: it ships in every APK and is
 # restricted by package name and signing SHA.
 ef9c69ba1cd6bcedf66bbd9b2af08c0d5f85f857:android/app/google-services.json:gcp-api-key:23
