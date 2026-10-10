@@ -3092,7 +3092,7 @@
       }
     },
     {
-      "text": "Personal consultation ke liye mail karein: tester1@example.com",
+      "text": "Personal consultation ke liye mail karein: acharya.fixture@gmail.com",
       "label": "hard",
       "category": "email",
       "surface": "profile",
@@ -9449,7 +9449,7 @@
       }
     },
     {
-      "text": "send kundli pdf to tester5@example.com",
+      "text": "send kundli pdf to kundli_fixture_1987@yahoo.in",
       "label": "hard",
       "category": "email",
       "surface": "chat",
