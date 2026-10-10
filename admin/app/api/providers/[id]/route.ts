@@ -26,7 +26,7 @@ export async function GET(
   const [profile, photos, earnings, batches, strikes] = await Promise.all([
     svc.from('profiles').select('*').eq('id', id).single(),
     svc.from('provider_photos').select('*').eq('provider_id', id).order('is_primary', { ascending: false }),
-    svc.from('provider_earnings_ledger').select('status, tokens_earned').eq('provider_id', id),
+    svc.from('provider_earnings_ledger').select('status, provider_tokens').eq('provider_id', id),
     svc.schema('admin').from('payout_history').select('*').eq('provider_id', id).order('created_at', { ascending: false }).limit(10),
     svc.from('contact_guard_strikes').select('*').eq('user_id', id).order('created_at', { ascending: false }).limit(20),
   ]);
@@ -78,6 +78,11 @@ export async function POST(
   }
 
   const { action, days, reason = '', photoId } = body;
+  // The console asks for a reason on every punitive action; the server holds
+  // the same line so a direct call cannot leave an empty audit reason.
+  if ((action === 'suspend' || action === 'ban' || action === 'delist') && !reason.trim()) {
+    return NextResponse.json({ error: 'reason is required' }, { status: 400 });
+  }
   const svc = createServiceClient();
 
   switch (action) {

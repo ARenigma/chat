@@ -29,10 +29,11 @@ export function PayoutActions({ providerId, payable, amount }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providerId, ignoreMinimum }),
       });
-      const json = (await res.json()) as { error?: string; status?: string };
+      const json = (await res.json()) as { error?: string; status?: string; recordError?: string };
       if (!res.ok || json.status === 'failed') {
         setError(json.error ?? 'Payout failed');
       } else {
+        if (json.recordError) setError(json.recordError);
         router.refresh();
       }
     } catch (e) {
