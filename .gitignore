@@ -140,3 +140,6 @@ android/sentry.properties
 
 # Build output: RN bundling writes here (modules.json, the JS bundle). Never commit.
 android/app/src/main/assets/
+
+# secrets / data removed in history cleanup
+play-upload/06-testers/internal-testers-emails.txt
