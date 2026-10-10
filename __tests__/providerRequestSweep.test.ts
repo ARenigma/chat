@@ -151,8 +151,10 @@ describe('D7: ProviderChatsScreen layout and accessibility', () => {
     expect(screen).toContain('Could not load chats');
     expect(screen).toContain('Retry');
   });
-  it('shows an empty-work state when only member-side threads exist', () => {
-    expect(screen).toContain('No provider conversations yet');
+  it('never hides member-side threads behind an empty-work state', () => {
+    // A provider with only their own member-side chats still sees them.
+    expect(screen).not.toContain('No provider conversations yet');
+    expect(screen).not.toMatch(/\) : work\.length === 0 \? \(/);
   });
   it('accessibilityLabel includes unread count and preview', () => {
     expect(screen).toContain('unread');

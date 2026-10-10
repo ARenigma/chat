@@ -331,24 +331,6 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
                 'Turn on availability above so members can reach you.'}
           </Text>
         </View>
-      ) : work.length === 0 ? (
-        // D7: all threads are member-side — provider has had no work yet.
-        <View style={styles.empty}>
-          <View style={styles.emptyMark}>
-            <Icon name="chat" size={TOKENS.icon['2xl']} color={theme.color.text.tertiary} />
-          </View>
-          <Text
-            maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized}
-            allowFontScaling
-            style={styles.emptyTitle}>
-            No provider conversations yet
-          </Text>
-          <Text allowFontScaling style={styles.emptyBody}>
-            {available
-              ? 'When a member starts a conversation with you, it appears here.'
-              : 'Turn on availability above so members can reach you.'}
-          </Text>
-        </View>
       ) : (
         <FlashList
           ref={listRef}
