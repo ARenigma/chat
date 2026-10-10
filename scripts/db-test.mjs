@@ -219,6 +219,7 @@ const MIGRATIONS = [
   'supabase/migrations/190_display_name_editing_profile_guard_earnings_split.sql',
   'supabase/migrations/191_admin_provider_actions.sql',
   'supabase/migrations/192_rename_cooldown_column_guard.sql',
+  'supabase/migrations/193_admin_ban_is_provider_only.sql',
 ];
 
 /**
@@ -1124,6 +1125,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/192_rename_cooldown_column_guard.sql'),
     label:
       'no client writes the rename cooldown column, so the 30-day rename limit holds',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/193_admin_ban_is_provider_only.sql'),
+    label:
+      'the console ban reaches providers only; a member id is refused, not banned',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions

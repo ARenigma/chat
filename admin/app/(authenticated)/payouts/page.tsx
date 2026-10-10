@@ -107,6 +107,11 @@ export default async function PayoutsPage() {
       )}
 
       {/* 191: Payout history */}
+      {history.error ? (
+        <Card>
+          <CardContent className="p-4 text-sm text-destructive">{history.error.message}</CardContent>
+        </Card>
+      ) : null}
       {historyRows.length > 0 && (
         <section className="flex flex-col gap-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

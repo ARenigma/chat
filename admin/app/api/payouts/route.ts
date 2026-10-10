@@ -96,7 +96,14 @@ export async function POST(request: NextRequest) {
     target_type: 'payout',
     actor,
     reason: 'manual payout from admin console',
-    metadata: { ignoreMinimum: body.ignoreMinimum ?? false, response: data },
+    // Named fields, not the raw function response, so the audit row can never
+    // pick up whatever the payout function returns in future.
+    metadata: {
+      ignoreMinimum: body.ignoreMinimum ?? false,
+      status: (data as { status?: string } | null)?.status ?? null,
+      batchId: batchId ?? null,
+      amountPaise: (data as { amountPaise?: number } | null)?.amountPaise ?? null,
+    },
   });
   if (audit.error) recordErrors.push(`audit_log: ${audit.error.message}`);
 
