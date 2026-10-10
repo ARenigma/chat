@@ -48,7 +48,8 @@ function resolveInternalHref(href) {
 const DOWNLOAD_URL =
   'https://github.com/ARenigma/pappal-downloads/releases/latest/download/Pappal.apk';
 const CONTACT_EMAIL = 'hello@pappal.live';
-const CONTACT_PHONE = 'tel:+910000000001';
+// Printed, not a tel: link: the history cleanup took the dialable form out.
+const CONTACT_PHONE = '+91 70578 87915';
 const BUSINESS_ADDRESS =
   'Building 145, Sector 44 Road, Gurugram, Haryana 122003, India';
 
@@ -101,7 +102,7 @@ for (const page of pages) {
   if (!body.includes(`mailto:${CONTACT_EMAIL}`)) {
     problems.push(`web/${page} does not publish ${CONTACT_EMAIL}`);
   }
-  if (!body.includes(CONTACT_PHONE)) {
+  if (!plainText.includes(CONTACT_PHONE)) {
     problems.push(`web/${page} does not publish the support phone`);
   }
   if (!plainText.includes(BUSINESS_ADDRESS)) {

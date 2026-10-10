@@ -603,6 +603,12 @@ li {
   color: var(--text-secondary);
   text-decoration: none;
 }
+/* The support number is printed as text, not a tel: link (owner decision,
+   2026-10-10): the history cleanup took the dialable form out of the repo. */
+.footer-col .footer-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
 .footer-col a:hover {
   color: var(--text-primary);
 }
