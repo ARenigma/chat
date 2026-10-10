@@ -47,6 +47,12 @@ describe('B3: the application can be resumed and re-entered', () => {
     expect(screen).toMatch(/taxData\?\.status === 'verified'[\s\S]{0,120}payoutData != null/);
     expect(screen).toContain("setPhase('confirm');");
   });
+  it('keeps a rejected payout destination on the verify step instead of resuming', () => {
+    const screen = read('src/screens/ProviderApplicationScreen.tsx');
+    expect(screen).toMatch(
+      /if \(payoutData\.verification_status === 'failed'\) \{[\s\S]{0,400}setPayoutError\(payoutRejectedMessage\(payoutData\.method\)\);\s*return;\s*\}[\s\S]{0,200}const confirmed = /,
+    );
+  });
   it('offers members a way back into the application from Settings', () => {
     const settings = read('src/screens/SettingsSheet.tsx');
     expect(settings).toMatch(/'become-provider':\s*onBecomeProvider === undefined \|\| isProvider/);

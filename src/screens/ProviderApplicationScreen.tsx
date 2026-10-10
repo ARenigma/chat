@@ -171,6 +171,13 @@ function maskAccount(value: string): string {
   return value.length <= 4 ? value : `${'\u2022'.repeat(4)} ${value.slice(-4)}`;
 }
 
+/** One line for a rejected payout destination, from the live check or a resume. */
+function payoutRejectedMessage(method: PayoutMethod): string {
+  return method === 'upi'
+    ? 'That UPI ID could not be verified. Check it and try again.'
+    : 'That account could not be verified. Check the number and IFSC.';
+}
+
 /**
  * Five letters, four digits, a letter. Checked here only to enable the button —
  * the real verification is the Income Tax Department's, server-side.
@@ -310,6 +317,19 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
       hasResumed.current = true;
       if (taxData.pan !== null) {
         setPan(taxData.pan);
+      }
+      // A destination the bank rejected is fixed here, as the live check
+      // demands, never carried forward as "still confirming".
+      if (payoutData.verification_status === 'failed') {
+        setPayoutMethod(payoutData.method);
+        if (payoutData.method === 'upi') {
+          setUpiVpa(payoutData.upi_vpa ?? '');
+        } else {
+          setAccountNumber(payoutData.account_number ?? '');
+          setIfsc(payoutData.ifsc ?? '');
+        }
+        setPayoutError(payoutRejectedMessage(payoutData.method));
+        return;
       }
       const confirmed = payoutData.verification_status === 'verified';
       if (!confirmed) {
@@ -488,11 +508,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
       if (runIdRef.current !== thisRun) return;
       if (payoutStatus === 'failed') {
         setPayoutStep('failed');
-        setPayoutError(
-          payoutMethod === 'upi'
-            ? 'That UPI ID could not be verified. Check it and try again.'
-            : 'That account could not be verified. Check the number and IFSC.',
-        );
+        setPayoutError(payoutRejectedMessage(payoutMethod));
         return;
       }
       const payoutRow = await refetchPayout();
