@@ -7,6 +7,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { ProviderActions } from './ProviderActions';
+import { rupeesFromTokens } from '@/lib/money';
 import { PhotoRemoveButton } from './PhotoActions';
 
 export const dynamic = 'force-dynamic';
@@ -161,10 +162,10 @@ export default async function ProviderDetailPage({
                 <dd>{payoutAccount.data?.verification_status ?? 'not provided'}</dd>
               </div>
               <div className="flex gap-2"><dt className="text-muted-foreground w-28 shrink-0">Pending ₹</dt>
-                <dd>₹{pendingTokens.toLocaleString('en-IN')}</dd>
+                <dd>{rupeesFromTokens(pendingTokens)}</dd>
               </div>
               <div className="flex gap-2"><dt className="text-muted-foreground w-28 shrink-0">Paid ₹</dt>
-                <dd>₹{paidTokens.toLocaleString('en-IN')}</dd>
+                <dd>{rupeesFromTokens(paidTokens)}</dd>
               </div>
               <div className="flex gap-2"><dt className="text-muted-foreground w-28 shrink-0">Available</dt>
                 <dd>{profile.is_available ? 'Yes' : 'No'}</dd>

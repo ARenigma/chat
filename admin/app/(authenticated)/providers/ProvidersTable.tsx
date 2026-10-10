@@ -9,6 +9,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { rupeesFromTokens } from '@/lib/money';
 import type { ProviderRow } from './page';
 
 function fmt(ts: string | null | undefined) {
@@ -93,7 +94,7 @@ export function ProvidersTable({ rows }: Props) {
                           : '—'}
                       </TableCell>
                       <TableCell className="text-sm">
-                        ₹{Math.round(row.pending_tokens).toLocaleString('en-IN')}
+                        {rupeesFromTokens(row.pending_tokens)}
                       </TableCell>
                       <TableCell className="text-center">
                         {row.active_strikes > 0 ? (

@@ -89,6 +89,8 @@ export async function POST(request: NextRequest) {
       .update({ initiated_by: actor })
       .eq('id', batchId);
     if (stamp.error) recordErrors.push(`initiated_by: ${stamp.error.message}`);
+  } else {
+    recordErrors.push('initiated_by: the payout response named no batch');
   }
   const audit = await svc.schema('admin').from('audit_log').insert({
     action: 'payout_initiated',

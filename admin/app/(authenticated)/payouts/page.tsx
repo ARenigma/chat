@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { rupeesFromTokens } from '@/lib/money';
 import { PayoutActions } from './PayoutActions';
 
 export const dynamic = 'force-dynamic';
@@ -84,7 +85,7 @@ export default async function PayoutsPage() {
                     <TableCell className="font-medium">
                       {r.display_name ?? r.provider_id.slice(0, 8)}
                     </TableCell>
-                    <TableCell>₹{r.claimable_tokens.toLocaleString('en-IN')}</TableCell>
+                    <TableCell>{rupeesFromTokens(r.claimable_tokens)}</TableCell>
                     <TableCell>
                       <StatusBadge status={r.account_status ?? 'none'} />
                     </TableCell>
