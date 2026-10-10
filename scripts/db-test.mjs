@@ -218,6 +218,7 @@ const MIGRATIONS = [
   'supabase/migrations/189_provider_agreement_and_gender.sql',
   'supabase/migrations/190_display_name_editing_profile_guard_earnings_split.sql',
   'supabase/migrations/191_admin_provider_actions.sql',
+  'supabase/migrations/192_rename_cooldown_column_guard.sql',
 ];
 
 /**
@@ -1118,6 +1119,11 @@ const suites = [
     file: join(ROOT, 'supabase/tests/191_admin_provider_actions.sql'),
     label:
       'admin provider actions are admin-only and audited, delist hides from the directory, the old admit path is retired',
+  },
+  {
+    file: join(ROOT, 'supabase/tests/192_rename_cooldown_column_guard.sql'),
+    label:
+      'no client writes the rename cooldown column, so the 30-day rename limit holds',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions
