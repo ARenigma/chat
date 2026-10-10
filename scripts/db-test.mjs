@@ -220,6 +220,7 @@ const MIGRATIONS = [
   'supabase/migrations/191_admin_provider_actions.sql',
   'supabase/migrations/192_rename_cooldown_column_guard.sql',
   'supabase/migrations/193_admin_ban_is_provider_only.sql',
+  'supabase/migrations/194_profile_save_locks_and_photo_delete_serialized.sql',
 ];
 
 /**
@@ -1130,6 +1131,14 @@ const suites = [
     file: join(ROOT, 'supabase/tests/193_admin_ban_is_provider_only.sql'),
     label:
       'the console ban reaches providers only; a member id is refused, not banned',
+  },
+  {
+    file: join(
+      ROOT,
+      'supabase/tests/194_profile_save_locks_and_photo_delete_serialized.sql',
+    ),
+    label:
+      'resaving an unchanged name is not a rename; profile saves lock their row; photo deletes take a per-provider lock',
   },
   /*
    * Last, and on purpose: the only suite that COMMITS (two dblink sessions
