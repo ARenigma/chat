@@ -2,7 +2,7 @@
  * How far scroll content must pad its bottom to clear the bottom bar.
  *
  * Computed from the SAME parts the bar is built from, not measured: the slot
- * (`interaction.minTarget`), the clamped navigation inset (`clampBottomInset`,
+ * (`SLOT_HEIGHT`, the 80dp labelled bar), the clamped navigation inset (`clampBottomInset`,
  * the one clamp the bar also calls) and the hairline. Measuring would give 0 on
  * the first frame and a jump on the second.
  *
@@ -15,10 +15,9 @@
 
 import { StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { INTERACTION } from '../theme/motion';
-import { clampBottomInset } from './bottom-bar/BottomBarStyles';
+import { clampBottomInset, SLOT_HEIGHT } from './bottom-bar/BottomBarStyles';
 
 export function useBottomBarOffset(modifier = 0): number {
   const { bottom } = useSafeAreaInsets();
-  return INTERACTION.minTarget + clampBottomInset(bottom) + StyleSheet.hairlineWidth + modifier;
+  return SLOT_HEIGHT + clampBottomInset(bottom) + StyleSheet.hairlineWidth + modifier;
 }

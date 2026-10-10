@@ -2,9 +2,13 @@
  * The bottom bar's geometry, in one place so the bar and `useBottomBarOffset`
  * cannot disagree about how tall it is.
  *
- * Slot = `space.sm` 12 above + the 32dp pill + `space['2xs']` 4 below = 48,
- * which is `interaction.minTarget`: the whole column is the touch target, a
- * real 48dp box, because `hitSlop` cannot extend past a parent on Android
+ * Slot = `space.sm` 12 above + the 32dp pill + `space['2xs']` 4 + the 16dp
+ * label line + `space.md` 16 below = 80, the M3 labelled bar
+ * (androidx NavigationBarTokens.TallContainerHeight = 80.dp,
+ * ItemActiveIndicatorIconLabelSpace = 4.dp, LabelTextFont = LabelMedium), and
+ * the 80dp WhatsApp's bar measures on the S22 (owner, 2026-10-10: labels like
+ * WhatsApp). The whole column is the touch target, well over 48dp, because
+ * `hitSlop` cannot extend past a parent on Android
  * (developer.android.com/guide/topics/ui/accessibility/apps, "touch target
  * size"). platform.test.ts asserts the sum.
  *
@@ -14,7 +18,6 @@
 
 import { StyleSheet } from 'react-native';
 import { TOKENS, type Theme } from '../../theme/tokens';
-import { INTERACTION } from '../../theme/motion';
 import { CONTENT_COLUMN_MAX } from '../../lib/windowSize';
 
 /**
@@ -25,6 +28,11 @@ import { CONTENT_COLUMN_MAX } from '../../lib/windowSize';
  */
 export const INDICATOR_WIDTH = 64;
 const INDICATOR_HEIGHT = 32;
+/** labelMedium's line height: the label row under the pill. */
+const LABEL_LINE = 16;
+/** The labelled slot, 12 + 32 + 4 + 16 + 16 (see the header). */
+export const SLOT_HEIGHT =
+  TOKENS.space.sm + INDICATOR_HEIGHT + TOKENS.space['2xs'] + LABEL_LINE + TOKENS.space.md;
 
 /**
  * The bar's bottom padding: the navigation inset clamped to
@@ -68,7 +76,7 @@ export const makeStyles = (t: Theme) =>
     },
     slot: {
       flex: 1,
-      height: INTERACTION.minTarget,
+      height: SLOT_HEIGHT,
       alignItems: 'center',
       paddingTop: TOKENS.space.sm,
     },
@@ -91,5 +99,18 @@ export const makeStyles = (t: Theme) =>
       width: TOKENS.icon.md,
       height: INDICATOR_HEIGHT,
       justifyContent: 'center',
+    },
+    // M3 places the label 4dp under the indicator and never moves the icon
+    // between states (androidx NavigationBar.kt placeLabelAndIcon). Every label
+    // is full-strength ink, as WhatsApp's are; the selected one is the
+    // emphasized weight (see BottomBar.tsx for that departure from M3).
+    label: {
+      ...TOKENS.typography.labelMedium,
+      marginTop: TOKENS.space['2xs'],
+      color: t.color.text.primary,
+      textAlign: 'center',
+    },
+    labelSelected: {
+      ...TOKENS.typography.labelMediumEmphasized,
     },
   });

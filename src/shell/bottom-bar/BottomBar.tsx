@@ -2,9 +2,12 @@
  * The bottom tab bar, Bluesky's bar with the M3 indicator pill kept.
  *
  * Owner decisions (2026-09-25/27): opaque surface with a hairline top border,
- * no ripple, no Frost, icon-only for both roles (the a11y labels stay), the M3
- * pill behind the selected icon, the filled Phosphor glyph when selected, and
- * the `press="tab"` 0.90 press on every slot.
+ * no ripple, no Frost, the M3 pill behind the selected icon, the filled
+ * Phosphor glyph when selected, and the `press="tab"` 0.90 press on every slot.
+ * 2026-10-10 ("ours feel dull", measured against WhatsApp on the S22): a label
+ * under every tab, the M3 80dp labelled bar, and WhatsApp's colour recipe in
+ * coral. Unselected glyphs and labels are full-strength ink, not grey;
+ * selection is the deeper pill, the palest-coral filled glyph and a bold label.
  *
  * Buttons are built from `props.state.routes`, so a tab the navigator did not
  * register (CallsTab while CALLS_TAB_ENABLED is off) has no button, and the
@@ -18,7 +21,7 @@
  */
 
 import React, { memo, useCallback, useEffect } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 import Animated, {
   ReduceMotion,
   useAnimatedStyle,
@@ -51,7 +54,7 @@ type TabRootName = 'Home' | 'Favourites' | 'Calls' | 'You' | 'Chats' | 'Saved';
 export interface BottomBarTab {
   name: TabRootName;
   glyph: IconName;
-  /** The TalkBack name. The bar is icon-only, so this is the only label. */
+  /** The label under the glyph, and the TalkBack name. */
   label: string;
   hint: string;
   testID: string;
@@ -241,14 +244,30 @@ function SlotView({ tab, selected, onPressTab }: SlotProps) {
           // destination is filled" (m3.material.io/components/navigation-bar/guidelines).
           active={selected}
           size={TOKENS.icon.md}
-          // text/navSelected on bg/navIndicator: 4.46:1 light (step 500 on
-          // 50), 4.33:1 dark (step 400 on 900), over the 3:1 non-text floor
-          // (scripts/check-contrast.mjs). Dark is 400, not the brand 500,
-          // because 500 on the 900 pill is 2.87:1 (owner, 2026-09-27).
-          color={selected ? theme.color.text.navSelected : theme.color.text.secondary}
+          // M3 OnSecondaryContainer on SecondaryContainer: text/navSelected on
+          // bg/navIndicator: step 800 on 100 light, step 200 on 800 dark, both
+          // checked in scripts/check-contrast.mjs. Since the 2026-10-10 OKLCH
+          // re-tune the tints carry chroma (step 200 is C 0.096, WhatsApp's
+          // glyph 0.067), so the selected glyph reads coral, not white. Unselected
+          // glyphs are text/primary, full strength like WhatsApp's (#F7F8FA on
+          // its bar, 18:1), where M3 would use OnSurfaceVariant grey: the grey
+          // is what made the bar read dull (owner, 2026-10-10).
+          color={selected ? theme.color.text.navSelected : theme.color.text.primary}
         />
         <Badge count={count} placement="badgedBox" />
       </View>
+      {/* The tab speaks its accessibilityLabel; the drawn label is not read
+          twice. Selected is bold like WhatsApp's (its "large" label); M3 only
+          recolours it (androidx NavigationBar.kt), a stated departure. No
+          animation on the swap: a tab switch is a 100+/day action. */}
+      <Text
+        style={[styles.label, selected && styles.labelSelected]}
+        numberOfLines={1}
+        allowFontScaling
+        maxFontSizeMultiplier={TOKENS.fontScaleCap.navLabel}
+        importantForAccessibility="no">
+        {tab.label}
+      </Text>
     </Pressable>
   );
 

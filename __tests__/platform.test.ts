@@ -1026,13 +1026,18 @@ describe('device coverage matrix', () => {
     );
   });
 
-  it('keeps the tab bar icon-only so 200% font scale cannot overflow it', () => {
-    // The audit's 49dp-at-2x finding was a labelled tab row. The bar is now
-    // glyphs only; text scale has nothing to grow. The bottom bar since
-    // navigation step 7 (icon-only for both roles, owner 2026-09-25): the label
-    // is the TalkBack name only.
+  it('caps the tab label so 200% font scale cannot overflow the bar', () => {
+    // The audit's 49dp-at-2x finding was a labelled tab row. The bar was
+    // icon-only from step 7; labels came back on 2026-10-10 (owner, labels like
+    // WhatsApp), capped at navLabel so the scaled line stays inside the slot:
+    // 16dp line x cap <= the 16dp label row + the 16dp bottom padding.
     const bar = read('src/shell/bottom-bar/BottomBar.tsx');
-    expect(bar).not.toMatch(/<Text\b/);
+    expect(bar).toContain('maxFontSizeMultiplier={TOKENS.fontScaleCap.navLabel}');
+    expect(bar).toContain('numberOfLines={1}');
+    expect(TOKENS.fontScaleCap.navLabel).toBeLessThanOrEqual(1.3);
+    expect(TOKENS.typography.labelMedium.lineHeight * TOKENS.fontScaleCap.navLabel).toBeLessThanOrEqual(
+      16 + TOKENS.space.md,
+    );
     expect(bar).toContain('accessibilityLabel={tab.label}');
     expect(bar).toContain('<Icon');
     expect(read('src/components/Icon.tsx')).toContain(
@@ -2949,15 +2954,27 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     expect(bar).toContain('testID={tab.testID}');
   });
 
-  it('makes each slot a real 48dp target: 12 + the 32 pill + 4', () => {
-    // hitSlop cannot extend past a parent on Android, so the box itself is 48.
+  it('makes each slot the 80dp M3 labelled bar: 12 + the 32 pill + 4 + 16 label + 16', () => {
+    // androidx NavigationBarTokens.TallContainerHeight = 80.dp, and the 80dp
+    // WhatsApp's bar measures on the S22 (owner, 2026-10-10). hitSlop cannot
+    // extend past a parent on Android, so the box itself is the target.
     // https://developer.android.com/guide/topics/ui/accessibility/apps
     const slot = block(styles, 'slot');
-    expect(slot).toContain('height: INTERACTION.minTarget');
+    expect(slot).toContain('height: SLOT_HEIGHT');
     expect(slot).toContain('paddingTop: TOKENS.space.sm');
     expect(styles).toContain('const INDICATOR_HEIGHT = 32;');
-    expect(TOKENS.space.sm + 32 + TOKENS.space['2xs']).toBe(TOKENS.interaction.minTarget);
+    expect(styles).toContain('const LABEL_LINE = 16;');
+    expect(TOKENS.space.sm + 32 + TOKENS.space['2xs'] + 16 + TOKENS.space.md).toBe(80);
+    expect(TOKENS.typography.labelMedium.lineHeight).toBe(16);
     expect(bar).toContain('size={INTERACTION.minTarget}');
+  });
+
+  it('labels every tab, bold when selected, read once by TalkBack', () => {
+    expect(bar).toMatch(/style=\{\[styles\.label, selected && styles\.labelSelected\]\}/);
+    expect(bar).toContain('maxFontSizeMultiplier={TOKENS.fontScaleCap.navLabel}');
+    expect(bar).toContain('importantForAccessibility="no"');
+    expect(bar).toContain('{tab.label}');
+    expect(block(styles, 'labelSelected')).toContain('TOKENS.typography.labelMediumEmphasized');
   });
 
   it('pads the bar and the offset with ONE clamp of the navigation inset', () => {
@@ -2967,7 +2984,7 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     expect(bar).toContain('paddingBottom: clampBottomInset(insets.bottom)');
     const offset = code(OFFSET);
     expect(offset).toContain(
-      'INTERACTION.minTarget + clampBottomInset(bottom) + StyleSheet.hairlineWidth',
+      'SLOT_HEIGHT + clampBottomInset(bottom) + StyleSheet.hairlineWidth',
     );
     // Nobody else re-derives it.
     for (const f of [BAR, OFFSET]) {
@@ -2987,25 +3004,25 @@ describe('step 5 shell: the bottom bar (not mounted)', () => {
     expect(indicator).toContain('backgroundColor: t.color.bg.navIndicator');
   });
 
-  it('draws the selected glyph in its own role, step 500 light and 400 dark', () => {
-    // Owner, 2026-09-27: text/accent dark is step 300; the selected glyph on
-    // the step-900 pill is 400 (4.33:1), the nearest step to the brand 500
-    // (2.87:1 there) that clears the 3:1 non-text floor.
+  it('draws WhatsApp\'s recipe in coral: on-container glyph, full-strength unselected', () => {
+    // Owner, 2026-10-10, measured on the S22: WhatsApp's selected glyph is the
+    // palest brand tint on a deep pill and nothing is greyed. M3
+    // OnSecondaryContainer on SecondaryContainer, unselected text/primary.
     // https://developer.android.com/guide/topics/ui/accessibility/apps
     expect(bar).toContain(
-      'color={selected ? theme.color.text.navSelected : theme.color.text.secondary}',
+      'color={selected ? theme.color.text.navSelected : theme.color.text.primary}',
     );
     expect(bar).not.toMatch(/selected \? theme\.color\.text\.accent\b/);
     const spec = JSON.parse(read('design/tokens.json')) as {
       color: { tokens: Record<string, { step?: Record<string, string> }> };
     };
     expect(spec.color.tokens['text/navSelected']!.step).toEqual({
-      Light: 'primary_500',
-      Dark: 'primary_400',
+      Light: 'primary_800',
+      Dark: 'primary_200',
     });
     expect(spec.color.tokens['bg/navIndicator']!.step).toEqual({
-      Light: 'primary_50',
-      Dark: 'primary_900',
+      Light: 'primary_100',
+      Dark: 'primary_800',
     });
   });
 

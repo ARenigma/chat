@@ -3280,7 +3280,8 @@ describe('dark theme: WhatsApp charcoal since 2026-10-03 (was the reference app 
      * the dark card as well as the base. Was #FF8457 / #FFAD8F.
      */
     expect(DARK.color.bg.accent).toBe('#C2401F');
-    expect(DARK.color.text.accent).toBe('#DF9481');
+    // Step 300, re-tuned in OKLCH on 2026-10-10 (was #DF9481).
+    expect(DARK.color.text.accent).toBe('#F88468');
     // The retired brand greens must not creep back in as the accent.
     expect(DARK.color.bg.accent).not.toBe('#21C063');
     expect(DARK.color.bg.accent).not.toBe('#25D366');

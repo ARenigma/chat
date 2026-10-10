@@ -310,13 +310,10 @@ const PAIRS = [
       'a glyph or dot, not a label: 3:1 is the non-text target. The nav label under the glyph is text and the pill a second signal; the dot sits beside the timer that states the balance. The dot was bg/accent, 2.87:1 on the dark wash at 900, so it takes this ink',
   },
   /*
-   * The bottom bar's selected glyph on its own pill (src/shell/bottom-bar,
-   * nav-migration step 5). The pill is bg/navIndicator: step 900 in dark, the
-   * step that separates from the bar as much as the light pill does (1.13 vs
-   * 1.16). The wash moved to the same step on 2026-09-27.
-   * The glyph is text/navSelected, its own role (owner, 2026-09-27): step 500
-   * light, 400 dark. bg/accent (step 500) on 900 is 2.87:1, under the 3:1
-   * non-text floor; 400 is the nearest step to the brand that clears it.
+   * The bottom bar's selected glyph on its own pill (src/shell/bottom-bar).
+   * M3 OnSecondaryContainer on SecondaryContainer, in coral: step 900 on the
+   * step-100 pill light, step 50 on the step-800 pill dark (owner,
+   * 2026-10-10, WhatsApp's recipe measured on the S22: #D9FDD3 on #103529).
    */
   {
     fg: 'text/navSelected',

@@ -25,8 +25,8 @@
   --bg-accent-strong: #C2401F;
   --bg-accent-gradient-from: #C2401F;
   --bg-accent-gradient-to: #832B15;
-  --bg-accent-tint: #F9EBE7;
-  --bg-nav-indicator: #F9EBE7;
+  --bg-accent-tint: #FFE9E3;
+  --bg-nav-indicator: #FFD2C6;
   --bg-listener: #D8E8FF;
   --bg-astrologer: #EBE0FF;
   --bg-positive: #DCE8E3;
@@ -38,7 +38,7 @@
   --text-section: #6A6F72;
   --text-muted: #8E8E93;
   --text-accent: #C2401F;
-  --text-nav-selected: #C2401F;
+  --text-nav-selected: #692110;
   --text-on-accent: #FFFFFF;
   --text-on-accent-tint: #692110;
   --text-on-state: #FFFFFF;
@@ -168,7 +168,7 @@
   --bg-accent-gradient-from: #C2401F;
   --bg-accent-gradient-to: #832B15;
   --bg-accent-tint: #49170A;
-  --bg-nav-indicator: #49170A;
+  --bg-nav-indicator: #692110;
   --bg-listener: #20507F;
   --bg-astrologer: #452F70;
   --bg-positive: #16302A;
@@ -179,10 +179,10 @@
   --text-tertiary: #757575;
   --text-section: #949494;
   --text-muted: #696969;
-  --text-accent: #DF9481;
-  --text-nav-selected: #D26E55;
+  --text-accent: #F88468;
+  --text-nav-selected: #FFB19D;
   --text-on-accent: #FFFFFF;
-  --text-on-accent-tint: #DF9481;
+  --text-on-accent-tint: #F88468;
   --text-on-state: #0A1F14;
   --text-on-inverse: #1E1E1E;
   --text-positive: #A8D8C8;
