@@ -34,21 +34,25 @@ export function ContactGuardActions({ userId }: Props) {
   }
 
   function clear() {
-    const note = window.prompt(`Clear review for ${userId.slice(0, 8)}…? Add a note (optional):`) ?? undefined;
-    resolve('clear', undefined, note);
+    // The prompt is also the confirmation: Cancel (null) clears nothing.
+    const note = window.prompt(`Clear review for ${userId.slice(0, 8)}…? Add a note (optional):`);
+    if (note === null) return;
+    resolve('clear', undefined, note || undefined);
   }
   function suspend() {
     const raw = window.prompt('Suspend for how many days?', '7');
     if (!raw) return;
     const days = parseInt(raw, 10);
     if (isNaN(days) || days <= 0) { setError('Invalid days'); return; }
-    const note = window.prompt('Note (optional):') ?? undefined;
-    resolve('suspend', days, note);
+    const note = window.prompt('Note (optional):');
+    if (note === null) return;
+    resolve('suspend', days, note || undefined);
   }
   function ban() {
     if (!window.confirm(`Ban ${userId.slice(0, 8)}…? Sets suspended_until to 2999.`)) return;
-    const note = window.prompt('Reason:') ?? undefined;
-    resolve('ban', undefined, note);
+    const note = window.prompt('Reason:');
+    if (note === null) return;
+    resolve('ban', undefined, note || undefined);
   }
 
   return (
