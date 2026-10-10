@@ -37,7 +37,7 @@
  * Motion: none. The screen is a push (the platform's transition); the
  * progress bar is the shared ProgressBar, a determinate M3 indicator.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { launchImageLibrary, type Asset } from 'react-native-image-picker';
 import Video from 'react-native-video';
@@ -113,16 +113,29 @@ export function StoryCreateScreen({ onBack, onPosted }: Props) {
   const [posting, setPosting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [attempt, setAttempt] = useState<PostAttempt | null>(null);
+  const [posted, setPosted] = useState(false);
 
   // D7: discard guard — hold back-navigation when there is a draft, a
-  // non-empty caption, or an upload in progress.
+  // non-empty caption, or an upload in progress. A posted story is not a
+  // draft: the guard is off before the screen leaves, or every successful post
+  // would end on "Discard story?".
   // https://reactnavigation.org/docs/preventing-going-back
-  const hasDraft = draft !== null || caption.trim().length > 0 || posting;
+  const hasDraft = !posted && (draft !== null || caption.trim().length > 0 || posting);
   const [heldAction, setHeldAction] = useState<NavigationAction | null>(null);
 
   usePreventRemove(hasDraft, ({ data }) => {
     setHeldAction(data.action);
   });
+
+  // Leave only after the render that switched the guard off, and once: a
+  // re-render with a new onPosted must not pop a second screen.
+  const left = useRef(false);
+  useEffect(() => {
+    if (posted && !left.current) {
+      left.current = true;
+      onPosted();
+    }
+  }, [posted, onPosted]);
 
   const pick = useCallback(async () => {
     const result = await launchImageLibrary({
@@ -178,7 +191,7 @@ export function StoryCreateScreen({ onBack, onPosted }: Props) {
     if (out.ok) {
       invalidate();
       setNotice('Your story is up for 24 hours.', 'confirm');
-      onPosted();
+      setPosted(true);
       return;
     }
     setAttempt(out.attempt);

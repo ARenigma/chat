@@ -243,11 +243,18 @@ export function useCompleteProviderOnboarding() {
  * complete_provider_onboarding as a second, authoritative gate.
  */
 export function useAcceptProviderAgreement() {
+  const setNotice = useStore(s => s.setNotice);
   return useMutation({
     mutationFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase.rpc as any)('accept_current_provider_agreement');
       if (error) throw new Error(error.message);
+    },
+    // Go live awaits this before onboarding; without a notice a failure here
+    // was the old "Go live does nothing" bug again.
+    onError: () => {
+      errorTick();
+      setNotice('Could not record the agreement. Please try again.');
     },
   });
 }

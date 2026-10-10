@@ -1248,7 +1248,7 @@ export function ProviderApplicationScreen({ onBack, onSubmitted, onGuard }: Prop
           label="Go live"
           onPress={onGoLive}
           disabled={!profileReady}
-          busy={complete.isPending}
+          busy={acceptAgreement.isPending || complete.isPending}
           busyLabel="Going live"
           testID="provider-golive"
         />

@@ -761,6 +761,9 @@ describe('the draft is purged on an intentional exit', () => {
     // wrapper, and once in the provider call-confirm dialog's onConfirm (C9).
     expect(screen.match(/\bonBack\(\)/g) ?? []).toHaveLength(1);
     expect(screen.match(/mutationOnStartCall\?\.\(/g) ?? []).toHaveLength(2);
+    // And each of the two runs straight after the purge, so the provider's
+    // confirm dialog cannot start a call with the draft left behind.
+    expect(screen.match(/purgeDraft\(\);\s*mutationOnStartCall\?\.\(/g) ?? []).toHaveLength(2);
   });
 
   it('clears the stored draft through the shared helper', () => {

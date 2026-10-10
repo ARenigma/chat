@@ -120,3 +120,13 @@ describe('picking story media asks for nothing new', () => {
     expect(manifest).not.toMatch(/READ_MEDIA_VIDEO"\s*\/>/);
   });
 });
+
+describe('a posted story leaves without the discard prompt', () => {
+  it('switches the discard guard off before it navigates away', () => {
+    const screen = code('src/screens/StoryCreateScreen.tsx');
+    expect(screen).toMatch(/const hasDraft = !posted && \(/);
+    // The success path sets the flag; the navigation runs in an effect, once.
+    expect(screen).toMatch(/'Your story is up for 24 hours\.', 'confirm'\);\s*setPosted\(true\);/);
+    expect(screen).toMatch(/if \(posted && !left\.current\) \{\s*left\.current = true;\s*onPosted\(\);/);
+  });
+});
