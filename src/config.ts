@@ -25,6 +25,13 @@ export const CALLS_ENABLED = true;
 export const CALLS_TAB_ENABLED = false;
 
 /**
+ * The "Become a provider" row in a member's Settings. Hidden for now (owner,
+ * 2026-10-12); the application flow and its other entry points are untouched,
+ * so flipping this back is the whole change.
+ */
+export const BECOME_PROVIDER_IN_SETTINGS = false;
+
+/**
  * Whether a real payment can be taken.
  *
  * Off until the UPI intent / Play Billing rail is wired. The Recharge screen

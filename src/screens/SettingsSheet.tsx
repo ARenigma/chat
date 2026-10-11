@@ -33,6 +33,7 @@ import { Avatar } from '../components/Avatar';
 import { resetStore, useStore } from '../store/useStore';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
+import { BECOME_PROVIDER_IN_SETTINGS } from '../config';
 
 interface Props {
   onDeleted: () => void;
@@ -208,6 +209,9 @@ function SettingsRowContent({
         <View style={styles.iconBox}>
           <Icon
             name={icon}
+            // Row icons draw the regular list weight; bold is for standalone
+            // controls (design/icons.json listWeight, owner 2026-10-11).
+            list
             size={TOKENS.icon.lg}
             // Bluesky's ItemIcon takes the text colour, not a muted one.
             color={danger ? theme.color.text.destructive : theme.color.text.primary}
@@ -241,12 +245,14 @@ function SettingsRowContent({
       {selected ? (
         <Icon
           name="check"
+          list
           size={TOKENS.icon.sm}
           color={theme.color.text.primary}
         />
       ) : chevron ? (
         <Icon
           name="chevronRight"
+          list
           size={TOKENS.icon.sm}
           // Bluesky's Chevron: contrast_500, or negative_500 on a destructive row.
           color={danger ? theme.color.text.destructive : theme.color.text.tertiary}
@@ -526,7 +532,7 @@ export function SettingsSheet({
             accessibilityLabel: 'Blocked People',
           },
     'become-provider':
-      onBecomeProvider === undefined || isProvider
+      !BECOME_PROVIDER_IN_SETTINGS || onBecomeProvider === undefined || isProvider
         ? undefined
         : {
             icon: 'listener',

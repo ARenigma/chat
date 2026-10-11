@@ -55,7 +55,11 @@ describe('B3: the application can be resumed and re-entered', () => {
   });
   it('offers members a way back into the application from Settings', () => {
     const settings = read('src/screens/SettingsSheet.tsx');
-    expect(settings).toMatch(/'become-provider':\s*onBecomeProvider === undefined \|\| isProvider/);
+    expect(settings).toMatch(
+      /'become-provider':\s*!BECOME_PROVIDER_IN_SETTINGS \|\| onBecomeProvider === undefined \|\| isProvider/,
+    );
+    // Hidden for now (owner, 2026-10-12); the flag is the whole switch.
+    expect(read('src/config.ts')).toContain('export const BECOME_PROVIDER_IN_SETTINGS = false;');
     const routes = read('src/screens/routes/MemberRoutes.tsx');
     expect(routes).toMatch(/onBecomeProvider=\{\(\) => \{\s*[\s\S]{0,400}storage\.set\(PROVIDER_INTENT_KEY, '1'\);\s*nav\.push\('Apply', \{ from: 'settings' \}\);/);
   });
