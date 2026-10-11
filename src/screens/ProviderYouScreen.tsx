@@ -384,6 +384,7 @@ export function ProviderYouScreen({
                     <View key={row.key} style={styles.channelRow}>
                       <Icon
                         name={row.glyph}
+                        list
                         size={TOKENS.icon.sm}
                         color={on ? theme.color.text.primary : theme.color.text.tertiary}
                       />
@@ -435,11 +436,11 @@ export function ProviderYouScreen({
               highlight="dim"
               style={styles.seeProfileRow}
             >
-              <Icon name="person" size={TOKENS.icon.sm} color={theme.color.text.secondary} />
+              <Icon name="person" list size={TOKENS.icon.sm} color={theme.color.text.secondary} />
               <Text allowFontScaling style={styles.seeProfileLabel}>
                 See your profile
               </Text>
-              <Icon name="chevronRight" size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
+              <Icon name="chevronRight" list size={TOKENS.icon.sm} color={theme.color.text.tertiary} />
             </Pressable>
           ) : null}
         </View>

@@ -73,7 +73,7 @@ export function AppearanceScreen({ onBack }: Props) {
             on one line, the segmented control under it (social-app
             AppearanceSettings.tsx). Font and Dim/Dark do not apply to us. */}
         <View style={styles.groupHead}>
-          <Icon name="device" size={TOKENS.icon.md} color={theme.color.text.primary} />
+          <Icon name="device" list size={TOKENS.icon.md} color={theme.color.text.primary} />
           <Text allowFontScaling style={styles.groupTitle}>
             Color mode
           </Text>

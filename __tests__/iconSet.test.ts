@@ -240,13 +240,24 @@ describe('every icon name resolves to a glyph the font draws', () => {
     expect(read('scripts/gen-icons-font.mjs')).toContain("const OUTLINE_WEIGHTS = new Set(['regular', 'bold']);");
   });
 
+  it('draws list rows in the regular list weight, controls in bold', () => {
+    // Owner, 2026-10-11: "settings icon seem too bold". A column of bold row
+    // icons reads heavy; one bold glyph alone in a bar does not.
+    expect((config as { listWeight?: string }).listWeight).toBe('regular');
+    expect(read('src/components/Icon.tsx')).toContain('(list ? ICON_GLYPH_LIST[name] : undefined)');
+    const row = read('src/screens/SettingsSheet.tsx');
+    expect(row).toMatch(/name=\{icon\}[\s\S]{0,200}\blist\b/);
+    // The bar's glyphs never take the list weight.
+    expect(read('src/shell/bottom-bar/BottomBar.tsx')).not.toMatch(/<Icon[^>]*\blist\b/);
+  });
+
   it('draws the provider-type marks as filled Phosphor glyphs', () => {
     // Astrologer = filled moon-stars (owner decision 2026-09-26). Listener =
-    // filled flower since 2026-10-10 (Amit: "replace lotus with flower"),
-    // after the lotus (2026-09-27) that replaced a headset which read as a
-    // call-centre agent. Not the ear or the sparkle, which `listen` and
-    // `unwind` already draw.
-    expect(config.glyphs.listener).toBe('flower-fill');
+    // filled butterfly since 2026-10-12 (Amit: the filled flower "looks like
+    // setting not flower"), after the flower (10-10) and the lotus (09-27)
+    // that replaced a headset which read as a call-centre agent. Not the ear
+    // or the sparkle, which `listen` and `unwind` already draw.
+    expect(config.glyphs.listener).toBe('butterfly-fill');
     expect(config.glyphs.listener).not.toBe(config.glyphs.listen);
     expect(config.glyphs.listener).not.toBe(config.glyphs.unwind);
     expect(config.glyphs.astrologer).toBe('moon-stars-fill');

@@ -128,6 +128,41 @@ function haveFontTools() {
  * stamp the source hash into the unique-ID record (nameID 3) so `--check` can
  * tell a stale font from a current one without a font parser.
  */
+/**
+ * Read the built font's own cmap and fail unless every glyph sits at the
+ * codepoint the TS map hands the app. The TS map is generated from
+ * `codepoints`; this proves the FONT agrees, which no other check does.
+ */
+function verifyCmap(ttf, codepoints) {
+  const out = execFileSync('python3', [
+    '-c',
+    [
+      'import sys, json',
+      'from fontTools.ttLib import TTFont',
+      'cm=TTFont(sys.argv[1]).getBestCmap()',
+      'print(json.dumps({str(k): v for k, v in cm.items()}))',
+    ].join('\n'),
+    ttf,
+  ]).toString();
+  const cmap = JSON.parse(out);
+  const wrong = Object.entries(codepoints)
+    .filter(([name, cp]) => cmap[String(cp)] !== name)
+    .map(
+      ([name, cp]) =>
+        `${name} expected at U+${cp.toString(16).toUpperCase()}, font has ${
+          cmap[String(cp)] ?? 'nothing'
+        }`,
+    );
+  const extra = Object.keys(cmap).length - Object.keys(codepoints).length;
+  if (wrong.length || extra !== 0) {
+    die(
+      `${ttf} does not match the glyph map (${extra} extra codepoints):\n  ${wrong
+        .slice(0, 10)
+        .join('\n  ')}`,
+    );
+  }
+}
+
 function renameFamily(ttf, family, sourceHash) {
   execFileSync('python3', [
     '-c',
@@ -167,12 +202,30 @@ function phosphorVersion() {
  */
 const OUTLINE_WEIGHTS = new Set(['regular', 'bold']);
 let outlineWeight = 'regular';
+/**
+ * The weight a LIST ROW draws its outline glyphs in (design/icons.json
+ * `listWeight`), when it differs from `outlineWeight`. Owner, 2026-10-11: bold
+ * suits a glyph that stands alone (bar, header, composer) but a column of bold
+ * row icons in Settings read too heavy, so rows draw regular. Two weights, each
+ * with one job; every plain glyph gets a `<name>--list` twin in the face.
+ */
+let listWeight = 'regular';
+// One hyphen and no real Phosphor name ends in it: fantasticon slugs glyph
+// names (a `--` collapsed to `-`), and a name it rewrites misses its codepoint
+// and is auto-numbered from U+F101, which the app never asks for (2026-10-12:
+// the Settings rows drew CJK fallback glyphs). verifyCmap below now fails that.
+const LIST_SUFFIX = '-rowweight';
 
 /**
  * `heart` -> assets/<outlineWeight>/heart(-bold).svg; `heart-fill` ->
  * assets/fill/heart-fill.svg. Phosphor suffixes every weight but regular.
  */
 function svgPath(name) {
+  if (name.endsWith(LIST_SUFFIX)) {
+    const base = name.slice(0, -LIST_SUFFIX.length);
+    const file = listWeight === 'regular' ? base : `${base}-${listWeight}`;
+    return join(PHOSPHOR, 'assets', listWeight, `${file}.svg`);
+  }
   if (name.endsWith('-fill')) {
     return join(PHOSPHOR, 'assets', 'fill', `${name}.svg`);
   }
@@ -196,6 +249,13 @@ async function main() {
       `design/icons.json "outlineWeight" must be regular or bold, got "${outlineWeight}"`,
     );
   }
+  listWeight = cfg.listWeight ?? outlineWeight;
+  if (!OUTLINE_WEIGHTS.has(listWeight)) {
+    die(
+      `design/icons.json "listWeight" must be regular or bold, got "${listWeight}"`,
+    );
+  }
+  const hasList = listWeight !== outlineWeight;
 
   const glyphs = entries(cfg.glyphs); // [semantic, phosphor]
   const active = entries(cfg.active); // [semantic, phosphor-fill]
@@ -212,8 +272,14 @@ async function main() {
       problems.push(`active.${s} -> ${name} must be a -fill glyph`);
     }
   }
+  // The list twin of every plain glyph, when rows draw a different weight.
+  const listGlyphs = hasList
+    ? glyphs
+        .filter(([, n]) => !n.endsWith('-fill'))
+        .map(([sem, n]) => [sem, `${n}${LIST_SUFFIX}`])
+    : [];
   const phosphorNames = [
-    ...new Set([...glyphs, ...active].map(([, n]) => n)),
+    ...new Set([...glyphs, ...active, ...listGlyphs].map(([, n]) => n)),
   ].sort();
   for (const name of phosphorNames) {
     if (!existsSync(svgPath(name))) {
@@ -259,6 +325,9 @@ async function main() {
     activeGlyph: Object.fromEntries(
       active.map(([s, n]) => [s, String.fromCodePoint(codepoints[n])]),
     ),
+    listGlyph: Object.fromEntries(
+      listGlyphs.map(([s, n]) => [s, String.fromCodePoint(codepoints[n])]),
+    ),
   });
 
   if (CHECK) {
@@ -272,6 +341,9 @@ async function main() {
     // fontTools writes the Windows name records as UTF-16BE and the Mac ones as
     // ASCII; either encoding of the unique ID is proof the font was built from
     // this exact source.
+    if (haveFontTools()) {
+      verifyCmap(OUT_FONT, codepoints);
+    }
     const font = readFileSync(OUT_FONT);
     const id = `${FAMILY}:${sourceHash}`;
     const utf16be = Buffer.from(id, 'utf16le').swap16();
@@ -328,6 +400,7 @@ async function main() {
   }
   writeFileSync(OUT_FONT, ttf);
   renameFamily(OUT_FONT, FAMILY, sourceHash);
+  verifyCmap(OUT_FONT, codepoints);
   rmSync(tmp, { recursive: true, force: true });
   copyFileSync(join(PHOSPHOR, 'LICENSE'), OUT_LICENSE);
 
@@ -338,7 +411,7 @@ async function main() {
   );
 }
 
-function renderTs({ version, sourceHash, glyph, activeGlyph }) {
+function renderTs({ version, sourceHash, glyph, activeGlyph, listGlyph }) {
   const names = Object.keys(glyph).sort();
   const activeNames = Object.keys(activeGlyph).sort();
   const glyphEntries = names
@@ -346,6 +419,10 @@ function renderTs({ version, sourceHash, glyph, activeGlyph }) {
     .join('\n');
   const activeEntries = activeNames
     .map(n => `  ${n}: ${JSON.stringify(activeGlyph[n])},`)
+    .join('\n');
+  const listEntries = Object.keys(listGlyph)
+    .sort()
+    .map(n => `  ${n}: ${JSON.stringify(listGlyph[n])},`)
     .join('\n');
   const union = names.map(n => `'${n}'`).join(' | ');
   return `/**
@@ -370,6 +447,14 @@ ${glyphEntries}
 /** The fill glyph an \`active\` icon renders; absent names keep ICON_GLYPH. */
 export const ICON_GLYPH_ACTIVE: Partial<Record<IconName, string>> = {
 ${activeEntries}
+};
+
+/**
+ * The list-row weight (design/icons.json \`listWeight\`) a \`list\` icon renders;
+ * absent names (fills, or no separate list weight) keep ICON_GLYPH.
+ */
+export const ICON_GLYPH_LIST: Partial<Record<IconName, string>> = {
+${listEntries}
 };
 `;
 }

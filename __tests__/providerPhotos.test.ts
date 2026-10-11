@@ -458,7 +458,7 @@ describe('the favourite heart fills when active (Phosphor fill)', () => {
     // the ICON_GLYPH_ACTIVE codepoint when active, ICON_GLYPH otherwise, in the
     // one face.
     expect(icon).toMatch(
-      /\(active \? ICON_GLYPH_ACTIVE\[name\] : undefined\) \?\? ICON_GLYPH\[name\]/,
+      /\(active \? ICON_GLYPH_ACTIVE\[name\] : undefined\) \?\?[\s\S]{0,80}ICON_GLYPH\[name\]/,
     );
     expect(icon).toContain('fontFamily: ICON_FAMILY');
     // And the heart actually has a fill to swap to.

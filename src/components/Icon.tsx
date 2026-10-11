@@ -5,6 +5,7 @@ import {
   ICON_FAMILY,
   ICON_GLYPH,
   ICON_GLYPH_ACTIVE,
+  ICON_GLYPH_LIST,
   type IconName,
 } from '../theme/icons.generated';
 
@@ -36,6 +37,12 @@ interface Props {
   name: IconName;
   /** Selected state — renders the fill glyph where design/icons.json has one. */
   active?: boolean;
+  /**
+   * A glyph in a list row: drawn in design/icons.json `listWeight` (regular)
+   * instead of the bold `outlineWeight`, because a column of bold row icons
+   * reads heavy (owner, 2026-10-11). Standalone controls leave it off.
+   */
+  list?: boolean;
   size?: number;
   color?: string;
   testID?: string;
@@ -81,6 +88,7 @@ export const ICON_SCALE = 1.2;
 function IconView({
   name,
   active = false,
+  list = false,
   size = DEFAULT_SIZE,
   color,
   testID,
@@ -91,7 +99,9 @@ function IconView({
   const resolvedColor = color ?? theme.color.text.primary;
 
   const glyph =
-    (active ? ICON_GLYPH_ACTIVE[name] : undefined) ?? ICON_GLYPH[name];
+    (active ? ICON_GLYPH_ACTIVE[name] : undefined) ??
+    (list ? ICON_GLYPH_LIST[name] : undefined) ??
+    ICON_GLYPH[name];
 
   return (
     <Text
