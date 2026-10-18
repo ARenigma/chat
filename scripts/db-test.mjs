@@ -221,6 +221,7 @@ const MIGRATIONS = [
   'supabase/migrations/192_rename_cooldown_column_guard.sql',
   'supabase/migrations/193_admin_ban_is_provider_only.sql',
   'supabase/migrations/194_profile_save_locks_and_photo_delete_serialized.sql',
+  'supabase/migrations/195_provider_trust_hardening.sql',
 ];
 
 /**
