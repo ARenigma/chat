@@ -104,6 +104,7 @@ import { useHomeTour } from './src/store/useHomeTour';
 import { Button } from './src/components/Button';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 import { SplashScreen } from './src/screens/SplashScreen';
+import { LaunchMark } from './src/components/LaunchMark';
 import { CHAT_RING_SECONDS } from './src/components/ChatRequestScreen';
 import { chatRingDeadline } from './src/lib/chatRing';
 import { setLightNavigationBars } from './src/lib/windowChrome';
@@ -1615,6 +1616,7 @@ function App() {
               <ShellStateProvider>
                 <Shell />
               </ShellStateProvider>
+              <LaunchMark />
             </ThemeProvider>
           </QueryClientProvider>
         </SafeAreaProvider>

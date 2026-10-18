@@ -127,6 +127,53 @@ export const EASE_BREATHE = Easing.inOut(Easing.sin);
 export const EASE_CONSTANT = Easing.linear;
 
 /**
+ * The cold-start mark (src/components/LaunchMark.tsx), owner 2026-10-18, ms.
+ * Each bubble `travel`s in from its side (coral first, the other answering
+ * 140ms later); "Pappal" rises letter by letter once they have met. `intro` is
+ * the whole fixed part — the last letter landing — and the only wait a fast boot
+ * pays. After it, while the app still loads, the bubbles take turns over one
+ * `talk` cycle; `exit` fades to the app, `fade` is the reduced-motion exit.
+ */
+/**
+ * A conversation moving to a new place in a chat list (a new message lifts it),
+ * ms. Seen tens of times a day, so animate-expo's near-imperceptible tier: under
+ * 150ms, just enough that the row is seen to move rather than teleport.
+ */
+export const REORDER_MS = 140;
+
+/**
+ * The recharge hero (Spotlight / Offer stage, owner 2026-10-18), ms: one light
+ * band sweeps across the hero `shine` long, `shineDelay` after the sheet opens.
+ * Once per open — the sheet is occasional, and a looping sheen would be decoration
+ * the eye has to keep dismissing.
+ */
+export const RECHARGE = { shine: 900, shineDelay: 380 } as const;
+
+/**
+ * The recharge-success burst (src/components/SuccessBurst.tsx), owner
+ * 2026-10-18, ms. Everything waits `land` for the success sheet's own entrance
+ * spring to settle — on the S22 the first take fired mid-slide, so the pieces
+ * left a card that was still moving. Then the check `pop`s (overshoot and
+ * settle), the pieces leave a beat later (`delay`) and fly and fade over
+ * `travel`. Whole moment ≈ 0.95s from the sheet appearing. The balance line
+ * under it `count`s up from the old figure to the new one over the same beat.
+ */
+export const BURST = { land: 300, pop: 360, delay: 60, travel: 600, count: 700 } as const;
+
+const LAUNCH_WORD ={ wordDelay: 700, letterStagger: 45, letter: 400 } as const;
+export const LAUNCH = {
+  travel: 560,
+  coralDelay: 80,
+  inkDelay: 220,
+  ...LAUNCH_WORD,
+  intro: LAUNCH_WORD.wordDelay + 5 * LAUNCH_WORD.letterStagger + LAUNCH_WORD.letter,
+  talk: 1000,
+  exit: 260,
+  fade: 200,
+  poll: 120,
+} as const;
+
+/**
  * Scale a pressable element to its named press scale over `pressRamp` ms.
  *
  * The rule that governs the curve: a spring where a finger's velocity is being

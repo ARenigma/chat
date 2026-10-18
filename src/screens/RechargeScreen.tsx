@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
-import { useStyles, useTheme } from '../theme/ThemeProvider';
+import { useStyles, useTheme, useThemeMode } from '../theme/ThemeProvider';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
+import { EASE_BREATHE, RECHARGE } from '../theme/motion';
 import { DEFAULT_RATES, formatRupees, gstAddedLabel, gstAddedSpoken, packTotalInr, PAYMENTS_ENABLED, RECHARGE_PACKS } from '../lib/rates';
 import { discountedTotalInr, useFirstRechargeDiscount } from '../api/billing';
 import {
@@ -63,17 +71,141 @@ function useRechargePacks() {
  * measures 4.58:1 light / 8.22:1 dark — clear of the 4.5:1 floor
  * developer.android.com/guide/topics/ui/accessibility/apps sets for sub-18sp.
  */
-function FirstRechargeBanner({ discountBps }: { discountBps: number }) {
-  const styles = useStyles(makeOfferStyles);
-  if (discountBps <= 0) return null;
+/**
+ * The one bright object on the recharge sheet (owner, 2026-10-18: "go with
+ * offer stage and spotlight"). A member owed the first-recharge discount sees
+ * that offer — the real one, read from the server — in a gold-edged card;
+ * everyone else sees their balance on the brand gradient. Either way it is the
+ * only saturated surface above the packs, so the Pay button and it are what the
+ * eye lands on (the critique's "one bright object per screen").
+ */
+function RechargeHero({ balance, discountBps }: { balance: number | null; discountBps: number }) {
+  const styles = useStyles(makeHeroStyles);
+  const theme = useTheme();
+  const { isDark } = useThemeMode();
+  if (discountBps > 0) {
+    const pct = Math.round(discountBps / 100);
+    // Gold reads on the dark tint (text/rating on accentTint); in light the same
+    // gold is 2.9:1 on the pale tint, so the tint's own ink carries it there.
+    const highlight = isDark ? theme.color.text.rating : theme.color.text.onAccentTint;
+    return (
+      <View
+        testID="recharge-offer"
+        style={[
+          styles.offerEdge,
+          {
+            experimental_backgroundImage: `linear-gradient(135deg, ${theme.color.bg.accentGradientFrom} 0%, ${highlight} 50%, ${theme.color.text.accent} 100%)`,
+          },
+        ]}>
+        <View
+          style={[
+            styles.offer,
+            {
+              experimental_backgroundImage: `linear-gradient(160deg, ${theme.color.bg.accentTint} 0%, ${theme.color.bg.raised} 70%)`,
+            },
+          ]}>
+          <Text allowFontScaling style={[styles.kicker, { color: highlight }]}>
+            WELCOME OFFER
+          </Text>
+          <Text
+            allowFontScaling
+            accessibilityLabel={`${pct}% off your first recharge`}
+            style={styles.offerHead}>
+            <Text style={{ color: highlight }}>{pct}% off</Text>
+            {'\n'}your first recharge
+          </Text>
+          <Text allowFontScaling style={styles.offerBody}>
+            {pct === 50 ? 'Pay half for any pack today. ' : ''}Applied automatically.
+          </Text>
+          <ShineSweep />
+        </View>
+      </View>
+    );
+  }
   return (
-    <View style={styles.banner}>
-      <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleMediumEmphasized} allowFontScaling style={styles.bannerText}>
-        {Math.round(discountBps / 100)}% off your first recharge
+    <View
+      testID="recharge-balance"
+      style={[
+        styles.spot,
+        {
+          experimental_backgroundImage: `linear-gradient(135deg, ${theme.color.bg.accentGradientFrom} 0%, ${theme.color.bg.accentGradientTo} 100%)`,
+        },
+      ]}>
+      <Text allowFontScaling style={styles.spotLabel}>
+        Your balance
       </Text>
+      <RupeeAmount value={balance} allowFontScaling style={styles.spotValue} />
+      <ShineSweep />
     </View>
   );
 }
+
+/**
+ * One light band across the hero, once, just after the sheet lands — the
+ * "this is the thing" cue. animate-expo: occasional surface, purpose emphasis,
+ * transform only; reduced motion draws nothing.
+ */
+function ShineSweep() {
+  const theme = useTheme();
+  const reduced = useReducedMotion();
+  const x = useSharedValue(-100);
+  useEffect(() => {
+    if (!reduced) {
+      x.set(withDelay(RECHARGE.shineDelay, withTiming(350, { duration: RECHARGE.shine, easing: EASE_BREATHE })));
+    }
+    // Once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: `${x.get()}%` }, { rotate: '18deg' }],
+  }));
+  if (reduced) {
+    return null;
+  }
+  const ink = theme.color.text.onAccent;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        heroShine.band,
+        { experimental_backgroundImage: `linear-gradient(90deg, ${ink}00 0%, ${ink}38 50%, ${ink}00 100%)` },
+        style,
+      ]}
+    />
+  );
+}
+
+/**
+ * Under Pay. Pay goes straight to the UPI app chooser (the journey lost its
+ * in-between Checkout sheet, 2026-10-18); card, net banking and wallets are one
+ * tap away here rather than a step everyone has to pass through.
+ */
+function OtherWaysToPay({ onPress }: { onPress: () => void }) {
+  const styles = useStyles(makeHeroStyles);
+  return (
+    <Pressable
+      onPress={onPress}
+      press="none"
+      accessibilityRole="button"
+      accessibilityLabel="Other ways to pay: card, net banking or wallet"
+      testID="recharge-other-ways"
+      style={styles.otherWays}>
+      <Text allowFontScaling style={styles.otherWaysText}>
+        Other ways to pay
+      </Text>
+    </Pressable>
+  );
+}
+
+const heroShine = StyleSheet.create({
+  band: {
+    position: 'absolute',
+    top: '-40%',
+    bottom: '-40%',
+    left: 0,
+    width: '40%',
+  },
+});
 
 /**
  * The discounted PRICE line under a pack's balance headline.
@@ -121,6 +253,11 @@ export function RechargeScreen() {
   const { livePacks, gstRateBps, discountBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
+  const [payWith, setPayWith] = useState<'upi' | 'web'>('upi');
+  const startPay = (how: 'upi' | 'web') => {
+    setPayWith(how);
+    requestAnimationFrame(() => setPayOpen(true));
+  };
 
   return (
     <>
@@ -142,7 +279,8 @@ export function RechargeScreen() {
             amount={amount}
             gstRateBps={gstRateBps}
             discountBps={discountBps}
-            onPay={() => requestAnimationFrame(() => setPayOpen(true))}
+            onPay={() => startPay('upi')}
+            onOther={() => startPay('web')}
           />
         }>
         <RechargeSheetForm
@@ -153,7 +291,12 @@ export function RechargeScreen() {
           discountBps={discountBps}
         />
       </Sheet>
-      <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
+      <PaymentSheet
+        visible={payOpen}
+        amount={amount}
+        autoStart={payWith}
+        onClose={() => setPayOpen(false)}
+      />
     </>
   );
 }
@@ -179,36 +322,18 @@ function RechargeSheetForm({
   discountBps: number;
 }) {
   const styles = useStyles(makeCompactStyles);
-  const theme = useTheme();
   const balance = useStore(s => s.balance);
   const popularAmount = livePacks[1] ?? null;
 
   return (
     <View style={styles.form}>
-      <View style={styles.balance}>
-        <View style={styles.balanceMark}>
-          <Text allowFontScaling={false} style={styles.balanceMarkText}>
-            ₹
-          </Text>
-        </View>
-        <Text allowFontScaling style={styles.balanceLabel}>
-          Your balance
-        </Text>
-        {/* No maxFontSizeMultiplier: the balance is a NUMERAL role, and ADR-0024
-            leaves body, label and numerals uncapped on purpose so a 200%
-            accessibility setting still enlarges the reading text and the
-            balance — `fontScaleCap` has no numeral key to wire. The cap that
-            used to sit here named titleLargeEmphasized, the role this style no
-            longer uses. */}
-        <RupeeAmount value={balance} allowFontScaling style={styles.balanceValue} />
-      </View>
+      <RechargeHero balance={balance} discountBps={discountBps} />
 
       <Text allowFontScaling style={styles.section}>
         Choose a pack
       </Text>
       {/* Above the grid, attached to the packs it discounts. Renders nothing for
           a member who is not owed the offer. */}
-      <FirstRechargeBanner discountBps={discountBps} />
       <View style={styles.grid}>
         {livePacks.slice(0, 4).map(pack => {
           const selected = pack === amount;
@@ -237,7 +362,7 @@ function RechargeSheetForm({
                 // falls back to `text.primary` — dark ink — which on the now
                 // filled coral chip would flash DARKER on press instead of
                 // lighter, reading as a different component.
-                onColor={selected ? theme.color.text.onAccent : undefined}
+                onColor={undefined}
                 /*
                  * THE SELECTED FILL IS DELIBERATELY INSTANT, and it was looked
                  * at properly (2026-09-12) rather than left alone by default.
@@ -267,7 +392,7 @@ function RechargeSheetForm({
                  */
                 style={[styles.card, selected && styles.cardSelected]}>
                 {popular ? (
-                  <View style={[styles.popular, selected && styles.popularOn]}>
+                  <View style={styles.popular}>
                     <Text allowFontScaling={false} style={styles.popularText}>
                       Popular
                     </Text>
@@ -282,6 +407,11 @@ function RechargeSheetForm({
                 {/* The halved PRICE, under the balance headline — first-recharge
                     members only. The chip's ₹300 is what you ADD and does not
                     move; this is what you PAY. */}
+                {gstAddedLabel(pack, gstRateBps) ? (
+                  <Text allowFontScaling style={styles.gst}>
+                    {gstAddedLabel(pack, gstRateBps)}
+                  </Text>
+                ) : null}
                 <ChipDiscountPrice
                   pack={pack}
                   gstRateBps={gstRateBps}
@@ -324,7 +454,19 @@ function RechargeSheetForm({
   );
 }
 
-function RechargeSheetFooter({ amount, gstRateBps, discountBps, onPay }: { amount: number; gstRateBps: number; discountBps: number; onPay: () => void }) {
+function RechargeSheetFooter({
+  amount,
+  gstRateBps,
+  discountBps,
+  onPay,
+  onOther,
+}: {
+  amount: number;
+  gstRateBps: number;
+  discountBps: number;
+  onPay: () => void;
+  onOther: () => void;
+}) {
   const styles = useStyles(makeCompactStyles);
   const theme = useTheme();
   return (
@@ -372,6 +514,7 @@ function RechargeSheetFooter({ amount, gstRateBps, discountBps, onPay }: { amoun
           Pay
         </Text>
       </Pressable>
+      <OtherWaysToPay onPress={onOther} />
     </>
   );
 }
@@ -397,6 +540,11 @@ export function WalletScreen({ onBack, sheet = false }: { onBack: () => void; sh
   const { livePacks, gstRateBps, discountBps } = useRechargePacks();
   const [amount, setAmount] = useState<number>(livePacks[1] ?? 300);
   const [payOpen, setPayOpen] = useState(false);
+  const [payWith, setPayWith] = useState<'upi' | 'web'>('upi');
+  const startPay = (how: 'upi' | 'web') => {
+    setPayWith(how);
+    requestAnimationFrame(() => setPayOpen(true));
+  };
   const topInset = sheet ? 0 : insets.top;
 
   return (
@@ -447,11 +595,17 @@ export function WalletScreen({ onBack, sheet = false }: { onBack: () => void; sh
             button is unchanged; a first-timer sees the half they pay. */}
         <Button
           label={`Pay ${formatRupees(discountedTotalInr(amount, gstRateBps, discountBps))}`}
-          onPress={() => requestAnimationFrame(() => setPayOpen(true))}
+          onPress={() => startPay('upi')}
           testID="recharge-wallet-pay"
         />
+        <OtherWaysToPay onPress={() => startPay('web')} />
       </View>
-      <PaymentSheet visible={payOpen} amount={amount} onClose={() => setPayOpen(false)} />
+      <PaymentSheet
+        visible={payOpen}
+        amount={amount}
+        autoStart={payWith}
+        onClose={() => setPayOpen(false)}
+      />
     </View>
   );
 }
@@ -470,7 +624,6 @@ function RechargeForm({
   discountBps: number;
 }) {
   const styles = useStyles(makeStyles);
-  const theme = useTheme();
   const balance = useStore(s => s.balance);
   const chatRate = DEFAULT_RATES.chat;
   const popularAmount = livePacks[1] ?? null;
@@ -483,13 +636,7 @@ function RechargeForm({
           only the label and the figure left, they read as one KPI — label
           and value on one line, centred against each other — rather than two
           lines that used to need the third to justify the card's height. */}
-      <View style={styles.balanceCard}>
-        <Text allowFontScaling style={styles.balanceLabel}>
-          Balance
-        </Text>
-        {/* Uncapped, same reason as the sheet's balance figure above. */}
-        <RupeeAmount value={balance} allowFontScaling style={styles.balanceValue} />
-      </View>
+      <RechargeHero balance={balance} discountBps={discountBps} />
 
       <Text allowFontScaling style={styles.section}>
         Add money
@@ -497,7 +644,6 @@ function RechargeForm({
 
       {/* Above the grid, attached to the packs it discounts. Renders nothing for
           a member who is not owed the offer. */}
-      <FirstRechargeBanner discountBps={discountBps} />
 
       <View style={styles.grid}>
         {livePacks.map(pack => {
@@ -546,16 +692,16 @@ function RechargeForm({
                 // StateTokens.kt `PressedStateLayerOpacity = 0.1f` over the
                 // container's ON colour, not over Pressable's `text.primary`
                 // default, which would darken the coral fill on press.
-                onColor={on ? theme.color.text.onAccent : undefined}
+                onColor={undefined}
                 style={[styles.card, on && styles.cardOn]}>
                 {/* Corner ribbon — flush to the top-right corner (folded-tab
                     look), not a floating chip. The card's paddingTop reserves the
                     strip it sits in, so it never overlaps the amount below. */}
                 {badge ? (
-                  <View style={[styles.ribbon, on && styles.ribbonOn]}>
+                  <View style={styles.ribbon}>
                     <Text
                       allowFontScaling={false}
-                      style={[styles.ribbonText, on && styles.ribbonTextOn]}>
+                      style={styles.ribbonText}>
                       {badge}
                     </Text>
                   </View>
@@ -605,18 +751,22 @@ function RechargeForm({
                     GST caption: showing "Pay ₹̶354 ₹177" and "+ ₹54 GST" on the
                     same card names the tax twice over. Everyone else keeps the
                     itemised GST line unchanged (ADR-0029). */}
-                {discountBps > 0 ? (
+                {/* GST is always the subtitle (owner, 2026-10-18: "show price exc
+                    gst and write gst below"); the first-recharge price, when owed,
+                    goes under it rather than replacing it. */}
+                <View>
+                  {gst ? (
+                    <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
+                      {gst}
+                    </Text>
+                  ) : null}
                   <ChipDiscountPrice
                     pack={pack}
                     gstRateBps={gstRateBps}
                     discountBps={discountBps}
                     on={on}
                   />
-                ) : gst ? (
-                  <Text allowFontScaling style={[styles.cardGst, on && styles.cardUnitOn]}>
-                    {gst}
-                  </Text>
-                ) : null}
+                </View>
               </Pressable>
             </View>
           );
@@ -729,7 +879,10 @@ const makeStyles = (t: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      backgroundColor: t.color.bg.inverse,
+      // Quiet surface, not bg/inverse: the near-white slab was the brightest
+      // thing on the sheet (13.7:1) and out-shouted the choice and the Pay
+      // button (critique 2026-10-18). The wallet disc carries the identity.
+      backgroundColor: t.color.bg.hover,
       borderRadius: TOKENS.radius.lg,
       borderCurve: 'continuous',
       padding: TOKENS.space.lg,
@@ -742,10 +895,24 @@ const makeStyles = (t: Theme) =>
     // and that pass retired, on the evidence that a 14dp regular face is what
     // made a modal quieter than its own screen; the page had the same defect
     // pointing the other way.
+    balanceLead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: TOKENS.space.sm,
+    },
+    // The same green as the Home wallet pill (TokenCounter), so the balance
+    // wears one colour everywhere it appears.
+    walletDisc: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.color.bg.tokenHealthy,
+    },
     balanceLabel: {
       ...TOKENS.typography.bodyLarge,
-      color: t.color.text.onInverse,
-      opacity: 0.7,
+      color: t.color.text.secondary,
     },
     // The balance figure, and a TOKEN role rather than the bespoke
     // 34/40/-0.4/tabular block this slot carried out of the M3 migration.
@@ -776,7 +943,7 @@ const makeStyles = (t: Theme) =>
     // one host can render cannot be the role for a figure both hosts show.
     balanceValue: {
       ...TOKENS.typography.numeralLarge,
-      color: t.color.text.onInverse,
+      color: t.color.text.primary,
     },
     // Bluesky section header, text_lg font_semi_bold (ADR-0033). paddingTop sm
     // plus the column's gap sm is ModuleHeader's pt_2xl 24; the gap below is
@@ -799,9 +966,11 @@ const makeStyles = (t: Theme) =>
       minHeight: 104,
       borderRadius: TOKENS.radius.md,
       borderCurve: 'continuous',
-      borderWidth: 1,
-      borderColor: t.color.border.hairline,
-      backgroundColor: t.color.bg.raised,
+      // 2dp in both states so selecting never shifts the layout; the strong
+      // border clears 1.5:1 against the sheet where the hairline was 1.40:1.
+      borderWidth: 2,
+      borderColor: t.color.border.strong,
+      backgroundColor: t.color.bg.hover,
       // Extra top padding reserves the strip the corner ribbon sits in, so the
       // amount below never collides with it.
       paddingTop: TOKENS.space.lg,
@@ -835,9 +1004,15 @@ const makeStyles = (t: Theme) =>
     // what bg/accentStrong is for") and theme.test.ts records it as a fact.
     // bg/accentStrong is 5.19:1 / 6.13:1 — the same fill the message bubble and
     // the Pay button already use.
+    // Superseded 2026-10-18 (critique): selected is the coral TINT — M3's tonal
+    // SecondaryContainer, not the solid fill — so solid coral means two things only —
+    // the offer ribbons and Pay. onAccentTint on accentTint is 6.16:1 dark,
+    // clearing the 4.5:1 floor quoted above for the 12sp lines.
+    // Owner, 2026-10-18 (Spotlight): the selected pack is a coral OUTLINE on
+    // its own card, not a fill — the hero above is the sheet's one saturated
+    // surface. text/accent clears 3:1 against the card for a 2dp boundary.
     cardOn: {
-      backgroundColor: t.color.bg.accentStrong,
-      borderColor: t.color.bg.accentStrong,
+      borderColor: t.color.text.accent,
     },
     // Corner ribbon flush to the top-right corner (folded-tab look): the outer
     // corner matches the card radius, the inner corner is rounded. Not a chip.
@@ -860,16 +1035,10 @@ const makeStyles = (t: Theme) =>
       borderCurve: 'continuous',
       backgroundColor: t.color.bg.accentStrong,
     },
-    ribbonOn: {
-      backgroundColor: t.color.bg.base,
-    },
     ribbonText: {
       ...TOKENS.typography.bodySmall,
       fontFamily: 'Geist-SemiBold',
       color: t.color.text.onAccent,
-    },
-    ribbonTextOn: {
-      color: t.color.text.accent,
     },
     // The price and what it buys are one statement, so the pair sits tighter
     // than the card's own 12dp `gap` would put them.
@@ -907,7 +1076,7 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.primary,
     },
     cardAmountOn: {
-      color: t.color.text.onAccent,
+      color: t.color.text.primary,
     },
     // What the price buys, under it. One line ("₹5,000", 77.6dp of the
     // card's 115.8dp) rather than the number-over-noun pair the coin row held,
@@ -918,14 +1087,16 @@ const makeStyles = (t: Theme) =>
       color: t.color.text.secondary,
     },
     cardUnitOn: {
-      color: t.color.text.onAccent,
+      color: t.color.text.secondary,
     },
     // One step quieter than the unit line: the tax is a disclosure, not the
     // offer. Shares `cardUnitOn` when the card is selected so it stays legible
     // on the accent fill.
+    // Secondary, not tertiary: a price disclosure has to clear 4.5:1, and
+    // tertiary measured 3.31:1 on the card.
     cardGst: {
       ...TOKENS.typography.bodySmall,
-      color: t.color.text.tertiary,
+      color: t.color.text.secondary,
     },
     // The nudge moved off the line and onto the block: two lines now, and a
     // negative margin on each would have closed the gap between them as well as
@@ -972,7 +1143,7 @@ const makeStyles = (t: Theme) =>
     // both inside and outside and collapse the group.
     neverExpiresNote: {
       ...TOKENS.typography.bodySmall,
-      color: t.color.text.tertiary,
+      color: t.color.text.secondary,
     },
     // The 8dp that used to ride on the deleted rate line (2026-09-17). The line
     // went; the gap it opened between the pack grid and the fine print was
@@ -1012,7 +1183,8 @@ const makeCompactStyles = (t: Theme) =>
       borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.bg.accentStrong,
+      // Wallet green (TokenCounter), not coral: coral is the offer and Pay.
+      backgroundColor: t.color.bg.tokenHealthy,
     },
     balanceMarkText: {
       ...TOKENS.typography.labelMediumEmphasized,
@@ -1083,9 +1255,11 @@ const makeCompactStyles = (t: Theme) =>
       paddingBottom: TOKENS.space.md,
       borderRadius: TOKENS.radius.sm,
       borderCurve: 'continuous',
-      borderWidth: 1,
-      borderColor: t.color.border.hairline,
-      backgroundColor: t.color.bg.raised,
+      // 2dp in both states so selecting never shifts the layout; the strong
+      // border clears 1.5:1 against the sheet where the hairline was 1.40:1.
+      borderWidth: 2,
+      borderColor: t.color.border.strong,
+      backgroundColor: t.color.bg.hover,
     },
     // Was outline-only while the wallet card next door was filled; the two
     // grids are the same control and now read the same way (Amit, 2026-09-06:
@@ -1102,9 +1276,9 @@ const makeCompactStyles = (t: Theme) =>
     // bg/accentStrong rather than bg/accent for the same reason as `cardOn`:
     // this chip carries bodyLarge 16sp and bodySmall 12sp, both under the 18sp
     // line at which developer.android.com drops the requirement to 3:1.
+    // The tint treatment of the wallet page's `cardOn` (2026-10-18).
     cardSelected: {
-      backgroundColor: t.color.bg.accentStrong,
-      borderColor: t.color.bg.accentStrong,
+      borderColor: t.color.text.accent,
     },
     popular: {
       position: 'absolute',
@@ -1113,19 +1287,14 @@ const makeCompactStyles = (t: Theme) =>
       paddingHorizontal: TOKENS.space.xs,
       paddingVertical: 3,
       borderRadius: TOKENS.radius.pill,
-      backgroundColor: t.color.bg.accentTint,
+      // The offer stays solid coral in both states (owner, 2026-10-18: the
+      // offer ribbon is crucial) — the same fill as the wallet page's ribbon.
+      backgroundColor: t.color.bg.accentStrong,
     },
-    // Inset pill on a selected chip: page colour, accent ink — the same rule the
-    // wallet card's ribbon and talk-time tag follow. accentTint on the deep
-    // coral would have been 4.26:1 light but 1.93:1 dark, i.e. invisible.
-    popularOn: {
-      backgroundColor: t.color.bg.base,
-    },
-    // The wash's ink, and it still reads when the pill flips to the page
-    // colour inside a selected chip (11.67:1 light / 6.94:1 dark on bg/base).
     popularText: {
       ...TOKENS.typography.bodySmall,
-      color: t.color.text.onAccentTint,
+      fontFamily: 'Geist-SemiBold',
+      color: t.color.text.onAccent,
     },
     amount: {
       ...TOKENS.typography.titleLargeEmphasized,
@@ -1135,7 +1304,12 @@ const makeCompactStyles = (t: Theme) =>
     // (FilterChipTokens.kt `SelectedLabelTextColor = OnSecondaryContainer`);
     // ours is text/onAccent, 5.19:1 light and 6.13:1 dark on bg/accentStrong.
     amountOn: {
-      color: t.color.text.onAccent,
+      color: t.color.text.primary,
+    },
+    gst: {
+      ...TOKENS.typography.bodySmall,
+      color: t.color.text.secondary,
+      paddingTop: TOKENS.space['2xs'],
     },
     tokens: {
       ...TOKENS.typography.bodyLarge,
@@ -1143,7 +1317,7 @@ const makeCompactStyles = (t: Theme) =>
       paddingTop: TOKENS.space.xs,
     },
     tokensOn: {
-      color: t.color.text.onAccent,
+      color: t.color.text.secondary,
     },
     rate: {
       minHeight: 28,
@@ -1176,6 +1350,64 @@ const makeCompactStyles = (t: Theme) =>
 // Shared by both hosts: the first-recharge banner and each chip's discounted
 // price line. One factory rather than a copy in each of makeStyles /
 // makeCompactStyles — the offer looks the same wherever recharge is reached.
+const makeHeroStyles = (t: Theme) =>
+  StyleSheet.create({
+    // The gradient edge is a 2dp padding ring around the offer card.
+    offerEdge: {
+      borderRadius: TOKENS.radius.lg,
+      borderCurve: 'continuous',
+      padding: TOKENS.space.hair,
+    },
+    offer: {
+      borderRadius: TOKENS.radius.lg - TOKENS.space.hair,
+      borderCurve: 'continuous',
+      padding: TOKENS.space.lg,
+      gap: TOKENS.space.xs,
+      overflow: 'hidden',
+    },
+    kicker: {
+      ...TOKENS.typography.labelMediumEmphasized,
+      letterSpacing: 0.6,
+    },
+    offerHead: {
+      ...TOKENS.typography.headlineSmallEmphasized,
+      color: t.color.text.primary,
+    },
+    offerBody: {
+      ...TOKENS.typography.bodyLarge,
+      color: t.color.text.secondary,
+    },
+    spot: {
+      borderRadius: TOKENS.radius.lg,
+      borderCurve: 'continuous',
+      padding: TOKENS.space.lg,
+      gap: TOKENS.space['2xs'],
+      overflow: 'hidden',
+    },
+    spotLabel: {
+      ...TOKENS.typography.bodyLarge,
+      color: t.color.text.onAccent,
+      opacity: 0.85,
+    },
+    // White on the brand gradient: 5.19:1 at the light end, more at the deep end.
+    spotValue: {
+      ...TOKENS.typography.numeralDisplay,
+      color: t.color.text.onAccent,
+    },
+    // 48dp tall so the text link is a real touch target.
+    otherWays: {
+      alignSelf: 'center',
+      minHeight: 48,
+      justifyContent: 'center',
+      paddingHorizontal: TOKENS.space.md,
+    },
+    // A text button, so the bold label face (PaymentSheet's `webRowText`).
+    otherWaysText: {
+      ...TOKENS.typography.labelLargeEmphasized,
+      color: t.color.text.secondary,
+    },
+  });
+
 const makeOfferStyles = (t: Theme) =>
   StyleSheet.create({
     // The offer callout above the grid. bg/accentTint is the coral wash the
@@ -1203,7 +1435,7 @@ const makeOfferStyles = (t: Theme) =>
     // On a selected (coral) chip every figure takes the guaranteed on-accent ink,
     // the same rule cardAmountOn / amountOn follow.
     priceLineOn: {
-      color: t.color.text.onAccent,
+      color: t.color.text.secondary,
     },
     // The original total, struck through. text/secondary (7.41:1 light / 5.00:1
     // dark on bg/raised), not the quieter tertiary the GST caption used: a 12sp
@@ -1216,7 +1448,7 @@ const makeOfferStyles = (t: Theme) =>
       textDecorationLine: 'line-through',
     },
     priceWasOn: {
-      color: t.color.text.onAccent,
+      color: t.color.text.secondary,
       opacity: 0.7,
     },
     // The discounted total, in accent coral so the eye lands on what is actually

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ draws a launch screen for every cold start, by default the launcher
+  icon on windowBackground (developer.android.com/develop/ui/views/launch/splash-screen).
+  Here it is only the page colour: LaunchMark brings the logo's two bubbles in
+  from off screen, so a system icon would show the logo, vanish, and fly back in.
+
+  Departure, stated: the guide's samples always set an icon. A transparent one is
+  how this app hands the brand moment to its in-app animation instead; the
+  alternative, an AnimatedVectorDrawable of the same entrance, is capped at about
+  1000ms and could not loop for the length of the boot.
+-->
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+    </style>
+</resources>

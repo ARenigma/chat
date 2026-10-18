@@ -4,6 +4,7 @@ import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
 import { Button } from '../components/Button';
 import { LoadingIndicator } from '../components/LoadingIndicator';
+import { holdLaunch } from '../components/LaunchMark';
 
 interface Props {
   /** Shown when the wait stops being plausible. */
@@ -31,8 +32,17 @@ export function SplashScreen({ onRetry }: Props) {
   const [slow, setSlow] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setSlow(true), PATIENCE_MS);
-    return () => clearTimeout(timer);
+    // The launch mark keeps talking while this is up; a slow boot releases
+    // it so the retry below is never hidden under the mark.
+    const release = holdLaunch();
+    const timer = setTimeout(() => {
+      release();
+      setSlow(true);
+    }, PATIENCE_MS);
+    return () => {
+      clearTimeout(timer);
+      release();
+    };
   }, []);
 
   return (

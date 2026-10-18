@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TOKENS, type Theme } from '../theme/tokens';
@@ -24,6 +24,7 @@ import { Divider } from '../components/Divider';
 import { compareConversations, visibleOnList } from '../lib/railPrefs';
 import { useRailPrefs } from '../store/useRailPrefs';
 import { useBottomBarOffset } from '../shell/useBottomBarOffset';
+import { useReorderAnimation } from '../lib/reorder';
 
 interface Props {
   onBack: () => void;
@@ -76,6 +77,12 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
     [conversations, blocked, railPrefs],
   );
 
+  const listRef = useRef<FlashListRef<(typeof rows)[number]> | null>(null);
+  useReorderAnimation(
+    rows.map(c => c.conversation_id),
+    () => listRef.current?.prepareForLayoutAnimationRender(),
+  );
+
   const openMenu = useCallback((peerId: string, anchor: MenuAnchor) => {
     setMenuAnchor(anchor);
     setMenuPeer(peerId);
@@ -113,6 +120,7 @@ export function ChatsListScreen({ onBack, onOpenConversation }: Props) {
       </View>
       {rows.length > 0 ? (
         <FlashList
+          ref={listRef}
           data={rows}
           keyExtractor={c => c.conversation_id}
           showsVerticalScrollIndicator={false}

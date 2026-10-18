@@ -59,6 +59,13 @@ interface Props {
   doneLabel?: string;
   /** Sticky footer outside scrollable children — primary CTAs live here. */
   footer?: ReactNode;
+  /**
+   * A full-bleed header the caller draws in place of the grabber row and the
+   * title bar, edge to edge under the sheet's top corners (the payment-success
+   * green field, owner 2026-10-18). It carries its own grabber and heading;
+   * `title` stays the sheet's name for analytics.
+   */
+  hero?: ReactNode;
   /** `large` caps sheet height at ~90% of the window. */
   detents?: 'auto' | 'large';
   /** When false, scrim tap does not dismiss (blocking gates). Default true. */
@@ -110,6 +117,7 @@ function SheetView({
   onDone,
   doneLabel = 'Done',
   footer,
+  hero,
   detents = 'auto',
   dismissOnScrim = true,
   canClose,
@@ -353,7 +361,7 @@ function SheetView({
                 { paddingBottom: sheetBottomPad },
                 { maxHeight: sheetMaxHeight },
               ]}>
-              <SheetGrabber />
+              {hero !== undefined ? <View style={styles.hero}>{hero}</View> : <SheetGrabber />}
               {/*
                 * The actions sit on their own row ABOVE the title, not beside it.
                 *
@@ -399,15 +407,17 @@ function SheetView({
               ) : null}
               {/* Bluesky's Dialog.Header: a full-width bar, the title centred,
                   a hairline under it (social-app Dialog/shared.tsx). */}
-              <View style={styles.header}>
-                <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
-                  testID="sheet-title"
-                  allowFontScaling
-                  numberOfLines={2}
-                  style={styles.title}>
-                  {title}
-                </Text>
-              </View>
+              {hero !== undefined ? null : (
+                <View style={styles.header}>
+                  <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
+                    testID="sheet-title"
+                    allowFontScaling
+                    numberOfLines={2}
+                    style={styles.title}>
+                    {title}
+                  </Text>
+                </View>
+              )}
               {body ? (
                 <Text allowFontScaling style={styles.body}>
                   {body}
@@ -426,6 +436,9 @@ function SheetView({
 }
 
 export const Sheet = memo(SheetView);
+
+/** The grabber's breathing room above it; a hero header cancels it. */
+const SHEET_TOP_PAD = 5;
 
 const makeStyles = (t: Theme) => StyleSheet.create({
   host: {
@@ -450,7 +463,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     bottom: 0,
   },
   sheet: {
-    paddingTop: 5,
+    paddingTop: SHEET_TOP_PAD,
     paddingHorizontal: TOKENS.space.xl,
     // Bottom pad applied at runtime from safe-area insets (see sheetBottomPad).
     // 8dp between title block and the first control — Material layout spacing
@@ -514,6 +527,15 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   // Bluesky Dialog.Header: minHeight 50, py_sm, border_b, full sheet width.
   // The negative margin undoes the sheet's own 24dp side padding so the rule
   // runs edge to edge, as theirs does.
+  // Cancels the sheet's own top and side padding so a hero meets its corners.
+  hero: {
+    marginTop: -SHEET_TOP_PAD,
+    marginHorizontal: -TOKENS.space.xl,
+    borderTopLeftRadius: TOKENS.radius.sheet,
+    borderTopRightRadius: TOKENS.radius.sheet,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+  },
   header: {
     minHeight: 50,
     justifyContent: 'center',

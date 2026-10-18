@@ -205,7 +205,10 @@ export function ProviderTypeTabs({
           checked={c === value}
           accessibilityLabel={CATEGORY_LABEL[c]}
           press="none"
-          highlight="ripple"
+          // No ink: the sliding indicator is the response, as on Bluesky's
+          // TabBar and our bottom bar. The ripple read as a stray touch blob
+          // across the half-width tab (owner, 2026-10-17).
+          highlight="none"
           style={styles.tab}>
           <TabLabel
             index={index}

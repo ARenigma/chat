@@ -1288,7 +1288,6 @@ describe('spacing lives in tokens', () => {
     'src/components/CallingDots.tsx': ['marginLeft: 6'],
     'src/components/NoticeBar.tsx': ['paddingVertical: 10'],
     'src/components/ReactionStrip.tsx': ['paddingHorizontal: 6'],
-    'src/components/Sheet.tsx': ['paddingTop: 5'],
     'src/components/SpotlightCard.tsx': ['paddingVertical: 5'],
     /*
      * The last four are the WhatsApp bubble box, read from the APK on
@@ -2070,6 +2069,11 @@ describe('accent budget is enforced in code, not just documented', () => {
        */
       'HomeTour.tsx',
       /*
+       * The cold-start mark (owner, 2026-10-18): the logo and wordmark
+       * themselves, once per process, gone before the first screen is usable.
+       */
+      'LaunchMark.tsx',
+      /*
        * The circular M3 wait indicator. A wait is a live STATE — the same class
        * as TypingIndicator's dots, which the budget already permits — so drawing
        * the active indicator in the brand accent is one meaning in one place,
@@ -2220,6 +2224,11 @@ describe('accent budget is enforced in code, not just documented', () => {
        * stranger's list avatar.
        */
       'SpotlightCard.tsx',
+      /*
+       * The recharge-success burst (owner, 2026-10-18): logo-shaped pieces
+       * around the check, once per payment, gone in ~0.65s.
+       */
+      'SuccessBurst.tsx',
       /*
        * The bar every tab wears, extracted from HomeScreen on 2026-09-08 so
        * Home, Favourites and Settings render one row rather than three that
@@ -3154,9 +3163,15 @@ describe('recharge-theme: PaymentSheet uses M3 Paper sheet language throughout',
     expect(stripped).not.toMatch(/BLOOM_PALETTES/);
   });
 
-  it('success state uses the positive surface token', () => {
-    expect(payment).toContain('t.color.bg.positive');
-    expect(payment).toContain('t.color.text.positive');
+  it('success state is the green field', () => {
+    // 2026-10-18 (owner: "successful means green right"): the sheet's hero is
+    // the wallet green with a white tick disc and the burst; below it the
+    // receipt rows, the new balance counting up at the numeral role.
+    expect(payment).toMatch(/hero=\{success \? <SuccessField/);
+    expect(payment.match(/\n {4}field: \{[^}]*\}/)?.[0] ?? '').toContain('t.color.bg.tokenHealthy');
+    expect(payment).toMatch(/<SuccessBurst\s+tones=/);
+    expect(payment).toMatch(/successFigure: \{\s*\.\.\.TOKENS\.typography\.numeralLarge/);
+    expect(payment).not.toContain('radial-gradient');
   });
 
   it('uses radio semantics on the UPI method list', () => {
@@ -3836,16 +3851,17 @@ describe('a primary action is the brand colour, not black and white', () => {
      *
      *   UpdateBanner   a snackbar layer over whatever screen you are on. M3
      *                  gives a snackbar inverseSurface for exactly this.
-     *   RechargeScreen the dark balance card, which is a surface and not a
-     *                  control — the theme EXEMPT note already names it.
      *   ProviderDetail the second of three actions, first is accentStrong.
      */
     expect(src('src/components/UpdateBanner.tsx')).toContain(
       't.color.bg.inverse',
     );
+    // RechargeScreen's balance card LEFT this list on 2026-10-18: the near-white
+    // slab was the brightest thing on the recharge sheet (13.7:1) and drowned
+    // the choice and the Pay button. It is a quiet surface now.
     expect(
       rule(src('src/screens/RechargeScreen.tsx'), 'balanceCard'),
-    ).toContain('t.color.bg.inverse');
+    ).not.toContain('t.color.bg.inverse');
     const detail = src('src/screens/ProviderDetailScreen.tsx');
     expect(rule(detail, 'actionDark')).toContain('t.color.bg.inverse');
     // ...and only because the primary beside it carries the brand.

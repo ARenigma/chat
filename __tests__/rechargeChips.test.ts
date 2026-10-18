@@ -181,67 +181,49 @@ describe('a selected money chip is a filled container', () => {
    * state. Both grids on this screen are the same control and take the same
    * treatment; the compact one used to be outline-only.
    */
-  it('fills both grids, with no outline left on the selected state', () => {
+  /*
+   * 2026-10-18 (owner, "go with offer stage and spotlight"): the selected pack
+   * is a coral OUTLINE on its own card, not a fill. The hero above the grid is
+   * the sheet's one saturated surface, so a filled chip would be a second. The
+   * width lives on `card` alone so selecting never shifts the layout; the state
+   * also travels as accessibilityState (radio, checked), never colour alone.
+   */
+  it('outlines the selected pack on both grids, without refilling it', () => {
     for (const style of ['cardOn', 'cardSelected']) {
       const block = styleBlock(recharge, style);
-      expect(block).toContain('backgroundColor: t.color.bg.accentStrong');
-      // bg/accent is the glyph-only step. theme.test.ts records it as a fact
-      // ("the bright accent cannot carry text") and both chips carry 12sp text.
-      expect(block).not.toMatch(/bg\.accent(?!Strong)/);
+      expect(block).toContain('borderColor: t.color.text.accent');
+      expect(block).not.toContain('backgroundColor');
       expect(block).not.toContain('borderWidth');
     }
+    // A 2dp boundary is non-text UI: 3:1 against the card in both modes.
+    for (const mode of ['Light', 'Dark'] as const) {
+      expect(contrast(hex('text/accent', mode), hex('bg/hover', mode))).toBeGreaterThanOrEqual(3);
+    }
   });
 
-  it('pairs the fill with the on-colour M3 guarantees, on every label that sits on it', () => {
-    for (const style of ['amountOn', 'tokensOn', 'cardAmountOn', 'cardUnitOn']) {
-      expect(styleBlock(recharge, style)).toContain('color: t.color.text.onAccent');
+  it('keeps every label on a selected pack in its unselected ink', () => {
+    for (const style of ['amountOn', 'cardAmountOn']) {
+      expect(styleBlock(recharge, style)).toContain('color: t.color.text.primary');
     }
-    // developer.android.com/guide/topics/ui/accessibility/apps: 4.5:1 below
-    // 18sp. bodySmall is 12sp, so the fill has to clear 4.5 in BOTH themes —
-    // which is exactly what bg/accent (3.44 / 2.59) does not do.
+    for (const style of ['tokensOn', 'cardUnitOn']) {
+      expect(styleBlock(recharge, style)).toContain('color: t.color.text.secondary');
+    }
+  });
+
+  it('keeps the offer ribbons solid coral on a selected chip too', () => {
+    // Owner, 2026-10-18: "offer ribbon is crucial".
+    for (const style of ['ribbon', 'popular']) {
+      expect(styleBlock(recharge, style)).toContain('backgroundColor: t.color.bg.accentStrong');
+    }
+    expect(recharge).not.toContain('styles.ribbonOn');
+    expect(recharge).not.toContain('styles.popularOn');
     for (const mode of ['Light', 'Dark'] as const) {
       expect(contrast(hex('text/onAccent', mode), hex('bg/accentStrong', mode))).toBeGreaterThanOrEqual(4.5);
-      /*
-       * `accentStrong` is the step a LABEL sits on — that is what this chip
-       * needs and it holds in both modes.
-       *
-       * The second half used to assert that bg/accent could NOT carry a label
-       * in either mode, which was true while the dark accent was a light blue
-       * under white text (2.59:1). With WhatsApp green (2026-09-08) dark
-       * flipped text/onAccent to near-black ink and the pair is now 7.21:1, so
-       * the claim is only true in LIGHT. Narrowed rather than deleted: light is
-       * still the mode where a filled chip must use the deeper step.
-       *
-       * Deleted 2026-09-26, and replaced with its opposite: there is one coral
-       * now, ramp step 500 under both names, so bg/accent carries this chip's
-       * labels at 5.27:1 in both modes (walletTone.test.ts pins the two equal).
-       */
-      expect(contrast(hex('text/onAccent', mode), hex('bg/accent', mode))).toBeGreaterThanOrEqual(4.5);
     }
   });
 
-  // `coinOn` is not in this list any more because the coin is not on the card
-  // any more: the wallet card's ₹ disc was standing in for the currency mark
-  // its headline lacked, and a 40dp disc plus a 12dp gap left 63.8dp of a
-  // 115.8dp card for text that now has to hold "₹5,000" (74.4dp). See the
-  // `cardAmount` comment in RechargeScreen.tsx for the full arithmetic.
-  it('flips every pill inset into a selected chip to the page colour with accent ink', () => {
-    for (const style of ['ribbonOn', 'minutesTagOn', 'popularOn']) {
-      expect(styleBlock(recharge, style)).toContain('backgroundColor: t.color.bg.base');
-    }
-    // Translucent white was the old answer and it composites to 2.67:1 / 2.04:1
-    // under its own label; nothing on a selected card may go back to it.
-    expect(recharge).not.toMatch(/rgba\(255,\s*255,\s*255/);
-    for (const mode of ['Light', 'Dark'] as const) {
-      expect(contrast(hex('text/accent', mode), hex('bg/base', mode))).toBeGreaterThanOrEqual(4.5);
-    }
-  });
-
-  it('presses lighter, not darker, on both filled grids', () => {
-    // Pressable.tsx resolves the M3 state layer to `onColor ?? text.primary`,
-    // and the layer opacity is TOKENS.interaction.statePressed = 0.1, which is
-    // androidx StateTokens.kt `PressedStateLayerOpacity = 0.1f`. Without the
-    // prop a dark-ink layer would darken the coral fill on press.
+  it('presses with the default state layer on both grids', () => {
+    // No fill on the selected card any more, so no on-colour to press over.
     const compact = recharge.slice(
       recharge.indexOf('function RechargeSheetForm'),
       recharge.indexOf('function RechargeSheetFooter'),
@@ -250,8 +232,9 @@ describe('a selected money chip is a filled container', () => {
       recharge.indexOf('function RechargeForm'),
       recharge.indexOf('const makePageStyles'),
     );
-    expect(compact).toContain('onColor={selected ? theme.color.text.onAccent : undefined}');
-    expect(wallet).toContain('onColor={on ? theme.color.text.onAccent : undefined}');
+    for (const host of [compact, wallet]) {
+      expect(host).toContain('onColor={undefined}');
+    }
   });
 
   it('gives the payment sheet a selected container as well as its check', () => {
@@ -267,7 +250,7 @@ describe('a selected money chip is a filled container', () => {
     // name-only match: the assertion is exactly as specific as it was, and the
     // number it names is now true. Which step it is remains the scale's
     // business, enforced in __tests__/iconScale.test.ts.
-    expect(payment).toContain('<Icon name="check" size={TOKENS.icon.sm}');
+    expect(payment).toMatch(/<Icon\s+name="check"\s+size=\{TOKENS\.icon\.sm\}/);
   });
 });
 

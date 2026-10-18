@@ -17,4 +17,7 @@
 <resources>
     <color name="ic_launcher_background">#1C1C1E</color>
     <color name="notification_accent">#C2401F</color>
+    <!-- bg/base Light; values-night carries bg/base Dark. The system launch screen's
+         colour, which LaunchMark's first frame continues. -->
+    <color name="splash_background">#FFFFFF</color>
 </resources>

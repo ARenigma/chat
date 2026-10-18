@@ -379,7 +379,14 @@ export function useCashfreeCheckout() {
                 // Best-effort and deliberately unawaited: the member's answer is
                 // the rejection below either way.
                 void verifyOrder(orderID).catch(() => {});
-                reject(new Error(`Payment failed: ${error.getMessage()} (${error.getCode()})`));
+                // The SDK's code rides on the error so the sheet can tell a
+                // member who backed out from a payment that was declined.
+                reject(
+                  Object.assign(
+                    new Error(`Payment failed: ${error.getMessage()} (${error.getCode()})`),
+                    { code: error.getCode() },
+                  ),
+                );
               },
             };
 

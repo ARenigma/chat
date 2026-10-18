@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- bg/base Dark (design/tokens.json); see values/colors.xml. -->
+    <color name="splash_background">#1E1E1E</color>
+</resources>

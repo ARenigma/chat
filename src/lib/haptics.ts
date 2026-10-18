@@ -64,6 +64,18 @@ export function longPress(): void {
 }
 
 /**
+ * Something succeeded — a recharge went through. `CONFIRM` on API 30+, a light
+ * tap below that (HapticsModule.kt).
+ */
+export function confirmTick(): void {
+  if (HAS_NATIVE_HAPTICS) {
+    native?.confirm();
+    return;
+  }
+  Vibration.vibrate(12);
+}
+
+/**
  * Something was refused — a wrong OTP.
  *
  * `REJECT` on API 30+, with the native side falling back to `LONG_PRESS` below

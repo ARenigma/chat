@@ -1280,6 +1280,26 @@ describe('launcher icon', () => {
     expect(hexes).toEqual([coral, coral]);
   });
 
+  it('keeps the system launch screen icon-less and on the page colour', () => {
+    // LaunchMark's first frame is an empty page that continues the system launch
+    // screen; a launcher icon there, or a colour off bg/base, is a visible jump.
+    const tokens = JSON.parse(read('design/tokens.json'));
+    const base = tokens.color.tokens['bg/base'];
+    const colour = (file: string) =>
+      read(`${RES}/${file}`)
+        .match(/name="splash_background">(#[0-9A-Fa-f]{6})</)?.[1]
+        ?.toUpperCase();
+    expect(colour('values/colors.xml')).toBe(base.Light.toUpperCase());
+    expect(colour('values-night/colors.xml')).toBe(base.Dark.toUpperCase());
+    const theme = read(`${RES}/values-v31/styles.xml`);
+    expect(theme).toContain(
+      '<item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>',
+    );
+    expect(theme).toContain(
+      '<item name="android:windowSplashScreenBackground">@color/splash_background</item>',
+    );
+  });
+
   it('has a Play listing icon and feature graphic', () => {
     expect(existsSync(join(ROOT, 'docs/play/assets/play-icon-512.png'))).toBe(
       true,

@@ -17,7 +17,7 @@ import type { ConversationSummary, ProviderSummary } from '../lib/database.types
 import { initialOf, firstName } from '../lib/display';
 import { presenceForSpeech, readPresence } from '../lib/presence';
 import { SCROLL_PHYSICS } from '../lib/scroll';
-import Animated, { useReducedMotion, useSharedValue } from 'react-native-reanimated';
+import Animated, { LinearTransition, useReducedMotion, useSharedValue } from 'react-native-reanimated';
 import { useSoftReset } from '../lib/routes/useSoftReset';
 import { useTabPress } from '../lib/routes/useTabPress';
 import { contentColumnWidth } from '../lib/windowSize';
@@ -82,6 +82,8 @@ import { useHomeTour } from '../store/useHomeTour';
 import {
   directoryIn,
   directoryOut,
+  EASE_OUT,
+  REORDER_MS,
   searchResultsIn,
   searchResultsOut,
 } from '../theme/motion';
@@ -1057,6 +1059,8 @@ export function HomeScreen({
  * rail item. The parent passes a stable `(peerId: string) => void`; the item
  * binds the specific peer id here rather than at the call site.
  */
+const RAIL_REORDER = LinearTransition.duration(REORDER_MS).easing(EASE_OUT);
+
 const RailItem = memo(function ({
   chat,
   onPress,
@@ -1101,7 +1105,11 @@ const RailItem = memo(function ({
     });
   }, [onLongPress, chat.peer_id]);
   return (
-    <View ref={hostRef} collapsable={false}>
+    // A new message moves this chat to the front; the layout transition lets it
+    // be seen to move (REORDER_MS, the near-imperceptible tier — the rail is seen
+    // tens of times a day). Reanimated's, since this is a plain ScrollView, not a
+    // recycling list; it honours the system reduce-motion setting by default.
+    <Animated.View ref={hostRef} collapsable={false} layout={RAIL_REORDER}>
       <Pressable
         onPress={handlePress}
         onLongPress={handleLongPress}
@@ -1147,7 +1155,7 @@ const RailItem = memo(function ({
           <Badge count={unreadCount} testID={`rail-badge-${chat.peer_id}`} />
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 });
 

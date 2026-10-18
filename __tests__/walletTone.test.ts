@@ -156,12 +156,6 @@ describe('the bright accent carries no label', () => {
     },
     {
       file: 'src/screens/RechargeScreen.tsx',
-      fill: 'balanceMark',
-      label: 'balanceMarkText',
-      why: 'the wallet ₹ disc — the ₹ is text, not an icon',
-    },
-    {
-      file: 'src/screens/RechargeScreen.tsx',
       fill: 'ribbon',
       label: 'ribbonText',
       why: 'the recharge pack\'s "Popular" / "Best value" corner ribbon, 12dp',
@@ -438,5 +432,20 @@ describe('the bright accent carries no label', () => {
       .split(/\{\s*(?=fg:)/)
       .some(entry => /fg:\s*'text\/onAccent'/.test(entry) && /bg:\s*'bg\/accent'/.test(entry));
     expect(registered).toBe(true);
+  });
+});
+
+describe('the balance wears the wallet green wherever it appears', () => {
+  // 2026-10-18 (recharge critique): the recharge balance moved off coral and off
+  // bg/inverse onto the Home wallet pill's green (TokenCounter's tokenHealthy),
+  // so the one figure has one colour across the app.
+  it('fills both recharge balance discs from tokenHealthy, under white', () => {
+    const recharge = withoutComments(read('src/screens/RechargeScreen.tsx'));
+    for (const fill of ['balanceMark', 'walletDisc']) {
+      expect(styleBlock(recharge, fill)).toContain('t.color.bg.tokenHealthy');
+    }
+    expect(withoutComments(read('src/components/TokenCounter.tsx'))).toContain(
+      'theme.color.bg.tokenHealthy',
+    );
   });
 });

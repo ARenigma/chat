@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useReorderAnimation } from '../lib/reorder';
 import { useReducedMotion } from 'react-native-reanimated';
 import { useSoftReset } from '../lib/routes/useSoftReset';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -132,6 +133,10 @@ export function ProviderChatsScreen({ onOpenConversation }: Props) {
     }
     return out;
   }, [allThreads, work]);
+  useReorderAnimation(
+    rows.map(r => (typeof r === 'string' ? r : r.conversation_id)),
+    () => listRef.current?.prepareForLayoutAnimationRender(),
+  );
 
   /*
    * Which rows pin. Derived rather than hardcoded: the header only exists when

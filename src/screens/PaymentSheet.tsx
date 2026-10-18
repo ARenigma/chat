@@ -9,11 +9,21 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles, useTheme } from '../theme/ThemeProvider';
-import { formatRupees, gstAddedLabel, packTotalInr, MOCK_PAYMENTS, PAYMENTS_ENABLED } from '../lib/rates';
+import {
+  formatRupees,
+  gstAddedLabel,
+  packTotalInr,
+  MOCK_PAYMENTS,
+  PAYMENTS_ENABLED,
+} from '../lib/rates';
 import { FALLBACK_ECONOMICS, useEconomicsConfig } from '../api/appConfig';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { Icon } from '../components/Icon';
+import { SuccessBurst } from '../components/SuccessBurst';
+import { checkoutError } from '../lib/checkout';
+import { useReducedMotion } from 'react-native-reanimated';
+import { BURST } from '../theme/motion';
 import { Pressable } from '../components/Pressable';
 import { Sheet } from '../components/Sheet';
 import { RupeeAmount } from '../components/RupeeAmount';
@@ -33,6 +43,13 @@ interface Props {
   visible: boolean;
   amount: number;
   onClose: () => void;
+  /**
+   * Start the Cashfree checkout the moment the sheet opens (owner, 2026-10-18:
+   * the recharge journey loses its in-between Checkout step). `upi` hands
+   * straight to the UPI app chooser; `web` is the recharge sheet's "Other ways
+   * to pay". The sheet is then only the waiting, error and success states.
+   */
+  autoStart?: 'upi' | 'web';
 }
 
 /**
@@ -50,9 +67,18 @@ interface Props {
  */
 const METHODS = ['Google Pay', 'PhonePe', 'Paytm', 'BHIM'] as const;
 
-const LOGOS: Record<(typeof METHODS)[number], { src: ImageSourcePropType; ratio: number }> = {
-  'Google Pay': { src: require('../../assets/brands/gpay.png'), ratio: 330 / 60 },
-  PhonePe: { src: require('../../assets/brands/phonepe.png'), ratio: 330 / 101 },
+const LOGOS: Record<
+  (typeof METHODS)[number],
+  { src: ImageSourcePropType; ratio: number }
+> = {
+  'Google Pay': {
+    src: require('../../assets/brands/gpay.png'),
+    ratio: 330 / 60,
+  },
+  PhonePe: {
+    src: require('../../assets/brands/phonepe.png'),
+    ratio: 330 / 101,
+  },
   Paytm: { src: require('../../assets/brands/paytm.png'), ratio: 330 / 108 },
   BHIM: { src: require('../../assets/brands/bhim.png'), ratio: 330 / 82 },
 };
@@ -63,7 +89,7 @@ const MOCK_SPINNER_MS = 1200;
 
 type MockPhase = 'idle' | 'processing' | 'success' | 'error';
 
-export function PaymentSheet({ visible, amount, onClose }: Props) {
+export function PaymentSheet({ visible, amount, onClose, autoStart }: Props) {
   const { data: economics } = useEconomicsConfig();
   // The last surface the member reads before money moves, so the tax is named
   // here the same way the pack states it — base + tax, the two summing exactly
@@ -82,7 +108,8 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   // The GST caption is computed on the DISCOUNTED base — the tax the member
   // actually pays is on ₹150, not ₹300 — matching create-order, which discounts
   // the taxable value and charges GST on top of that (ADR-0029).
-  const { data: discountBps = 0, isPending: discountPending } = useFirstRechargeDiscount();
+  const { data: discountBps = 0, isPending: discountPending } =
+    useFirstRechargeDiscount();
   const discountedBaseInr = discountedBasePaise(amount, discountBps) / 100;
   const gst = gstAddedLabel(discountedBaseInr, gstRateBps);
   const total = discountedTotalInr(amount, gstRateBps, discountBps);
@@ -96,6 +123,9 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
   const [mockPhase, setMockPhase] = useState<MockPhase>('idle');
   const [successBalance, setSuccessBalance] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [cancelled, setCancelled] = useState(false);
+  const [checkoutMethod, setCheckoutMethod] = useState<'upi' | 'web'>('upi');
+  const fromChat = useStore(s => s.refillVisible);
 
   // Cashfree sandbox mutation.
   const cashfreeCheckout = useCashfreeCheckout();
@@ -107,6 +137,21 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
       setErrorMsg(null);
     }
   }, [visible]);
+
+  useEffect(() => {
+    if (
+      visible &&
+      autoStart &&
+      CASHFREE_SANDBOX_CHECKOUT &&
+      mockPhase === 'idle' &&
+      !discountPending
+    ) {
+      handleCashfreePay(autoStart);
+    }
+    // Fires on open (and once the discount read lands); a cancel moves the phase
+    // off `idle`, so it never re-launches on its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, autoStart, discountPending, mockPhase]);
 
   const finishHome = () => {
     onClose();
@@ -122,18 +167,26 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     // on the RechargeScreen behind this sheet and is almost always resolved by
     // now; this guards the cold-open edge.
     if (discountPending) return;
+    setCheckoutMethod(payMethod);
     setMockPhase('processing');
     setErrorMsg(null);
+    setCancelled(false);
     cashfreeCheckout.mutate(
-      { productId: productIdForPack(amount), method: payMethod, expectedTotalInr: total },
+      {
+        productId: productIdForPack(amount),
+        method: payMethod,
+        expectedTotalInr: total,
+      },
       {
         onSuccess: result => {
           setSuccessBalance(result.balance ?? null);
           setMockPhase('success');
         },
-        onError: (err: Error) => {
+        onError: (err: Error & { code?: unknown }) => {
           // Dismissed / failed — do not credit.
-          setErrorMsg(err.message ?? 'Payment cancelled or failed');
+          const shown = checkoutError(err);
+          setErrorMsg(shown.text);
+          setCancelled(shown.cancelled);
           setMockPhase('error');
         },
       },
@@ -146,7 +199,10 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     const pTokens = amount;
 
     const [result] = await Promise.all([
-      supabase.rpc('mock_recharge', { p_amount_paise: pAmountPaise, p_tokens: pTokens }),
+      supabase.rpc('mock_recharge', {
+        p_amount_paise: pAmountPaise,
+        p_tokens: pTokens,
+      }),
       new Promise<void>(resolve => setTimeout(resolve, MOCK_SPINNER_MS)),
     ]);
 
@@ -156,11 +212,15 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     if (rpcError || !data?.success) {
       const errCode = data?.error;
       if (errCode === 'MOCK_DISABLED') {
-        setErrorMsg('Mock payments are off. Enable app_flags.mock_payments to test.');
+        setErrorMsg(
+          'Mock payments are off. Enable app_flags.mock_payments to test.',
+        );
       } else if (errCode === 'RATE_LIMITED') {
         // migration 117: capped at 3 mock recharges per user per 24h,
         // regardless of the server flag's state.
-        setErrorMsg('Mock recharge limit hit for today (3 max). Try again tomorrow.');
+        setErrorMsg(
+          'Mock recharge limit hit for today (3 max). Try again tomorrow.',
+        );
       } else {
         setErrorMsg('Something went wrong, try again');
       }
@@ -179,10 +239,10 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     mockPhase === 'success'
       ? 'Done'
       : mockPhase === 'processing'
-        ? 'Paying'
-        : isCashfree
-          ? 'Continue to Cashfree'
-          : 'Pay with UPI';
+      ? 'Paying'
+      : isCashfree
+      ? 'Checkout'
+      : 'Pay with UPI';
   /*
    * The total is NOT in this string any more, and that is the point of this pass.
    *
@@ -207,223 +267,285 @@ export function PaymentSheet({ visible, amount, onClose }: Props) {
     mockPhase === 'success'
       ? undefined
       : mockPhase === 'processing'
-        ? `Paying via ${isCashfree ? 'Cashfree' : method}`
-        : isCashfree
-          ? `Add ${formatRupees(amount)}  ·  Sandbox checkout`
-          : `Add ${formatRupees(amount)}`;
+      ? `Paying via ${isCashfree ? 'Cashfree' : method}`
+      : isCashfree
+      ? `Add ${formatRupees(amount)}  ·  Test mode`
+      : `Add ${formatRupees(amount)}`;
 
-  if (mockPhase === 'success') {
-    return (
-      <Sheet
-        visible={visible}
-        testID="payment-success"
-        title="Done"
-        onClose={finishHome}
-        footer={
-          <Button label="Back home" onPress={finishHome} testID="payment-back-home" />
-        }>
-        {/*
-          * Contained M3 success card on bg/positive.
-          *
-          * The previous success state placed an animated field inside a Sheet
-          * with overflow:hidden — it produced a half-height ornament that was
-          * neither a terminal completion nor a sheet component. The M3 Paper
-          * language keeps the same surface hierarchy throughout: bg/raised
-          * sheet, contained positive card, explicit typography. A still card
-          * resolves faster and works equally on API 24+.
-          */}
-        <View style={styles.successCard}>
-          <View style={styles.successIcon}>
-            <Icon name="check" size={TOKENS.icon.lg} color={theme.color.text.positive} />
-          </View>
-          <Text maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized} allowFontScaling style={styles.successDetail}>
-            {formatRupees(amount)} added
-          </Text>
-          {successBalance !== null ? (
-            <Text allowFontScaling style={styles.successBalance}>
-              Balance {formatRupees(successBalance)}
-            </Text>
-          ) : null}
-        </View>
-      </Sheet>
-    );
-  }
-
+  // ONE sheet for every phase: success used to be a second <Sheet>, so the
+  // checkout sheet closed and the success sheet opened and the recharge screen
+  // showed through for a frame between them (seen on the S22, 2026-10-18).
+  const success = mockPhase === 'success';
   return (
     <Sheet
       visible={visible}
+      // Stable: Sheet re-runs its entry spring when testID changes, which
+      // is what dropped and re-raised the sheet at success.
       testID="refill-sheet"
-      title={sheetTitle}
-      body={sheetBody}
-      onClose={onClose}
-      onCancel={mockPhase === 'idle' || mockPhase === 'error' ? onClose : undefined}
-      cancelLabel="Back"
-      canClose={() => mockPhase !== 'processing'}>
-
-      {/*
-        * THE TOTAL, at the same role the recharge screen states it.
-        *
-        * `totalValue` is titleLargeEmphasized — 22dp Geist-Bold — which is
-        * literally the style RechargeScreen's own price chip uses (`amount` in
-        * its makeCompactStyles, and `cardAmount` on the wallet page). The chip
-        * behind this sheet and the total in front of it are now one figure said
-        * once, in one weight; before this pass the sheet restated it in a 16dp
-        * Regular supporting line, i.e. the modal was QUIETER about the charge
-        * than the screen that offered it.
-        *
-        * Rendered outside the phase branch on purpose: idle, error and
-        * processing all show it. A member watching a spinner should still be
-        * able to see what is being taken, and a payment that failed should not
-        * blank the amount that failed.
-        *
-        * The GST split under it is bodySmall, the role the recharge chips'
-        * `tokensGst` / `cardGst` already use for exactly this disclosure. It
-        * moved DOWN a step here (it was riding the bodyLarge body line): the
-        * base and the tax are what the total is made of, never the offer, and
-        * ADR-0029 puts the pack price — this total — as the base fact.
-        */}
-      <View style={styles.totalRow}>
-        <Text allowFontScaling style={styles.totalLabel}>
-          Total
-        </Text>
-        <View style={styles.totalFill} />
-        <View style={styles.totalFigures}>
-          {/* The full total, struck through, above the discounted one — the same
+      title={success ? 'Payment successful' : sheetTitle}
+      body={success ? undefined : sheetBody}
+      onClose={success ? finishHome : onClose}
+      canClose={() => mockPhase !== 'processing'}
+      hero={success ? <SuccessField paid={total} /> : undefined}
+      footer={
+        success ? (
+          <Button
+            label={fromChat ? 'Back to chat' : 'Done'}
+            onPress={finishHome}
+            testID="payment-back-home"
+          />
+        ) : undefined
+      }
+    >
+      {success ? (
+        <>
+          {/* Green field (owner, 2026-10-18: "successful means green"). The
+              green header (SuccessField, the sheet's hero) carries the tick and
+              the headline; below it, what landed in the wallet and the new
+              balance counting up. */}
+          <View testID="payment-success" style={styles.receipt}>
+            <View style={styles.receiptRow}>
+              <Text allowFontScaling style={styles.successBalance}>
+                Added to wallet
+              </Text>
+              <Text allowFontScaling style={styles.successDetail}>
+                {formatRupees(amount)}
+              </Text>
+            </View>
+            {successBalance !== null ? (
+              <View style={[styles.receiptRow, styles.receiptRowLast]}>
+                <Text allowFontScaling style={styles.successBalance}>
+                  New balance
+                </Text>
+                <Text
+                  allowFontScaling
+                  style={styles.successFigure}
+                  testID="payment-new-balance"
+                >
+                  <CountUp to={successBalance} from={successBalance - amount} />
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </>
+      ) : (
+        <>
+          {/*
+           * THE TOTAL, at the same role the recharge screen states it.
+           *
+           * `totalValue` is titleLargeEmphasized — 22dp Geist-Bold — which is
+           * literally the style RechargeScreen's own price chip uses (`amount` in
+           * its makeCompactStyles, and `cardAmount` on the wallet page). The chip
+           * behind this sheet and the total in front of it are now one figure said
+           * once, in one weight; before this pass the sheet restated it in a 16dp
+           * Regular supporting line, i.e. the modal was QUIETER about the charge
+           * than the screen that offered it.
+           *
+           * Rendered outside the phase branch on purpose: idle, error and
+           * processing all show it. A member watching a spinner should still be
+           * able to see what is being taken, and a payment that failed should not
+           * blank the amount that failed.
+           *
+           * The GST split under it is bodySmall, the role the recharge chips'
+           * `tokensGst` / `cardGst` already use for exactly this disclosure. It
+           * moved DOWN a step here (it was riding the bodyLarge body line): the
+           * base and the tax are what the total is made of, never the offer, and
+           * ADR-0029 puts the pack price — this total — as the base fact.
+           */}
+          <View style={styles.totalRow}>
+            <Text allowFontScaling style={styles.totalLabel}>
+              Total
+            </Text>
+            <View style={styles.totalFill} />
+            <View style={styles.totalFigures}>
+              {/* The full total, struck through, above the discounted one — the same
               first-recharge saving the chip behind this sheet showed, restated at
               the moment money moves. First-timers only; `discountBps` is 0 for
               everyone else and this renders nothing. */}
-          {discountBps > 0 ? (
-            <Text allowFontScaling style={styles.totalWas} testID="payment-total-was">
-              {formatRupees(wasTotal)}
-            </Text>
-          ) : null}
-          <RupeeAmount
-            value={total}
-            maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
-            allowFontScaling
-            testID="payment-total"
-            style={styles.totalValue}
-          />
-          {gst ? (
-            <Text allowFontScaling style={styles.totalGst}>
-              {gst}
-            </Text>
-          ) : null}
-        </View>
-      </View>
+              {discountBps > 0 ? (
+                <Text
+                  allowFontScaling
+                  style={styles.totalWas}
+                  testID="payment-total-was"
+                >
+                  {formatRupees(wasTotal)}
+                </Text>
+              ) : null}
+              <RupeeAmount
+                value={total}
+                maxFontSizeMultiplier={TOKENS.fontScaleCap.titleLargeEmphasized}
+                allowFontScaling
+                testID="payment-total"
+                style={styles.totalValue}
+              />
+              {gst ? (
+                <Text allowFontScaling style={styles.totalGst}>
+                  {gst}
+                </Text>
+              ) : null}
+            </View>
+          </View>
 
-      {mockPhase === 'processing' ? (
-        <View style={styles.centreState}>
-          <LoadingIndicator size={48} color={theme.color.bg.accent} />
-          <Text allowFontScaling style={styles.centreLabel}>
-            {isCashfree ? 'Opening Cashfree…' : `Opening ${method}…`}
-          </Text>
-        </View>
-      ) : (
-        <>
-          {mockPhase === 'error' && errorMsg !== null ? (
-            <View style={styles.errorRow}>
-              <Icon name="callEnd" size={TOKENS.icon.xs} color={theme.color.state.danger} />
-              <Text allowFontScaling style={[styles.errorText, { color: theme.color.state.danger }]}>
-                {errorMsg}
+          {mockPhase === 'processing' ? (
+            <View style={styles.centreState}>
+              <LoadingIndicator size={48} color={theme.color.bg.accent} />
+              <Text allowFontScaling style={styles.centreLabel}>
+                {isCashfree
+                  ? checkoutMethod === 'upi'
+                    ? 'Approve the payment in your UPI app'
+                    : 'Finish paying on the Cashfree page'
+                  : `Opening ${method}…`}
               </Text>
             </View>
-          ) : null}
+          ) : (
+            <>
+              {mockPhase === 'error' && errorMsg !== null ? (
+                <View style={styles.errorRow}>
+                  {/* `info`, not the hang-up glyph this used to borrow: in this app
+                  that glyph means a call ended. Neutral ink when the member
+                  backed out on purpose; danger only for a real decline. */}
+                  <Icon
+                    name="info"
+                    size={TOKENS.icon.xs}
+                    color={
+                      cancelled
+                        ? theme.color.text.secondary
+                        : theme.color.state.danger
+                    }
+                  />
+                  <Text
+                    allowFontScaling
+                    style={[
+                      styles.errorText,
+                      {
+                        color: cancelled
+                          ? theme.color.text.secondary
+                          : theme.color.state.danger,
+                      },
+                    ]}
+                  >
+                    {errorMsg}
+                  </Text>
+                </View>
+              ) : null}
 
-          {/* UPI app picker in the mock path; M3 list/selection semantics.
+              {/* UPI app picker in the mock path; M3 list/selection semantics.
               accessibilityRole="radio" + accessibilityState.checked gives
               TalkBack the correct "Google Pay, radio button, checked" announcement.
               No iOS-grouped card wrapper: M3 list rows are flat surfaces on
               bg/raised, distinguished by the selection state rather than by a
               rounded container with overflow:hidden. */}
-          {!isCashfree ? (
-            <View style={styles.group}>
-              {METHODS.map((name, index) => {
-                const on = name === method;
-                return (
-                  <React.Fragment key={name}>
-                    {index === 0 ? null : <View style={styles.separator} />}
-                    <Pressable
-                      onPress={() => {
-                        if (mockPhase === 'idle') {
-                          setMethod(name);
-                        }
-                      }}
-                      testID={`upi-${name}`}
-                      accessibilityRole="radio"
-                      checked={on}
-                      accessibilityLabel={name}
-                      press="none"
-                      highlight="dim"
-                      style={[
-                        styles.row,
-                        index === 0 && styles.rowFirst,
-                        index === METHODS.length - 1 && styles.rowLast,
-                        on && styles.rowOn,
-                      ]}>
-                      <Image
-                        source={LOGOS[name].src}
-                        style={{ height: LOGO_HEIGHT, width: LOGO_HEIGHT * LOGOS[name].ratio }}
-                        resizeMode="contain"
-                        accessibilityIgnoresInvertColors
-                      />
-                      <View style={styles.rowFill} />
-                      {on ? <Icon name="check" size={TOKENS.icon.sm} color={theme.color.text.primary} /> : null}
-                    </Pressable>
-                  </React.Fragment>
-                );
-              })}
-            </View>
-          ) : null}
+              {!isCashfree ? (
+                <View style={styles.group}>
+                  {METHODS.map((name, index) => {
+                    const on = name === method;
+                    return (
+                      <React.Fragment key={name}>
+                        {index === 0 ? null : <View style={styles.separator} />}
+                        <Pressable
+                          onPress={() => {
+                            if (mockPhase === 'idle') {
+                              setMethod(name);
+                            }
+                          }}
+                          testID={`upi-${name}`}
+                          accessibilityRole="radio"
+                          checked={on}
+                          accessibilityLabel={name}
+                          press="none"
+                          highlight="dim"
+                          style={[
+                            styles.row,
+                            index === 0 && styles.rowFirst,
+                            index === METHODS.length - 1 && styles.rowLast,
+                            on && styles.rowOn,
+                          ]}
+                        >
+                          <Image
+                            source={LOGOS[name].src}
+                            style={{
+                              height: LOGO_HEIGHT,
+                              width: LOGO_HEIGHT * LOGOS[name].ratio,
+                            }}
+                            resizeMode="contain"
+                            accessibilityIgnoresInvertColors
+                          />
+                          <View style={styles.rowFill} />
+                          {on ? (
+                            <Icon
+                              name="check"
+                              size={TOKENS.icon.sm}
+                              color={theme.color.text.primary}
+                            />
+                          ) : null}
+                        </Pressable>
+                      </React.Fragment>
+                    );
+                  })}
+                </View>
+              ) : null}
 
-          {isCashfree ? (
-            <>
-              {/* One-tap: fires the UPI intent chooser and deep-links into the
+              {isCashfree ? (
+                <>
+                  {/* One-tap: fires the UPI intent chooser and deep-links into the
                   member's own GPay / PhonePe / Paytm (research 2026-08-30). */}
-              <Button
-                label={`Pay ${formatRupees(total)}  ·  UPI`}
-                onPress={() => handleCashfreePay('upi')}
-                disabled={discountPending}
-                testID="payment-confirm"
-              />
-              {/* Fallback for members with no UPI app: the hosted page carries
+                  <Button
+                    label={`Pay ${formatRupees(total)}  ·  UPI`}
+                    onPress={() => handleCashfreePay('upi')}
+                    disabled={discountPending}
+                    testID="payment-confirm"
+                  />
+                  {/* Fallback for members with no UPI app: the hosted page carries
                   cards, net-banking and wallets. */}
-              <Pressable
-                onPress={() => handleCashfreePay('web')}
-                testID="payment-web"
-                accessibilityLabel="Pay with card, net banking or wallets"
-                press="none"
-                highlight="dim"
-                style={styles.webRow}>
-                <Text allowFontScaling style={styles.webRowText}>
-                  Card, Net Banking & Wallets
-                </Text>
-              </Pressable>
-            </>
-          ) : MOCK_PAYMENTS ? (
-            <Button
-              label={`Open ${method}`}
-              onPress={() => {
-                void handleMockPay();
-              }}
-              testID="payment-confirm"
-            />
-          ) : (
-            <Button
-              label={PAYMENTS_ENABLED ? `Open ${method}` : 'Payments open soon'}
-              disabled={!PAYMENTS_ENABLED}
-              onPress={onClose}
-              testID="payment-confirm"
-            />
-          )}
-          {/* Non-refundable notice at the moment money moves. This is the last
+                  <Pressable
+                    onPress={() => handleCashfreePay('web')}
+                    testID="payment-web"
+                    accessibilityLabel="Pay with card, net banking or wallets"
+                    press="none"
+                    highlight="dim"
+                    style={styles.webRow}
+                  >
+                    <Text allowFontScaling style={styles.webRowText}>
+                      Card, Net Banking & Wallets
+                    </Text>
+                  </Pressable>
+                </>
+              ) : MOCK_PAYMENTS ? (
+                <Button
+                  label={`Open ${method}`}
+                  onPress={() => {
+                    void handleMockPay();
+                  }}
+                  testID="payment-confirm"
+                />
+              ) : (
+                <Button
+                  label={
+                    PAYMENTS_ENABLED ? `Open ${method}` : 'Payments open soon'
+                  }
+                  disabled={!PAYMENTS_ENABLED}
+                  onPress={onClose}
+                  testID="payment-confirm"
+                />
+              )}
+              {/* Non-refundable notice at the moment money moves. This is the last
               surface before the charge, so it restates the stance the recharge
               screen already carries and the public policy fixes
               (web/refund.html: "All purchases on Pappal are final"). Same
               wording as RechargeScreen's footer so the two never drift. */}
-          <Text allowFontScaling style={styles.finalNote} testID="payment-final-note">
-            All purchases are final. No refunds.
-          </Text>
+              {/* Not under an error: "No refunds" straight after "didn't go
+              through" reads as "and your money is gone". */}
+              {mockPhase === 'error' ? null : (
+                <Text
+                  allowFontScaling
+                  style={styles.finalNote}
+                  testID="payment-final-note"
+                >
+                  All purchases are final. No refunds.
+                </Text>
+              )}
+            </>
+          )}
         </>
       )}
     </Sheet>
@@ -590,45 +712,73 @@ const makeStyles = (t: Theme) =>
      * languages on one screen). The positive card uses only surface + typography
      * tokens, consistent with every other Sheet state in the app.
      */
-    successCard: {
-      alignSelf: 'stretch',
-      paddingVertical: TOKENS.space.xl,
-      paddingHorizontal: TOKENS.space.lg,
-      borderRadius: TOKENS.radius.md,
-      borderCurve: 'continuous',
-      backgroundColor: t.color.bg.positive,
-      gap: TOKENS.space.xs,
+    // The green field: the sheet's hero, edge to edge under its corners.
+    field: {
       alignItems: 'center',
+      paddingTop: TOKENS.space.xs,
+      paddingBottom: TOKENS.space.xl,
+      paddingHorizontal: TOKENS.space.xl,
+      gap: TOKENS.space.xs,
+      backgroundColor: t.color.bg.tokenHealthy,
     },
-    successIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      borderCurve: 'continuous',
+    fieldGrabber: {
+      width: 32,
+      height: 4,
+      borderRadius: 2,
+      marginBottom: TOKENS.space.sm,
+    },
+    tickDisc: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: t.color.bg.base,
+      backgroundColor: t.color.text.onAccent,
       marginBottom: TOKENS.space.xs,
     },
-    // The terminal figure of the whole flow — "₹5,000 added" — so it takes
-    // the money/balance role, titleLargeEmphasized, the one RechargeScreen's
-    // `balanceValue` uses for the same quantity on the surface behind. It was
-    // titleMediumEmphasized, which is the FILLED-BUTTON role (Button.tsx line
-    // 177, and ADR-0024 names it "filled-button label"): the confirmation of a
-    // payment was set at the weight of a button label and one step below the
-    // ₹ figure that produced it.
+    // White on the wallet green: 5.4:1 dark, 7.6:1 light.
+    fieldTitle: {
+      ...TOKENS.typography.titleLargeEmphasized,
+      color: t.color.text.onAccent,
+    },
+    fieldPaid: {
+      ...TOKENS.typography.bodyLarge,
+      color: t.color.text.onAccent,
+      opacity: 0.85,
+    },
+    receipt: {
+      alignSelf: 'stretch',
+    },
+    // The sheet's footer already rules a line above Done.
+    receiptRowLast: {
+      borderBottomWidth: 0,
+    },
+    receiptRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: TOKENS.space.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: t.color.border.hairline,
+    },
     successDetail: {
       ...TOKENS.typography.titleLargeEmphasized,
-      color: t.color.text.positive,
+      color: t.color.text.secondary,
     },
     // The line under that figure is a supporting line, so bodyLarge — the role
     // Sheet's own `body` uses, and the role every screen's supporting copy uses
     // (TransactionHistoryScreen `emptyBody`/`hintText`, SessionFeedbackSheet
     // `word`, SafetySheet `reasonLabel`). At bodyMedium a balance the member had
     // just paid for was the quietest text on its own success card.
+    // The new balance, counting up — the figure that changed.
+    successFigure: {
+      ...TOKENS.typography.numeralLarge,
+      color: t.color.text.primary,
+    },
+    // Its caption — a supporting line, at the supporting-line role.
     successBalance: {
       ...TOKENS.typography.bodyLarge,
-      color: t.color.text.positive,
+      color: t.color.text.secondary,
     },
     errorRow: {
       alignSelf: 'stretch',
@@ -642,3 +792,64 @@ const makeStyles = (t: Theme) =>
       flex: 1,
     },
   });
+
+/**
+ * The new balance counts up from the old one as the check pops — the number
+ * that changed is the one that moves. A rare moment (once per payment), so a JS
+ * frame loop is fine here; reduced motion shows the final figure at once.
+ */
+function CountUp({ to, from }: { to: number; from: number }) {
+  const reduced = useReducedMotion();
+  const [shown, setShown] = useState(reduced ? to : Math.max(0, from));
+  useEffect(() => {
+    if (reduced) {
+      setShown(to);
+      return;
+    }
+    const start = Math.max(0, from);
+    let frame = 0;
+    const began = Date.now() + BURST.land;
+    const step = () => {
+      const t = Math.min(1, Math.max(0, (Date.now() - began) / BURST.count));
+      // Strong ease-out: most of the climb happens while the eye is on it.
+      const eased = 1 - Math.pow(1 - t, 4);
+      setShown(Math.round(start + (to - start) * eased));
+      if (t < 1) {
+        frame = requestAnimationFrame(step);
+      }
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [to, from, reduced]);
+  return <>{formatRupees(shown)}</>;
+}
+
+/**
+ * The green field at the top of the success sheet (owner, 2026-10-18, from the
+ * "Green field" option — the PhonePe / Google Pay success language). It draws
+ * its own grabber in white over the green, since it replaces the sheet's.
+ */
+function SuccessField({ paid }: { paid: number }) {
+  const styles = useStyles(makeStyles);
+  const theme = useTheme();
+  return (
+    <View style={styles.field}>
+      <View
+        style={[styles.fieldGrabber, { backgroundColor: `${theme.color.text.onAccent}66` }]}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      />
+      <SuccessBurst tones={[theme.color.text.onAccent, theme.color.bg.available]}>
+        <View style={styles.tickDisc}>
+          <Icon name="check" size={TOKENS.icon.lg} color={theme.color.bg.tokenHealthy} />
+        </View>
+      </SuccessBurst>
+      <Text allowFontScaling accessibilityRole="header" style={styles.fieldTitle}>
+        Payment successful
+      </Text>
+      <Text allowFontScaling style={styles.fieldPaid}>
+        {formatRupees(paid)} paid
+      </Text>
+    </View>
+  );
+}
