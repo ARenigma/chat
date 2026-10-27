@@ -29,16 +29,16 @@ interface Props {
   onBack: () => void;
 }
 
-export interface FaqEntry {
+interface FaqEntry {
   question: string;
   answer: string;
 }
 
-export const HELP_EMAIL = 'hello@pappal.live';
-export const HELP_SUBJECT = 'Pappal help and feedback';
-export const HELP_MAILTO = `mailto:${HELP_EMAIL}?subject=${encodeURIComponent(HELP_SUBJECT)}`;
+const HELP_EMAIL = 'hello@pappal.live';
+const HELP_SUBJECT = 'Pappal help and feedback';
+const HELP_MAILTO = `mailto:${HELP_EMAIL}?subject=${encodeURIComponent(HELP_SUBJECT)}`;
 
-export const FAQ: readonly FaqEntry[] = [
+const FAQ: readonly FaqEntry[] = [
   {
     question: 'How does charging work?',
     answer:

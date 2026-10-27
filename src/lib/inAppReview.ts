@@ -20,6 +20,7 @@ const NATIVE = (NativeModules as Record<string, unknown>).InAppReview as
 const ASKED_KEY = 'companion.reviewAsked';
 
 /** Pure policy: only a good rating, and only if we have not asked before. */
+/** @public Pure decision; tests load it with requireActual, which knip cannot follow. */
 export function shouldAskForReview(stars: number, alreadyAsked: boolean): boolean {
   return stars >= 4 && !alreadyAsked;
 }
