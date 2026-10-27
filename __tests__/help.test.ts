@@ -30,7 +30,7 @@ describe('Help & feedback', () => {
   it('has a non-empty FAQ, with no em dashes', () => {
     // Read from source: importing the screen would load the native animation stack.
     const screen = read('src/screens/HelpScreen.tsx');
-    const faq = screen.slice(screen.indexOf('export const FAQ'), screen.indexOf('export function HelpScreen'));
+    const faq = screen.slice(screen.indexOf('const FAQ'), screen.indexOf('export function HelpScreen'));
     const entries = [...faq.matchAll(/question:\s*'([^']*)',\s*answer:\s*'([^']*)'/g)];
     expect(entries.length).toBeGreaterThanOrEqual(5);
     expect(entries.length).toBe((faq.match(/question:/g) ?? []).length);
