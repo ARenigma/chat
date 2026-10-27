@@ -18,6 +18,7 @@ export type SettingsRowId =
   | 'notifications'
   | 'theme'
   | 'blocked'
+  | 'share'
   | 'about';
 
 type SettingsSectionId = 'main';
@@ -55,6 +56,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionModel[] = [
       'notifications',
       'theme',
       'blocked',
+      'share',
       'about',
     ],
   },

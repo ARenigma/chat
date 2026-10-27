@@ -4,6 +4,7 @@ import {
   Keyboard,
   Linking,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -140,6 +141,21 @@ function openNotificationSettings(): void {
   ]).catch(() => {
     Linking.openSettings().catch(() => undefined);
   });
+}
+
+/**
+ * "Share Pappal": the Android Sharesheet with the Play Store link as plain
+ * text. React Native's `Share.share` is `Intent.ACTION_SEND` with
+ * `EXTRA_TEXT`, type `text/plain`, wrapped in `Intent.createChooser`, which
+ * is what the platform asks for when sharing outside the app, and it forbids
+ * building our own share list.
+ * https://developer.android.com/training/sharing/send
+ */
+function sharePappal(): void {
+  Share.share({
+    message:
+      'Chat one-to-one with people who listen. Get Pappal: https://play.google.com/store/apps/details?id=com.companionchat',
+  }).catch(() => undefined);
 }
 
 interface SettingsRowContentProps {
@@ -542,6 +558,15 @@ export function SettingsSheet({
             testID: 'settings-become-provider',
             accessibilityLabel: 'Become a provider',
           },
+    // The testers' "Share App" ask (2026-10): a growth path for a new app.
+    share: {
+      icon: 'share',
+      title: 'Share Pappal',
+      detail: 'Invite a friend',
+      onPress: sharePappal,
+      testID: 'settings-share',
+      accessibilityLabel: 'Share Pappal with a friend',
+    },
     // Bluesky's last root row (CircleInfo), opening AboutSettings: where the
     // policy links and the version live now (social-app Settings.tsx).
     about:
