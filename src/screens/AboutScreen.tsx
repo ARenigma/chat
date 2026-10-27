@@ -26,9 +26,14 @@ interface Props {
   onBack: () => void;
 }
 
-const POLICIES: readonly { key: 'terms' | 'privacy' | 'refund'; title: string; label: string }[] = [
+const POLICIES: readonly {
+  key: 'terms' | 'privacy' | 'guidelines' | 'refund';
+  title: string;
+  label: string;
+}[] = [
   { key: 'terms', title: 'Terms of service', label: 'Terms of Service' },
   { key: 'privacy', title: 'Privacy policy', label: 'Privacy Policy' },
+  { key: 'guidelines', title: 'Community guidelines', label: 'Community Guidelines' },
   { key: 'refund', title: 'Refund policy', label: 'Refund Policy' },
 ];
 
@@ -75,7 +80,7 @@ export function AboutScreen({ onBack }: Props) {
         showsVerticalScrollIndicator={false}
         {...SCROLL_PHYSICS}
         contentContainerStyle={[styles.scroll, { paddingBottom: barOffset }]}>
-        {/* Terms, Privacy and Refund open in the system browser, at the URLs
+        {/* Terms, Privacy, Guidelines and Refund open in the system browser, at the URLs
             the seeded policy_versions rows use (migration 027). Refund is here
             because the purchase surfaces state "no refunds". */}
         {POLICIES.map(p => (

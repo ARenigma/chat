@@ -25,6 +25,7 @@ import { FavouritesScreen } from '../FavouritesScreen';
 import { CallsScreen } from '../CallsScreen';
 import { AppearanceScreen } from '../AppearanceScreen';
 import { AboutScreen } from '../AboutScreen';
+import { HelpScreen } from '../HelpScreen';
 import { SettingsSheet } from '../SettingsSheet';
 import { ChatsListScreen } from '../ChatsListScreen';
 import { ProviderDetailScreen } from '../ProviderDetailScreen';
@@ -151,6 +152,7 @@ export function YouRoute() {
         onUsage={() => nav.push('Usage')}
         onAppearance={() => nav.push('AppearanceSettings')}
         onAbout={() => nav.push('AboutSettings')}
+        onHelp={() => nav.push('HelpSettings')}
         onBecomeProvider={() => {
           // The same intent the pre-sign-in "Become a partner" sets, so the
           // role-transition effect in App.tsx re-runs the post-auth gate when
@@ -380,6 +382,14 @@ export function AboutRoute({ navigation }: RouteProps<'AboutSettings'>) {
   return (
     <Layout.Screen>
       <AboutScreen onBack={() => navigation.goBack()} />
+    </Layout.Screen>
+  );
+}
+
+export function HelpRoute({ navigation }: RouteProps<'HelpSettings'>) {
+  return (
+    <Layout.Screen>
+      <HelpScreen onBack={() => navigation.goBack()} />
     </Layout.Screen>
   );
 }

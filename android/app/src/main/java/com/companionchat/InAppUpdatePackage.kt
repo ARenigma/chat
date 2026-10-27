@@ -29,6 +29,7 @@ class InAppUpdatePackage : ReactPackage {
         CallDiagnosticsModule(reactContext),
         HapticsModule(reactContext),
         TruecallerOAuthModule(reactContext),
+        ReviewModule(reactContext),
     )
 
     override fun createViewManagers(

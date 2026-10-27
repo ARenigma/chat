@@ -14,7 +14,13 @@ const LEGAL_BASE_URL = 'https://chat-arenigmas-projects.vercel.app';
 
 // 'provider-agreement' added in 189: hosted at /provider-agreement on the same
 // Vercel deployment; the page must be live before launch.
-type LegalPage = 'privacy' | 'terms' | 'delete' | 'refund' | 'provider-agreement';
+type LegalPage =
+  | 'privacy'
+  | 'terms'
+  | 'delete'
+  | 'refund'
+  | 'provider-agreement'
+  | 'guidelines';
 
 export function legalUrl(page: LegalPage): string {
   return `${LEGAL_BASE_URL}/${page}`;

@@ -62,6 +62,8 @@ interface Props {
   onAppearance?: () => void;
   /** Pushes the About screen (policies, version). Hidden when absent. */
   onAbout?: () => void;
+  /** Pushes Help & feedback (a short FAQ and a mail to us). Hidden when absent. */
+  onHelp?: () => void;
   /**
    * Opens the provider application. Member tree only: before this the only
    * entry was "Become a partner" ahead of sign-in, so a member who backed out
@@ -303,6 +305,7 @@ export function SettingsSheet({
   onUsage,
   onAppearance,
   onAbout,
+  onHelp,
   onBecomeProvider,
   onOpenPhotos,
   topSection,
@@ -557,6 +560,17 @@ export function SettingsSheet({
             onPress: onBecomeProvider,
             testID: 'settings-become-provider',
             accessibilityLabel: 'Become a provider',
+          },
+    help:
+      onHelp === undefined
+        ? undefined
+        : {
+            icon: 'chat',
+            title: 'Help & feedback',
+            detail: 'Answers, and how to reach us',
+            onPress: onHelp,
+            testID: 'settings-help',
+            accessibilityLabel: 'Help and feedback',
           },
     // The testers' "Share App" ask (2026-10): a growth path for a new app.
     share: {

@@ -32,9 +32,10 @@ type CommonParams = {
   };
   Blocked: undefined;
   Usage: undefined;
-  /** Appearance (colour mode) and About, pushed from either tree's You tab. */
+  /** Appearance (colour mode), About and Help, pushed from either tree's You tab. */
   AppearanceSettings: undefined;
   AboutSettings: undefined;
+  HelpSettings: undefined;
   /**
    * Full-screen stories, both trees: a member plays listed providers' stories
    * in rail order; a provider plays their own. The order is fixed at open

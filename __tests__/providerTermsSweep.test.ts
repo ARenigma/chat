@@ -32,6 +32,7 @@ describe('legalUrl', () => {
   it('does not affect existing legal pages', () => {
     expect(legalUrl('terms')).toBe('https://chat-arenigmas-projects.vercel.app/terms');
     expect(legalUrl('privacy')).toBe('https://chat-arenigmas-projects.vercel.app/privacy');
+    expect(legalUrl('guidelines')).toBe('https://chat-arenigmas-projects.vercel.app/guidelines');
   });
 });
 

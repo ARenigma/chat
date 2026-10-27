@@ -9357,6 +9357,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'Transactions',
       'AppearanceSettings',
       'AboutSettings',
+      'HelpSettings',
       'HomeSuggestion',
       'StoryViewer',
     ]);
@@ -9378,6 +9379,7 @@ describe('navigation step 7: the graph is the §2 table', () => {
       'Usage',
       'AppearanceSettings',
       'AboutSettings',
+      'HelpSettings',
       'StoryViewer',
       'StoryCreate',
       // C5: provider self-profile preview, registered alongside the member-tree

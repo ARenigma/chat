@@ -48,6 +48,7 @@ export const LEGACY_KIND: Record<string, LegacyKind> = {
   Transactions: 'transactions',
   AppearanceSettings: 'appearanceSettings',
   AboutSettings: 'aboutSettings',
+  HelpSettings: 'helpSettings',
   HomeSuggestion: 'homeSuggestion',
 
   // Provider-only pushed screens

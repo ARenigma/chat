@@ -23,6 +23,7 @@ import { useStyles, useTheme } from '../theme/ThemeProvider';
 import { fadeSwapFast, fadeSwapOutFast } from '../theme/motion';
 import { useSubmitSessionReview } from '../api/provider';
 import { supabase } from '../lib/supabase';
+import { maybeAskForReview } from '../lib/inAppReview';
 import { useStore } from '../store/useStore';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -220,7 +221,15 @@ export function SessionFeedbackSheet({ held = false }: { held?: boolean }) {
       },
       // Closed either way: a rating that failed to save is not worth trapping
       // somebody in a sheet over, and the notice already said so.
-      { onSuccess: close, onError: close },
+      {
+        onSuccess: () => {
+          close();
+          // After the rating has saved and the sheet is closing; fire and
+          // forget, and only 4-5 stars ever reach Play (see lib/inAppReview).
+          void maybeAskForReview(rating);
+        },
+        onError: close,
+      },
     );
   }, [pending, rating, comment, submit, close]);
 

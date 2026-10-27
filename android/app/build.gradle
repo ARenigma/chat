@@ -487,6 +487,15 @@ dependencies {
     implementation("com.google.android.play:app-update:2.1.0")
 
     /**
+     * Google Play in-app review: the card shown after a member rates a session
+     * 4 or 5 stars (`src/lib/inAppReview.ts`, `ReviewModule.kt`).
+     * https://developer.android.com/guide/playcore/in-app-review/kotlin-java
+     * names `com.google.android.play:review:2.0.2`. No -ktx: the Task API is used
+     * directly, as with app-update above.
+     */
+    implementation("com.google.android.play:review:2.0.2")
+
+    /**
      * Sign in with Google, in an app-owned bottom sheet.
      *
      * Credential Manager is the platform API Google now requires for this; the

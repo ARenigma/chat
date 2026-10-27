@@ -42,6 +42,7 @@ interface Props {
   /** Appearance and About, the same pushed screens the member tree opens. */
   onOpenAppearance: () => void;
   onOpenAbout: () => void;
+  onOpenHelp: () => void;
   /**
    * C5: Opens the provider's own public profile in a full-page push, so they
    * can see exactly what members see. The route is the member-tree
@@ -94,6 +95,7 @@ export function ProviderYouScreen({
   onOpenBlocked,
   onOpenAppearance,
   onOpenAbout,
+  onOpenHelp,
   onOpenOwnProfile,
   onSignedOut,
   onDeleted,
@@ -187,6 +189,7 @@ export function ProviderYouScreen({
       onBlocked={onOpenBlocked}
       onAppearance={onOpenAppearance}
       onAbout={onOpenAbout}
+      onHelp={onOpenHelp}
       // C1: provider avatar tap opens "Your photos", not the clay picker.
       onOpenPhotos={onOpenPhotos}
       extraRows={{

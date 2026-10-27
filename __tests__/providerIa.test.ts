@@ -43,16 +43,16 @@ describe('the settings list is one Bluesky-style list', () => {
     expect(SETTINGS_SECTIONS).toHaveLength(1);
     expect(SETTINGS_SECTIONS[0]?.rows).toEqual([
       'edit-profile', 'photos', 'usage', 'transactions', 'invoices', 'get-paid',
-      'become-provider', 'notifications', 'theme', 'blocked', 'share', 'about',
+      'become-provider', 'notifications', 'theme', 'blocked', 'help', 'share', 'about',
     ]);
   });
 
   it('gives each tree only the rows it offers, in that order', () => {
     const provider = new Set<SettingsRowId>([
-      'edit-profile', 'photos', 'get-paid', 'usage', 'notifications', 'theme', 'blocked', 'share', 'about',
+      'edit-profile', 'photos', 'get-paid', 'usage', 'notifications', 'theme', 'blocked', 'help', 'share', 'about',
     ]);
     expect(visibleSections(r => provider.has(r)).map(s => s.rows)).toEqual([
-      ['edit-profile', 'photos', 'usage', 'get-paid', 'notifications', 'theme', 'blocked', 'share', 'about'],
+      ['edit-profile', 'photos', 'usage', 'get-paid', 'notifications', 'theme', 'blocked', 'help', 'share', 'about'],
     ]);
     expect(visibleSections(() => false)).toEqual([]);
   });
@@ -65,7 +65,7 @@ describe('the settings list is one Bluesky-style list', () => {
     expect(settings).not.toContain('style={styles.subheader}');
     for (const id of [
       'settings-usage', 'settings-transactions', 'settings-invoices', 'settings-theme',
-      'settings-blocked', 'settings-about', 'settings-notifications', 'settings-share',
+      'settings-blocked', 'settings-about', 'settings-notifications', 'settings-share', 'settings-help',
     ]) {
       expect(settings).toContain(`testID: '${id}'`);
     }

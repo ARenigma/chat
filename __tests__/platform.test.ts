@@ -3401,3 +3401,37 @@ describe('a new session request supersedes an unanswered review (B-BS-9)', () =>
     expect(read('src/chat-v2/ChatScreenV2.tsx')).toMatch(/clearReview\(\);\s*setAskConsent\(true\);/);
   });
 });
+
+describe('Play in-app review', () => {
+  /*
+   * https://developer.android.com/guide/playcore/in-app-review/kotlin-java
+   * names com.google.android.play:review:2.0.x and the two-step flow:
+   * requestReviewFlow(), then launchReviewFlow(activity, reviewInfo).
+   */
+  it('declares the review dependency and runs the documented flow', () => {
+    expect(read('android/app/build.gradle')).toMatch(
+      /implementation\("com\.google\.android\.play:review:2\.0\.\d+"\)/,
+    );
+    const mod = read('android/app/src/main/java/com/companionchat/ReviewModule.kt');
+    expect(mod).toContain('ReviewManagerFactory.create(');
+    expect(mod).toContain('requestReviewFlow()');
+    expect(mod).toContain('launchReviewFlow(activity,');
+    expect(
+      read('android/app/src/main/java/com/companionchat/InAppUpdatePackage.kt'),
+    ).toContain('ReviewModule(reactContext)');
+  });
+
+  // https://developer.android.com/guide/playcore/in-app-review : no button may
+  // trigger the API, so its only caller is the post-rating success handler.
+  it('is asked for only from the session rating, after a successful submit', () => {
+    const callers = (readdirSync(join(ROOT, 'src'), { recursive: true }) as string[])
+      .map(f => `src/${f}`)
+      .concat('App.tsx')
+      .filter(f => /\.(ts|tsx)$/.test(f) && read(f).includes('maybeAskForReview('))
+      .filter(f => f !== 'src/lib/inAppReview.ts');
+    expect(callers).toEqual(['src/components/SessionFeedbackSheet.tsx']);
+    expect(read('src/components/SessionFeedbackSheet.tsx')).toMatch(
+      /onSuccess: \(\) => \{[\s\S]*?close\(\);[\s\S]*?maybeAskForReview\(rating\)/,
+    );
+  });
+});

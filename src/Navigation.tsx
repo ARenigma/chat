@@ -96,6 +96,7 @@ import { ChatRoute } from './screens/routes/ChatRoute';
 import {
   AppearanceRoute,
   AboutRoute,
+  HelpRoute,
   ApplyRoute,
   BlockedRoute,
   CallsRoute,
@@ -224,6 +225,7 @@ function memberScreens(Stack: typeof HomeStack, background: string) {
       <Stack.Screen name="Transactions" getComponent={() => TransactionsRoute} />
       <Stack.Screen name="AppearanceSettings" getComponent={() => AppearanceRoute} />
       <Stack.Screen name="AboutSettings" getComponent={() => AboutRoute} />
+      <Stack.Screen name="HelpSettings" getComponent={() => HelpRoute} />
       <Stack.Screen name="HomeSuggestion" getComponent={() => HomeSuggestionRoute} />
       <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
     </>
@@ -271,6 +273,7 @@ function providerScreens(Stack: typeof ChatsStack) {
       <Stack.Screen name="Usage" getComponent={() => UsageRoute} />
       <Stack.Screen name="AppearanceSettings" getComponent={() => AppearanceRoute} />
       <Stack.Screen name="AboutSettings" getComponent={() => AboutRoute} />
+      <Stack.Screen name="HelpSettings" getComponent={() => HelpRoute} />
       <Stack.Screen name="StoryViewer" getComponent={() => StoryViewerRoute} options={STORY_VIEWER_OPTIONS} />
       <Stack.Screen name="StoryCreate" getComponent={() => StoryCreateRoute} />
       {/* C5: readOnly self-view — ProviderSelfProfileRoute passes readOnly={true}

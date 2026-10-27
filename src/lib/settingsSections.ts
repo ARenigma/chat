@@ -18,6 +18,7 @@ export type SettingsRowId =
   | 'notifications'
   | 'theme'
   | 'blocked'
+  | 'help'
   | 'share'
   | 'about';
 
@@ -56,6 +57,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionModel[] = [
       'notifications',
       'theme',
       'blocked',
+      // Answers and a mail to hello@pappal.live, ahead of the growth row.
+      'help',
       'share',
       'about',
     ],

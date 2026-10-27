@@ -66,6 +66,7 @@ export function ProviderYouRoute() {
         onOpenBlocked={() => nav.push('Blocked')}
         onOpenAppearance={() => nav.push('AppearanceSettings')}
         onOpenAbout={() => nav.push('AboutSettings')}
+        onOpenHelp={() => nav.push('HelpSettings')}
         // C5: push the provider's own public profile for a self-preview.
         onOpenOwnProfile={(providerId) => nav.push('ProviderProfile', { providerId })}
         onSignedOut={onSignedOut}
