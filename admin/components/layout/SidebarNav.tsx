@@ -100,7 +100,12 @@ function SidebarBody({ email, onNavigate }: { email: string; onNavigate?: () => 
   const pathname = usePathname();
   const { nav, setCommandOpen, newItem } = useShell();
   const { resolvedTheme, setTheme } = useTheme();
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+  // Read after mount: the server cannot know the platform, so reading it during render
+  // would print "Ctrl" on the server and "⌘" on a Mac client and trip a hydration warning.
+  const [isMac, setIsMac] = React.useState(false);
+  React.useEffect(() => {
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

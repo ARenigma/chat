@@ -22,6 +22,9 @@ import { Label } from '@/components/ui/label';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { cn } from '@/lib/utils';
 
+/** Shortcut hints on a coral (accent-filled) button; elsewhere Kbd keeps its own surface colours. */
+const onAccentKbd = 'border-transparent bg-on-accent/20 text-on-accent';
+
 export const PUBLISH_PHRASE = 'publish to production';
 
 export interface PublishDialogState {
@@ -134,6 +137,7 @@ function JsonField({
 export function ConfigEditorView(p: ConfigEditorViewProps) {
   const canSave = p.validationErrors.length === 0 && !p.jsonError && !p.saving;
   const canPublish = p.hasSavedDraft && !p.isDirty;
+  const saveIsPrimary = !(p.hasSavedDraft || canPublish);
   const phraseOk = p.publish.confirmPhrase === PUBLISH_PHRASE;
 
   // Keyboard hints in the save bar are real: ⌘/Ctrl+S saves, ⌘/Ctrl+Enter opens the publish confirmation.
@@ -270,15 +274,15 @@ export function ConfigEditorView(p: ConfigEditorViewProps) {
             {p.isDirty && (
               <AsyncButton
                 size="sm"
-                variant={p.hasSavedDraft || canPublish ? 'secondary' : 'default'}
+                variant={saveIsPrimary ? 'default' : 'secondary'}
                 pending={p.saving}
                 disabled={p.validationErrors.length > 0 || !!p.jsonError}
                 onClick={onSave}
               >
                 Save draft
                 <KbdGroup aria-hidden="true">
-                  <Kbd className="border-transparent bg-on-accent/20 text-on-accent">⌘</Kbd>
-                  <Kbd className="border-transparent bg-on-accent/20 text-on-accent">S</Kbd>
+                  <Kbd className={saveIsPrimary ? onAccentKbd : undefined}>⌘</Kbd>
+                  <Kbd className={saveIsPrimary ? onAccentKbd : undefined}>S</Kbd>
                 </KbdGroup>
               </AsyncButton>
             )}
@@ -286,8 +290,8 @@ export function ConfigEditorView(p: ConfigEditorViewProps) {
               <Button type="button" size="sm" onClick={p.onOpenPublish}>
                 Publish to production…
                 <KbdGroup aria-hidden="true">
-                  <Kbd className="border-transparent bg-on-accent/20 text-on-accent">⌘</Kbd>
-                  <Kbd className="border-transparent bg-on-accent/20 text-on-accent">↵</Kbd>
+                  <Kbd className={onAccentKbd}>⌘</Kbd>
+                  <Kbd className={onAccentKbd}>↵</Kbd>
                 </KbdGroup>
               </Button>
             )}
