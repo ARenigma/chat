@@ -7,7 +7,7 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        "flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm",
+        "flex flex-col gap-4 rounded-lg border border-hairline bg-raised py-4 text-body",
         className
       )}
       {...props}
@@ -20,7 +20,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6",
+        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-4 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-4",
         className
       )}
       {...props}
@@ -32,7 +32,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn("leading-none font-semibold", className)}
+      className={cn("leading-none font-semibold text-primary", className)}
       {...props}
     />
   )
@@ -42,7 +42,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-secondary", className)}
       {...props}
     />
   )
@@ -65,7 +65,7 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-content"
-      className={cn("px-6", className)}
+      className={cn("px-4", className)}
       {...props}
     />
   )
@@ -75,7 +75,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-footer"
-      className={cn("flex items-center px-6 [.border-t]:pt-6", className)}
+      className={cn("flex items-center px-4 [.border-t]:pt-4", className)}
       {...props}
     />
   )
@@ -91,42 +91,29 @@ export {
   CardContent,
 }
 
-// ── Pappal semantic composites ────────────────────────────────────────────
+// StatCard lives in stat-card.tsx (CountUp + delta + sparkline); re-exported
+// here so existing `import { StatCard } from '@/components/ui/card'` keeps working.
+export { StatCard } from "@/components/ui/stat-card"
 
-interface StatCardProps {
-  label: string;
-  value: React.ReactNode;
-  sub?: React.ReactNode;
-  className?: string;
-}
-
-export function StatCard({ label, value, sub, className }: StatCardProps) {
-  return (
-    <Card className={cn('gap-2 py-5', className)}>
-      <CardContent className="px-5">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-        <p className="text-2xl font-semibold mt-1">{value}</p>
-        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}
-
+// -- Pappal semantic composites ----------------------------------------------
 interface PanelProps extends React.ComponentProps<"div"> {
   heading?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Replaces the content padding (e.g. "p-0" for full-bleed lists). */
+  contentClassName?: string;
 }
 
-export function Panel({ heading, actions, children, className, ...props }: PanelProps) {
+/** Bordered section: optional heading row with hairline underneath, then content. */
+export function Panel({ heading, actions, children, className, contentClassName, ...props }: PanelProps) {
   return (
     <Card className={cn('gap-0 py-0', className)} {...props}>
       {(heading || actions) && (
-        <CardHeader className="border-b px-5 py-4">
-          <CardTitle className="text-sm font-semibold">{heading}</CardTitle>
-          {actions && <CardAction>{actions}</CardAction>}
-        </CardHeader>
+        <div className="flex h-11 items-center justify-between gap-3 border-b border-hairline px-4">
+          <CardTitle className="text-sm">{heading}</CardTitle>
+          {actions}
+        </div>
       )}
-      <CardContent className="px-5 py-5">{children}</CardContent>
+      <CardContent className={cn("px-4 py-4", contentClassName)}>{children}</CardContent>
     </Card>
   );
 }

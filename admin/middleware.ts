@@ -11,6 +11,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Design preview (fixture data, no session): public in dev only, never in production.
+  if (process.env.NODE_ENV !== 'production' && (pathname === '/design' || pathname.startsWith('/design/'))) {
+    return NextResponse.next();
+  }
+
   const response = NextResponse.next({
     request: { headers: request.headers },
   });

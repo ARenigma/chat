@@ -2,10 +2,10 @@ import { notFound } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
 import { ConfigVersionEditor } from './ConfigVersionEditor';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Card, CardContent } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/badge';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { VersionHistory } from '@/components/config/VersionHistory';
 import { CONFIG_REGISTRY } from '@/lib/config-registry';
+import { formatConfigDateTime } from '@/lib/config-view';
 
 interface ConfigVersion {
   id: string;
@@ -54,55 +54,33 @@ export default async function ConfigDomainPage({
   const description = (domainRow as { description: string }).description;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto max-w-[760px]">
       <PageHeader
         title={displayName}
-        subtitle={description}
+        description={description}
         breadcrumbs={[
           { label: 'App config', href: '/config' },
           { label: displayName },
         ]}
+        actions={
+          <>
+            {draftVersion && <StatusBadge status="draft">Draft v{draftVersion.version_number}</StatusBadge>}
+            {activeVersion && <StatusBadge status="active">Live v{activeVersion.version_number}</StatusBadge>}
+          </>
+        }
       />
 
       <ConfigVersionEditor domain={domain} activeVersion={activeVersion} draftVersion={draftVersion} />
 
-      {/* Version history */}
-      <section className="flex flex-col gap-3 mt-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Version history</p>
-        {history.length === 0 ? (
-          <EmptyState
-            cause="cold-start"
-            icon="📋"
-            title="No published versions yet"
-            body="Publish a draft to create the first production version."
-          />
-        ) : (
-          <Card className="py-0 gap-0">
-            <CardContent className="p-0">
-              <div className="divide-y">
-                {history.map((v) => (
-                  <div key={v.id} className="px-5 py-3 flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-semibold">v{v.version_number}</span>
-                      <StatusBadge status={v.status} />
-                    </div>
-                    <div className="text-right">
-                      {v.publish_reason && (
-                        <p className="text-xs text-muted-foreground mb-0.5 max-w-xs text-right">{v.publish_reason}</p>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(v.published_at ?? v.created_at).toLocaleString('en-IN', {
-                          day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </section>
+      <VersionHistory
+        items={history.map((v) => ({
+          id: v.id,
+          versionNumber: v.version_number,
+          status: v.status,
+          reason: v.publish_reason,
+          whenLabel: formatConfigDateTime(v.published_at ?? v.created_at),
+        }))}
+      />
     </div>
   );
 }

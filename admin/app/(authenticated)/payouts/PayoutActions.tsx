@@ -44,14 +44,18 @@ export function PayoutActions({ providerId, payable, amount }: Props) {
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <Button size="sm" disabled={!payable || pending} onClick={() => pay(false)}>
-        {pending ? 'Paying…' : 'Pay'}
-      </Button>
-      {error ? <span className="text-xs text-destructive">{error}</span> : null}
-      {!payable ? (
-        <span className="text-xs text-muted-foreground">Account + PAN not verified</span>
+    <div className="flex items-center justify-end gap-2">
+      {error ? (
+        <span role="alert" className="max-w-56 truncate text-xs text-danger" title={error}>
+          {error}
+        </span>
       ) : null}
+      <span title={payable ? undefined : 'Account + PAN not verified'}>
+        <Button size="xs" variant="outline" disabled={!payable || pending} aria-busy={pending} onClick={() => pay(false)}>
+          {pending ? 'Paying…' : 'Pay'}
+          {!payable ? <span className="sr-only">(account and PAN not verified)</span> : null}
+        </Button>
+      </span>
     </div>
   );
 }

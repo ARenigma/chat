@@ -1,4 +1,10 @@
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Tray,
+  MagnifyingGlass,
+  WarningCircle,
+  Lock,
+  Lightning,
+} from '@phosphor-icons/react/dist/ssr';
 import { cn } from '@/lib/utils';
 
 type EmptyCause = 'cold-start' | 'no-results' | 'load-failure' | 'permission' | 'error';
@@ -8,34 +14,37 @@ interface EmptyStateProps {
   title?: string;
   body?: string;
   action?: React.ReactNode;
-  icon?: string;
+  /** A Phosphor icon element. Strings (the old emoji prop) are ignored: Linear-style states use line icons. */
+  icon?: React.ReactNode;
   inline?: boolean;
+  className?: string;
 }
 
-const DEFAULTS: Record<EmptyCause, { icon: string; title: string; body: string }> = {
-  'cold-start': { icon: '📭', title: 'Nothing here yet', body: 'Data will appear once the system is running.' },
-  'no-results': { icon: '🔍', title: 'No results', body: 'Try adjusting your filters or check back later.' },
-  'load-failure': { icon: '⚠️', title: 'Could not load data', body: 'There was a problem fetching this content. Reload or try again shortly.' },
-  'permission': { icon: '🔒', title: 'Access restricted', body: 'Your account does not have permission to view this.' },
-  'error': { icon: '⚡', title: 'Something went wrong', body: 'An unexpected error occurred. Reload and try again.' },
+const DEFAULTS: Record<EmptyCause, { Icon: typeof Tray; title: string; body: string }> = {
+  'cold-start': { Icon: Tray, title: 'Nothing here yet', body: 'Data will appear once the system is running.' },
+  'no-results': { Icon: MagnifyingGlass, title: 'No results', body: 'Try adjusting your filters or check back later.' },
+  'load-failure': { Icon: WarningCircle, title: 'Could not load data', body: 'There was a problem fetching this content. Reload or try again shortly.' },
+  permission: { Icon: Lock, title: 'Access restricted', body: 'Your account does not have permission to view this.' },
+  error: { Icon: Lightning, title: 'Something went wrong', body: 'An unexpected error occurred. Reload and try again.' },
 };
 
-export function EmptyState({ cause = 'cold-start', title, body, action, icon, inline }: EmptyStateProps) {
+export function EmptyState({ cause = 'cold-start', title, body, action, icon, inline, className }: EmptyStateProps) {
   const d = DEFAULTS[cause];
-  const content = (
-    <div className="flex flex-col items-center text-center py-10 px-6 gap-2">
-      <span className="text-3xl" role="img" aria-hidden="true">{icon ?? d.icon}</span>
-      <p className="font-semibold text-sm mt-1">{title ?? d.title}</p>
-      <p className="text-sm text-muted-foreground max-w-xs">{body ?? d.body}</p>
-      {action && <div className="mt-2">{action}</div>}
-    </div>
-  );
-
-  if (inline) return content;
-
+  const custom = icon && typeof icon !== 'string' ? icon : null;
   return (
-    <Card className={cn('border-dashed')}>
-      <CardContent className="p-0">{content}</CardContent>
-    </Card>
+    <div
+      className={cn(
+        'flex flex-col items-center gap-1 px-6 py-12 text-center',
+        !inline && 'rounded-lg border border-dashed border-hairline',
+        className
+      )}
+    >
+      <span className="mb-2 inline-flex size-9 items-center justify-center rounded-md border border-hairline bg-raised text-secondary">
+        {custom ?? <d.Icon size={18} aria-hidden="true" />}
+      </span>
+      <p className="text-sm font-medium text-primary">{title ?? d.title}</p>
+      <p className="max-w-xs text-sm text-secondary">{body ?? d.body}</p>
+      {action && <div className="mt-3">{action}</div>}
+    </div>
   );
 }

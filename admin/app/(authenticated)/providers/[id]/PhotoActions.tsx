@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/Toast';
+import { ReasonDialog } from '../ReasonDialog';
 
 interface Props {
   photoId: string;
@@ -11,14 +13,10 @@ interface Props {
 
 export function PhotoRemoveButton({ photoId, providerId }: Props) {
   const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
 
-  async function remove() {
-    if (!window.confirm('Remove this photo? This bypasses the 3-photo minimum floor.')) return;
-    const reason = window.prompt('Reason:') ?? '';
-    setPending(true);
-    setError(null);
+  async function remove({ reason }: { reason: string }): Promise<string | null> {
     try {
       const res = await fetch(`/api/providers/${providerId}`, {
         method: 'POST',
@@ -26,21 +24,29 @@ export function PhotoRemoveButton({ photoId, providerId }: Props) {
         body: JSON.stringify({ action: 'remove_photo', photoId, reason }),
       });
       const json = (await res.json()) as { error?: string };
-      if (!res.ok) setError(json.error ?? 'Error');
-      else router.refresh();
+      if (!res.ok) return json.error ?? 'Error';
+      toast.success('Photo removed');
+      router.refresh();
+      return null;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error');
-    } finally {
-      setPending(false);
+      return e instanceof Error ? e.message : 'Network error';
     }
   }
 
   return (
-    <span>
-      <Button size="sm" variant="destructive" disabled={pending} onClick={remove}>
-        {pending ? 'Removing…' : 'Remove'}
+    <>
+      <Button size="xs" variant="destructive" onClick={() => setOpen(true)}>
+        Remove
       </Button>
-      {error && <span className="text-xs text-destructive ml-2">{error}</span>}
-    </span>
+      <ReasonDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Remove this photo?"
+        description="This bypasses the 3-photo minimum floor."
+        confirmLabel="Remove photo"
+        destructive
+        onSubmit={remove}
+      />
+    </>
   );
 }

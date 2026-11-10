@@ -2,14 +2,18 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Check, Pause, Prohibit } from '@phosphor-icons/react/dist/ssr';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface Props {
   userId: string;
   reviewState: string;
+  /** `buttons` for the detail panel, `icons` for the hover actions on a list row. */
+  variant?: 'buttons' | 'icons';
 }
 
-export function ContactGuardActions({ userId }: Props) {
+export function ContactGuardActions({ userId, variant = 'buttons' }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,8 +59,39 @@ export function ContactGuardActions({ userId }: Props) {
     resolve('ban', undefined, note || undefined);
   }
 
+  if (variant === 'icons') {
+    const items = [
+      { key: 'clear', label: 'Clear review', icon: <Check />, run: clear, danger: false },
+      { key: 'suspend', label: 'Suspend', icon: <Pause />, run: suspend, danger: false },
+      { key: 'ban', label: 'Ban', icon: <Prohibit />, run: ban, danger: true },
+    ];
+    return (
+      <div className="flex items-center gap-0.5">
+        {error && <span role="alert" className="max-w-40 truncate pr-1 text-xs text-danger" title={error}>{error}</span>}
+        {items.map((a) => (
+          <Tooltip key={a.key}>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={a.label}
+                disabled={pending !== null}
+                aria-busy={pending === a.key}
+                onClick={a.run}
+                className={a.danger ? 'hover:text-danger' : undefined}
+              >
+                {a.icon}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{a.label}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-wrap gap-2 items-center">
+    <div className="flex flex-wrap items-center gap-2">
       <Button size="sm" variant="outline" disabled={pending !== null} onClick={clear}>
         {pending === 'clear' ? 'Clearing…' : 'Clear'}
       </Button>
@@ -66,7 +101,7 @@ export function ContactGuardActions({ userId }: Props) {
       <Button size="sm" variant="destructive" disabled={pending !== null} onClick={ban}>
         {pending === 'ban' ? 'Banning…' : 'Ban'}
       </Button>
-      {error && <span className="text-xs text-destructive">{error}</span>}
+      {error && <span role="alert" className="text-xs text-danger">{error}</span>}
     </div>
   );
 }

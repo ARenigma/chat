@@ -1,16 +1,20 @@
 'use client';
 
 import { MotionConfig } from 'motion/react';
-import { Toaster } from 'sonner';
+import { ThemeProvider } from 'next-themes';
+import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <MotionConfig reducedMotion="user">
-      <TooltipProvider>
-        {children}
-        <Toaster position="bottom-right" richColors closeButton />
-      </TooltipProvider>
-    </MotionConfig>
+    // Dark is the default; system preference is deliberately ignored.
+    <ThemeProvider attribute="data-theme" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+      <MotionConfig reducedMotion="user">
+        <TooltipProvider delayDuration={300} skipDelayDuration={150}>
+          {children}
+          <Toaster />
+        </TooltipProvider>
+      </MotionConfig>
+    </ThemeProvider>
   );
 }

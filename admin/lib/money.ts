@@ -4,7 +4,7 @@
  * writes total_paise = total_tokens * 100). One place for that rate, so every
  * rupee figure in the console reads tokens the same way.
  */
-const RUPEES_PER_TOKEN = 1;
+export const RUPEES_PER_TOKEN = 1;
 
 export function rupeesFromTokens(tokens: number): string {
   return `₹${Math.round(tokens * RUPEES_PER_TOKEN).toLocaleString('en-IN')}`;

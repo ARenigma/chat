@@ -1,148 +1,128 @@
-import Link from 'next/link';
 import { createServiceClient } from '@/lib/supabase/service';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Card, CardContent } from '@/components/ui/card';
-import { StatusBadge } from '@/components/ui/badge';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { Button } from '@/components/ui/button';
+import { diffPayload } from '@/lib/audit/diff';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
+  AUDIT_ACTIONS,
+  AUDIT_RANGES,
+  type AuditAction,
+  type AuditDetail,
+  type AuditFilters,
+  type AuditRange,
+  type AuditRow,
+} from '@/lib/audit/types';
+import { AuditView } from './AuditView';
+
+export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 50;
+const RANGE_MS: Record<AuditRange, number> = { '24h': 86_400_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000 };
 
-interface AuditRow {
+interface VersionRef {
   id: string;
-  action: string;
-  domain: string | null;
-  actor: string;
-  reason: string;
-  confirmation: string | null;
-  created_at: string;
+  domain: string;
+  environment: string;
+  version_number: number;
+}
+
+/**
+ * Before/after for the rows on this page: each row's version payload against the
+ * previous version of the same domain and environment. Best-effort and read-only;
+ * a failure just means the sheet shows no diff.
+ */
+async function loadDetails(svc: ReturnType<typeof createServiceClient>, rows: AuditRow[]): Promise<Record<string, AuditDetail>> {
+  const ids = [...new Set(rows.map((r) => r.version_id).filter((v): v is string => !!v))];
+  if (ids.length === 0) return {};
+  try {
+    const admin = svc.schema('admin');
+    const { data: targets, error } = await admin
+      .from('config_versions')
+      .select('id, domain, environment, version_number')
+      .in('id', ids);
+    if (error || !targets) return {};
+    const refs = targets as VersionRef[];
+    const domains = [...new Set(refs.map((t) => t.domain))];
+    const { data: siblings } = await admin
+      .from('config_versions')
+      .select('id, domain, environment, version_number')
+      .in('domain', domains)
+      .order('version_number', { ascending: false })
+      .limit(500);
+    const all = (siblings ?? []) as VersionRef[];
+    const prevOf = new Map<string, string | null>();
+    for (const t of refs) {
+      const prev = all
+        .filter((s) => s.domain === t.domain && s.environment === t.environment && s.version_number < t.version_number)
+        .sort((a, b) => b.version_number - a.version_number)[0];
+      prevOf.set(t.id, prev?.id ?? null);
+    }
+    const want = [...new Set([...ids, ...[...prevOf.values()].filter((v): v is string => !!v)])];
+    const { data: payloads } = await admin.from('config_versions').select('id, payload').in('id', want);
+    const byId = new Map(((payloads ?? []) as { id: string; payload: unknown }[]).map((p) => [p.id, p.payload]));
+    const out: Record<string, AuditDetail> = {};
+    for (const r of rows) {
+      const t = refs.find((x) => x.id === r.version_id);
+      if (!t || !byId.has(t.id)) continue;
+      const prevId = prevOf.get(t.id);
+      // Predecessor outside the 500-row window: show no diff rather than a false "everything added".
+      if (!prevId && t.version_number > 1) continue;
+      out[r.id] = {
+        version: t.version_number,
+        environment: t.environment,
+        changes: diffPayload(prevId ? byId.get(prevId) : null, byId.get(t.id)),
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; actor?: string; action?: string; range?: string }>;
 }) {
-  const { page } = await searchParams;
-  const pageNum = Math.max(1, parseInt(page ?? '1', 10));
+  const sp = await searchParams;
+  const pageNum = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
   const offset = (pageNum - 1) * PAGE_SIZE;
 
+  const filters: AuditFilters = {
+    actor: sp.actor?.trim() || undefined,
+    action: (AUDIT_ACTIONS as readonly string[]).includes(sp.action ?? '') ? (sp.action as AuditAction) : undefined,
+    range: sp.range && sp.range in AUDIT_RANGES ? (sp.range as AuditRange) : undefined,
+  };
+  const now = new Date();
+
   const svc = createServiceClient();
-  const { data, count, error } = await svc
+  let query = svc
     .schema('admin')
     .from('config_audit')
-    .select('id, action, domain, actor, reason, confirmation, created_at', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + PAGE_SIZE - 1);
+    .select('id, action, domain, actor, reason, confirmation, created_at, version_id, metadata', { count: 'exact' })
+    .order('created_at', { ascending: false });
+  if (filters.actor) query = query.eq('actor', filters.actor);
+  if (filters.action) query = query.eq('action', filters.action);
+  if (filters.range) query = query.gte('created_at', new Date(now.getTime() - RANGE_MS[filters.range]).toISOString());
+
+  const [{ data, count, error }, { data: actorRows }] = await Promise.all([
+    query.range(offset, offset + PAGE_SIZE - 1),
+    // Bounded: the most recent 500 entries are enough to list the people who act here.
+    svc.schema('admin').from('config_audit').select('actor').order('created_at', { ascending: false }).limit(500),
+  ]);
 
   const rows = (data ?? []) as AuditRow[];
-  const total = count ?? 0;
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const actors = [...new Set(((actorRows ?? []) as { actor: string }[]).map((r) => r.actor))].sort();
+  const details = await loadDetails(svc, rows);
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Audit log"
-        subtitle={`Immutable record of all config changes. ${total.toLocaleString()} entries.`}
-      />
-
-      {error != null && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3 text-sm">
-          <span className="text-red-600 mt-0.5">✕</span>
-          <span className="text-red-800">Could not load audit log: {error.message}</span>
-        </div>
-      )}
-
-      {rows.length === 0 && error == null ? (
-        <EmptyState
-          cause="cold-start"
-          icon="📋"
-          title="No audit entries yet"
-          body="Every config change is recorded here permanently once you publish a version."
-        />
-      ) : (
-        <>
-          {/* Desktop table */}
-          <Card className="py-0 gap-0 hidden sm:block">
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Domain</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead>Actor</TableHead>
-                    <TableHead className="whitespace-nowrap">When</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell><StatusBadge status={row.action} /></TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{row.domain ?? '—'}</TableCell>
-                      <TableCell className="max-w-xs truncate text-sm">{row.reason || '—'}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground max-w-[160px] truncate">
-                        {row.actor}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                        {new Date(row.created_at).toLocaleString('en-IN', {
-                          day: 'numeric', month: 'short', year: '2-digit',
-                          hour: '2-digit', minute: '2-digit',
-                        })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Mobile cards */}
-          <div className="flex flex-col gap-3 sm:hidden">
-            {rows.map((row) => (
-              <Card key={row.id} className="py-0 gap-0">
-                <CardContent className="px-4 py-3 flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <StatusBadge status={row.action} />
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(row.created_at).toLocaleString('en-IN', {
-                        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                  {row.domain && <p className="text-xs font-medium">{row.domain}</p>}
-                  {row.reason && <p className="text-sm text-muted-foreground">{row.reason}</p>}
-                  <p className="font-mono text-xs text-muted-foreground truncate">{row.actor}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-4">
-          {pageNum > 1 ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/audit?page=${pageNum - 1}`}>← Previous</Link>
-            </Button>
-          ) : (
-            <span />
-          )}
-          <span className="text-sm text-muted-foreground">Page {pageNum} of {totalPages}</span>
-          {pageNum < totalPages ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/audit?page=${pageNum + 1}`}>Next →</Link>
-            </Button>
-          ) : (
-            <span />
-          )}
-        </div>
-      )}
-    </div>
+    <AuditView
+      rows={rows}
+      total={count ?? 0}
+      page={pageNum}
+      pageSize={PAGE_SIZE}
+      filters={filters}
+      actors={actors}
+      details={details}
+      nowIso={now.toISOString()}
+      error={error?.message ?? null}
+    />
   );
 }

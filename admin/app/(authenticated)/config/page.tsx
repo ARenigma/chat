@@ -1,11 +1,8 @@
-import Link from 'next/link';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Card, CardContent } from '@/components/ui/card';
-import { StatusBadge, RuntimeBadge } from '@/components/ui/badge';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { Button } from '@/components/ui/button';
-import { CONFIG_REGISTRY, formatDisplayValue } from '@/lib/config-registry';
+import { ConfigIndexView } from '@/components/config/ConfigIndexView';
+import { CONFIG_REGISTRY } from '@/lib/config-registry';
+import { toIndexDomain } from '@/lib/config-view';
 
 interface ActiveConfig {
   domain: string;
@@ -35,82 +32,26 @@ export default async function ConfigPage() {
     {}
   );
 
+  const rows = (domains ?? []).map((domain: { key: string; description: string }) => {
+    const act = activeByDomain[domain.key];
+    return toIndexDomain({
+      key: domain.key,
+      description: domain.description,
+      def: CONFIG_REGISTRY.find((d) => d.key === domain.key),
+      versionNumber: act?.config_versions?.version_number ?? null,
+      publishedAt: act?.config_versions?.published_at ?? null,
+      payload: act?.payload ?? null,
+    });
+  });
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto max-w-[1040px]">
       <PageHeader
         title="App config"
-        subtitle="All runtime configuration domains. Changes take effect immediately on publish."
+        description="All runtime configuration domains. Changes take effect immediately on publish."
+        breadcrumbs={[{ label: 'App config' }]}
       />
-
-      {(domains ?? []).length === 0 ? (
-        <EmptyState cause="cold-start" title="No config domains" body="Run migrations to seed domains." />
-      ) : (
-        <Card className="py-0 gap-0">
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {(domains ?? []).map((domain: { key: string; description: string }) => {
-                const act = activeByDomain[domain.key];
-                const versionNum = act?.config_versions?.version_number;
-                const publishedAt = act?.config_versions?.published_at;
-                const registryDef = CONFIG_REGISTRY.find((d) => d.key === domain.key);
-                const payload = act?.payload as Record<string, unknown> | null;
-
-                const summaryFields = registryDef?.fields.slice(0, 2) ?? [];
-                const summary = summaryFields
-                  .map((f) => {
-                    const v = payload?.[f.key];
-                    if (v === undefined || v === null) return null;
-                    return `${f.label}: ${formatDisplayValue(f, v)}`;
-                  })
-                  .filter(Boolean)
-                  .join(' · ');
-
-                const runtimeStatuses = registryDef?.fields.map((f) => f.runtime) ?? [];
-                const overallRuntime =
-                  runtimeStatuses.includes('seeded') ? 'seeded'
-                  : runtimeStatuses.includes('partial') ? 'partial'
-                  : 'live';
-
-                return (
-                  <div key={domain.key} className="flex items-start justify-between gap-4 px-5 py-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {registryDef && (
-                          <span aria-hidden="true" className="text-base">{registryDef.icon}</span>
-                        )}
-                        <span className="font-semibold text-sm">{registryDef?.name ?? domain.key}</span>
-                        <RuntimeBadge status={overallRuntime} />
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-md">
-                        {summary || domain.description}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      {versionNum != null ? (
-                        <div className="text-right">
-                          <StatusBadge status="active" />
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            v{versionNum}
-                            {publishedAt != null && (
-                              <> · {new Date(publishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}</>
-                            )}
-                          </p>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-[var(--text-accent)] font-medium">No active config</span>
-                      )}
-                      <Button asChild size="sm">
-                        <Link href={`/config/${domain.key}`}>Edit</Link>
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <ConfigIndexView domains={rows} />
     </div>
   );
 }

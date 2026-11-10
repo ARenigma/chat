@@ -1,0 +1,292 @@
+/*
+ * Pappal Admin - semantic token layer.
+ *
+ * ONE layer. Raw values live only in this file, as CSS custom properties:
+ *   :root                -> DARK (the default theme; no flash before JS)
+ *   [data-theme="light"] -> light overrides
+ * next-themes sets data-theme on <html>. Tailwind utilities read these through
+ * the `@theme inline` block below, so `bg-surface`, `text-secondary`,
+ * `border-hairline`, `bg-accent` etc. switch theme with no `dark:` prefixes.
+ *
+ * Direction: Linear's look (near-black shell, inset hairline-bordered panel,
+ * grey text tiers, one accent). The accent is Pappal coral, used exactly where
+ * Linear uses its violet: primary buttons, focus rings, active nav, selected
+ * states, chart series 1. Everything else is neutral grey.
+ *
+ * Intentional differences from the brand ramp in design/tokens.json:
+ *   - Neutrals are Linear's cool-neutral greys, not the brand's iOS greys /
+ *     WhatsApp charcoal: an admin console is a dense work surface, not the
+ *     consumer app, and Linear's proportions are the brief.
+ *   - Accent uses the real coral ramp (primary_500 #C2401F is the fill in both
+ *     themes; hover/active step along the ramp). On dark, text-on-surface coral
+ *     takes ramp step 300 (#F88468) because 500 is 3.3:1 on the panel; ramp
+ *     steps are used as published, never re-derived.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surface ramp -------------------------------------------------------- */
+  --shell: #111213; /* page behind everything; the inset panel sits on it */
+  --sidebar: #111213; /* same as shell: no divider between sidebar and shell */
+  --surface: #151617; /* the inset main panel */
+  --raised: #1a1b1d; /* cards on the panel, popovers, menus, inputs */
+  --hover: rgb(255 255 255 / 0.04);
+  --selected: rgb(255 255 255 / 0.07);
+  --overlay: rgb(0 0 0 / 0.6);
+
+  /* Text tiers ---------------------------------------------------------- */
+  --text-primary: #f7f8f8;
+  --text-body: #d0d6e0; /* sidebar items, table cells, body copy */
+  --text-secondary: #959ba5; /* meta, descriptions, column headers */
+  --text-tertiary: #80858e; /* placeholders, timestamps: AA on surface */
+  --text-quaternary: #62666d; /* decorative only (icons, kbd glyphs): NOT for text */
+  --text-on-accent: #ffffff;
+
+  /* Borders ------------------------------------------------------------- */
+  --border-hairline: rgb(255 255 255 / 0.08);
+  --border-strong: rgb(255 255 255 / 0.14);
+
+  /* Accent: Pappal coral, ramp steps from design/tokens.json ------------- */
+  --accent: #c2401f; /* primary_500, the logo coral: fills */
+  --accent-hover: #a3351a; /* primary_600: hover darkens in both themes so white labels stay >= 4.5:1 */
+  --accent-active: #832b15; /* primary_700 */
+  --accent-fg: #f88468; /* primary_300: coral text/icons on dark surfaces */
+  --accent-subtle: rgb(194 64 31 / 0.18);
+  --accent-ring: rgb(225 97 66 / 0.55);
+
+  /* Status: fg (text/icon), subtle (tinted bg), dot ---------------------- */
+  --success-fg: #5fcf9a;
+  --success-subtle: rgb(76 183 130 / 0.11);
+  --success-dot: #4cb782;
+  --warning-fg: #f0c25a;
+  --warning-subtle: rgb(242 201 76 / 0.11);
+  --warning-dot: #f2c94c;
+  --danger-fg: #ff8585;
+  --danger-subtle: rgb(235 87 87 / 0.11);
+  --danger-dot: #eb5757;
+  --info-fg: #7fb6ff;
+  --info-subtle: rgb(78 150 245 / 0.11);
+  --info-dot: #4e96f5;
+  --neutral-fg: #a4a9b2;
+  --neutral-subtle: rgb(255 255 255 / 0.06);
+  --neutral-dot: #7a7f88;
+
+  /* Chart series: accent first; Okabe-Ito-leaning hues tuned for dark ---- */
+  --chart-1: #e16142; /* primary_400: brighter than the fill so the series reads on dark */
+  --chart-2: #5b9cf5;
+  --chart-3: #3fb68b;
+  --chart-4: #e5a93c;
+  --chart-5: #a78bfa;
+  --chart-6: #4fc3d9;
+  --chart-7: #e26fa3;
+  --chart-8: #8a93a6;
+
+  /* Shadows: only on floating layers ------------------------------------ */
+  --elev-pop: 0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 24px rgb(0 0 0 / 0.5);
+  --elev-dialog: 0 0 0 1px rgb(255 255 255 / 0.07), 0 24px 64px rgb(0 0 0 / 0.6);
+
+  /* Layout -------------------------------------------------------------- */
+  --sidebar-width: 244px;
+  --header-height: 44px;
+  --shell-gap: 8px; /* shell showing around the inset panel */
+
+  /* Motion: admin is used all day, so short and quiet ------------------- */
+  --dur-fast: 100ms;
+  --dur-base: 150ms;
+  --dur-slow: 200ms;
+  --dur-chart: 400ms;
+  --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* Font features: Linear's single-storey a/ss03 ------------------------ */
+  --font-features: 'cv01', 'ss03', 'cv11';
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --shell: #f4f5f6;
+  --sidebar: #f4f5f6;
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --hover: rgb(0 0 0 / 0.04);
+  --selected: rgb(0 0 0 / 0.07);
+  --overlay: rgb(15 16 17 / 0.4);
+
+  --text-primary: #17181a;
+  --text-body: #3a3d43;
+  --text-secondary: #5b5f67;
+  --text-tertiary: #6f737b;
+  --text-quaternary: #8b8f97;
+  --text-on-accent: #ffffff;
+
+  --border-hairline: rgb(0 0 0 / 0.09);
+  --border-strong: rgb(0 0 0 / 0.16);
+
+  --accent: #c2401f;
+  --accent-hover: #a3351a; /* primary_600: darkens on light */
+  --accent-active: #832b15; /* primary_700 */
+  --accent-fg: #a3351a;
+  --accent-subtle: rgb(194 64 31 / 0.09);
+  --accent-ring: rgb(194 64 31 / 0.45);
+
+  --success-fg: #0f7a4d;
+  --success-subtle: rgb(15 122 77 / 0.1);
+  --success-dot: #1a9d66;
+  --warning-fg: #8a5a00;
+  --warning-subtle: rgb(204 140 0 / 0.12);
+  --warning-dot: #d99a00;
+  --danger-fg: #b42a2a;
+  --danger-subtle: rgb(200 50 50 / 0.1);
+  --danger-dot: #d94141;
+  --info-fg: #1b5fc4;
+  --info-subtle: rgb(40 110 220 / 0.1);
+  --info-dot: #2f7be0;
+  --neutral-fg: #5b5f67;
+  --neutral-subtle: rgb(0 0 0 / 0.05);
+  --neutral-dot: #8f939a;
+
+  --chart-1: #c2401f;
+  --chart-2: #2f6fd0;
+  --chart-3: #15845f;
+  --chart-4: #b27412;
+  --chart-5: #7a55d6;
+  --chart-6: #157f95;
+  --chart-7: #b53e78;
+  --chart-8: #5e6779;
+
+  --elev-pop: 0 0 0 1px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.12);
+  --elev-dialog: 0 0 0 1px rgb(0 0 0 / 0.07), 0 24px 64px rgb(0 0 0 / 0.2);
+}
+
+/*
+ * Tailwind wiring. `inline` makes utilities emit var(--token) directly, so a
+ * theme switch needs no rebuild and opacity modifiers (bg-accent/20) work.
+ */
+@theme inline {
+  --color-shell: var(--shell);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+  --color-overlay: var(--overlay);
+
+  /* text tiers: text-primary / text-body / text-secondary / text-tertiary */
+  --color-primary: var(--text-primary);
+  --color-body: var(--text-body);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary: var(--text-tertiary);
+  --color-quaternary: var(--text-quaternary);
+  --color-on-accent: var(--text-on-accent);
+
+  --color-hairline: var(--border-hairline);
+  --color-hairline-strong: var(--border-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-ring: var(--accent-ring);
+
+  --color-success: var(--success-fg);
+  --color-success-subtle: var(--success-subtle);
+  --color-success-dot: var(--success-dot);
+  --color-warning: var(--warning-fg);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-warning-dot: var(--warning-dot);
+  --color-danger: var(--danger-fg);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-danger-dot: var(--danger-dot);
+  --color-info: var(--info-fg);
+  --color-info-subtle: var(--info-subtle);
+  --color-info-dot: var(--info-dot);
+  --color-neutral: var(--neutral-fg);
+  --color-neutral-subtle: var(--neutral-subtle);
+  --color-neutral-dot: var(--neutral-dot);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+
+  /* shadcn/legacy names the existing pages and ui kit still use ---------- */
+  --color-background: var(--shell);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--raised);
+  --color-popover-foreground: var(--text-primary);
+  --color-muted: var(--hover);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--danger-dot);
+  --color-border: var(--border-hairline);
+  --color-input: var(--border-strong);
+  --color-ring: var(--accent-ring);
+
+  /* Radii: 4 / 6 / 8 / 10 / full */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* Type scale: 11 / 12 / 13 / 14 / 15 / 20 / 24 */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  --text-md: 15px;
+  --text-md--line-height: 22px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --shadow-pop: var(--elev-pop);
+  --shadow-dialog: var(--elev-dialog);
+
+  --ease-out: var(--motion-ease-out);
+  --ease-in-out: var(--motion-ease-in-out);
+
+  --spacing-header: var(--header-height);
+  --spacing-sidebar: var(--sidebar-width);
+}
+
+/* Dark-only / light-only variants without a `dark:` class on every element */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+
+/* Floating-layer motion. Frequency gate: menus and dialogs open many times a
+ * day, so 120-160ms ease-out, scale from 0.96 never 0, exit faster than enter. */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes pop-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.97); }
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sheet-in-left { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes sheet-out-left { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes sheet-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes sheet-out-right { from { transform: translateX(0); } to { transform: translateX(100%); } }
+@keyframes skeleton { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes spin { to { transform: rotate(360deg); } }

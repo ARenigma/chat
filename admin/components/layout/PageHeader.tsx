@@ -1,55 +1,31 @@
-import Link from 'next/link';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
+'use client';
 
-interface Crumb {
-  label: string;
-  href?: string;
-}
+import * as React from 'react';
+import { useShellCrumbs, type Crumb } from '@/components/layout/shell-context';
+import { cn } from '@/lib/utils';
 
 interface PageHeaderProps {
   title: string;
-  subtitle?: string;
+  /** Description under the title. `description` is the new name; `subtitle` is kept for existing pages. */
+  description?: React.ReactNode;
+  subtitle?: React.ReactNode;
+  /** Shown in the shell's top bar (not above the title), like Linear. */
   breadcrumbs?: Crumb[];
   actions?: React.ReactNode;
+  className?: string;
 }
 
-export function PageHeader({ title, subtitle, breadcrumbs, actions }: PageHeaderProps) {
+/** Page title block: 20px/600 title, 13px secondary description, actions on the right. */
+export function PageHeader({ title, description, subtitle, breadcrumbs, actions, className }: PageHeaderProps) {
+  useShellCrumbs(breadcrumbs);
+  const desc = description ?? subtitle;
   return (
-    <div className="mb-6">
-      {breadcrumbs && breadcrumbs.length > 0 && (
-        <Breadcrumb className="mb-3">
-          <BreadcrumbList>
-            {breadcrumbs.map((c, i) => (
-              <span key={i} className="flex items-center gap-1.5">
-                {i > 0 && <BreadcrumbSeparator />}
-                <BreadcrumbItem>
-                  {c.href ? (
-                    <BreadcrumbLink asChild>
-                      <Link href={c.href}>{c.label}</Link>
-                    </BreadcrumbLink>
-                  ) : (
-                    <BreadcrumbPage>{c.label}</BreadcrumbPage>
-                  )}
-                </BreadcrumbItem>
-              </span>
-            ))}
-          </BreadcrumbList>
-        </Breadcrumb>
-      )}
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold tracking-tight">{title}</h1>
-          {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
-        </div>
-        {actions && <div className="flex gap-2.5 shrink-0">{actions}</div>}
+    <div className={cn('mb-6 flex items-start justify-between gap-4', className)}>
+      <div className="min-w-0">
+        <h1 className="text-xl font-semibold tracking-[-0.02em] text-primary">{title}</h1>
+        {desc && <p className="mt-1 text-sm text-secondary">{desc}</p>}
       </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
   );
 }
