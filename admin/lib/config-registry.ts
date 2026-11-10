@@ -217,7 +217,7 @@ export const CONFIG_REGISTRY: DomainDef[] = [
   {
     key: 'thresholds',
     name: 'Limits',
-    description: 'Low-balance warning, anti-spam rate limit, and refund window.',
+    description: 'Low-balance warning, anti-spam rate limit, refund window, and chat nudge cooldown.',
     icon: '⚠',
     fields: [
       {
@@ -256,6 +256,18 @@ export const CONFIG_REGISTRY: DomainDef[] = [
         default: 24,
         risk: 'medium',
         runtime: 'seeded',
+      },
+      {
+        key: 'chat_open_alert_cooldown_minutes',
+        label: 'Chat-open nudge cooldown',
+        description:
+          'Minutes before opening the same chat can nudge the other person again. Read by announce_chat_open; the app shows members how long is left.',
+        type: 'integer',
+        min: 1,
+        max: 240,
+        default: 30,
+        risk: 'low',
+        runtime: 'live',
       },
     ],
   },

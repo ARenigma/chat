@@ -29,6 +29,7 @@ import { chatV2Receipt, type ChatV2CallPermissions } from './cells';
 import { ChatCallRowV2 } from './ChatCallRowV2';
 import { ChatMessageCellV2, type ChatV2Anchor } from './ChatMessageCellV2';
 import {
+  CHAT_V2_NOTICE_ID,
   chatV2ItemType,
   chatV2MessageText,
   type ChatV2ImageBody,
@@ -69,6 +70,8 @@ interface Props {
   onRetry: (messageId: string) => void;
   onOpenImage: (image: ChatV2ImageBody) => void;
   onCallBack: (medium: 'voice' | 'video') => void;
+  /** The presence prompt's button; the screen owns calling and recharging. */
+  onPresenceAction: (kind: 'call' | 'recharge') => void;
 }
 
 /*
@@ -112,6 +115,7 @@ export function ChatListV2({
   onRetry,
   onOpenImage,
   onCallBack,
+  onPresenceAction,
 }: Props) {
   const styles = useStyles(makeStyles);
 
@@ -180,13 +184,24 @@ export function ChatListV2({
       }
 
       if (item.kind === 'system') {
+        const { action } = item;
         return (
-          <View testID="chat-v2-system">
+          <View
+            testID={
+              item.id === CHAT_V2_NOTICE_ID ? 'chat-presence-prompt' : 'chat-v2-system'
+            }
+          >
             <SystemMessageRow
               text={item.text}
               tone={item.tone}
               icon={item.icon}
               emoji={item.emoji}
+              sub={item.sub}
+              action={
+                action === undefined
+                  ? undefined
+                  : { ...action, onPress: () => onPresenceAction(action.kind) }
+              }
             />
           </View>
         );
@@ -235,6 +250,7 @@ export function ChatListV2({
       callPermissions,
       onCallBack,
       onMessageLongPress,
+      onPresenceAction,
       onOpenImage,
       onRetry,
       onSwipeReply,

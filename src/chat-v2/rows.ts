@@ -24,6 +24,7 @@
 import type { IconName } from '../components/Icon';
 import type { CallRecord } from '../api/chat';
 import type { SessionEvent } from '../api/sessions';
+import type { PresencePromptAction } from './presencePrompt';
 import type { ConversationSummary } from '../lib/database.types';
 import { imageOf } from '../lib/attachments';
 import { opensDay } from '../lib/datetime';
@@ -107,6 +108,10 @@ interface ChatV2SystemRow {
   icon?: IconName;
   /** A literal emoji, for the one mark that is an emoji rather than a glyph. */
   emoji?: string;
+  /** A second, quieter line under `text`. */
+  sub?: string;
+  /** The notice's one button; the screen owns what it does. */
+  action?: PresencePromptAction;
   opensDay: boolean;
 }
 
@@ -128,6 +133,8 @@ export interface ChatV2Notice {
   at: string;
   text: string;
   icon?: IconName;
+  sub?: string;
+  action?: PresencePromptAction;
 }
 
 export interface ChatV2RowInput {
@@ -147,7 +154,7 @@ export interface ChatV2RowInput {
 }
 
 /** The centred pill's id, so the controller and the cell agree on one string. */
-const CHAT_V2_NOTICE_ID = 'chat-v2-notice';
+export const CHAT_V2_NOTICE_ID = 'chat-v2-notice';
 
 /**
  * What a deleted message says to each side of it. The author is told what THEY
@@ -400,6 +407,8 @@ export function buildChatV2Rows(input: ChatV2RowInput): ChatV2Row[] {
             text: notice.text,
             tone: 'notice',
             icon: notice.icon,
+            sub: notice.sub,
+            action: notice.action,
             opensDay: false,
           },
         ];

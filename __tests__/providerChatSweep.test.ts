@@ -36,8 +36,8 @@ describe('B8: a provider can save a member from the chat menu', () => {
 
 describe('C8: opening a chat makes no promise on the provider side', () => {
   it('says only that the member was notified', () => {
-    const controller = read('src/chat-v2/useChatV2Controller.ts');
-    expect(controller).toContain('`${displayName} has been notified.`');
+    const prompt = read('src/chat-v2/presencePrompt.ts');
+    expect(prompt).toContain("`${name} is away. We've let them know.`");
   });
 });
 

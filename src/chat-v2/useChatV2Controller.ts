@@ -125,6 +125,7 @@ import {
   type ChatV2Row,
 } from './rows';
 import { openRefill } from '../lib/routes/actions';
+import { presencePrompt, type PresencePromptContent } from './presencePrompt';
 
 /** The outgoing-activity stand-in while the chat is not live. */
 const NOOP = (): void => undefined;
@@ -609,37 +610,50 @@ export function useChatV2Controller(
     mutationInputs.announceConversationId,
     mutationInputs.announceEnabled && live,
   );
+  const { data: killSwitches } = useKillSwitches();
   /*
-   * A one-time confirmation that an away peer was actually pinged. Stamped
-   * once so the row does not resort on every render, and client-only: it is a
-   * confirmation of the action just taken, not durable history.
+   * C10 (186): On the provider side `provider` is undefined (the directory
+   * only lists providers, but `providerId` is a member id on the provider
+   * tree), so `provider?.audio_enabled ?? true` always defaulted to true —
+   * the provider's own channel flags were never checked. Gate the PROVIDER's
+   * own call buttons on their own profile (ownProfile, fetched above), not on
+   * the peer's directory entry. Member side is unchanged: uses the peer.
    */
+  const canStartAudio =
+    (killSwitches?.voice_calls_enabled ?? true) &&
+    CALLS_ENABLED &&
+    (isMemberSide ? (provider?.audio_enabled ?? true) : (ownProfile?.audio_enabled ?? true));
+  /*
+   * The prompt under the chat, which follows the peer's presence (see
+   * `presencePrompt`). Stamped once, the first time there is something to say,
+   * so the row does not resort on every render; client-only, it is not
+   * history. The text itself is recomputed each render and the notice object
+   * only rebuilds when a rendered field changes (`promptKey`), so the rows
+   * stay stable across the 15 s presence ticks.
+   */
+  const peerJoined = activeSession?.status === 'active';
+  const prompt = presencePrompt({
+    alert: openAlert,
+    isMemberSide,
+    name: displayName,
+    presence,
+    sessionActive: peerJoined,
+    now: presenceNow.getTime(),
+    canCall: canStartAudio && !benchmarkReadOnly,
+  });
+  const promptKey = prompt === null ? null : JSON.stringify(prompt);
   const [notifiedAt, setNotifiedAt] = useState<string | null>(null);
   useEffect(() => {
-    if (openAlert?.alerted === true && notifiedAt === null) {
+    if (promptKey !== null && notifiedAt === null) {
       setNotifiedAt(new Date().toISOString());
     }
-  }, [openAlert?.alerted, notifiedAt]);
-  // The ping's promise is kept once the other person is here: a live session
-  // means they joined, and "They'll join you here soon" above it read as still
-  // waiting (provider side, BrowserStack E2E 2026-10-01).
-  const peerJoined = activeSession?.status === 'active';
+  }, [promptKey, notifiedAt]);
   const notice: ChatV2Notice | null = useMemo(
     () =>
-      notifiedAt === null || displayName === '' || peerJoined
+      notifiedAt === null || promptKey === null
         ? null
-        : {
-            at: notifiedAt,
-            // C8 (186): provider side omits the promise ("They'll join you
-            // here soon") — the provider is not waiting for the member in
-            // the same way, and the line is a promise that can be broken.
-            // Member side unchanged.
-            text: isMemberSide
-              ? `${displayName} has been notified. They'll join you here soon.`
-              : `${displayName} has been notified.`,
-            icon: 'bell',
-          },
-    [notifiedAt, displayName, peerJoined, isMemberSide],
+        : { at: notifiedAt, ...(JSON.parse(promptKey) as PresencePromptContent) },
+    [notifiedAt, promptKey],
   );
   /** Whether a push really went out, which is what the header bar renders. */
   const peerNotified = openAlert?.alerted === true;
@@ -854,20 +868,7 @@ export function useChatV2Controller(
   );
 
   /* ---- session, consent, and what the composer may do ------------------- */
-  const { data: killSwitches } = useKillSwitches();
   const peerOffersChat = provider?.chat_enabled ?? true;
-  /*
-   * C10 (186): On the provider side `provider` is undefined (the directory
-   * only lists providers, but `providerId` is a member id on the provider
-   * tree), so `provider?.audio_enabled ?? true` always defaulted to true —
-   * the provider's own channel flags were never checked. Gate the PROVIDER's
-   * own call buttons on their own profile (ownProfile, fetched above), not on
-   * the peer's directory entry. Member side is unchanged: uses the peer.
-   */
-  const canStartAudio =
-    (killSwitches?.voice_calls_enabled ?? true) &&
-    CALLS_ENABLED &&
-    (isMemberSide ? (provider?.audio_enabled ?? true) : (ownProfile?.audio_enabled ?? true));
   const canStartVideo =
     (killSwitches?.video_calls_enabled ?? true) &&
     CALLS_ENABLED &&

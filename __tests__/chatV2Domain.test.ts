@@ -295,7 +295,13 @@ describe('V2 row model', () => {
     const rows = buildChatV2Rows({
       ...EMPTY,
       messages: [message({ created_at: new Date(BASE).toISOString() })],
-      notice: { at, text: 'Asha has been notified.', icon: 'bell' },
+      notice: {
+        at,
+        text: 'Asha has been notified.',
+        icon: 'bell',
+        sub: 'A second line.',
+        action: { kind: 'recharge', label: 'Add balance' },
+      },
     });
 
     expect(rows[0]).toMatchObject({
@@ -303,6 +309,8 @@ describe('V2 row model', () => {
       id: 'chat-v2-notice',
       text: 'Asha has been notified.',
       icon: 'bell',
+      sub: 'A second line.',
+      action: { kind: 'recharge', label: 'Add balance' },
     });
   });
 

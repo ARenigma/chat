@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { TOKENS, type Theme } from '../theme/tokens';
 import { useStyles } from '../theme/ThemeProvider';
+import { Button } from './Button';
 import { Icon, ICON_SCALE, type IconName } from './Icon';
 
 /**
@@ -16,12 +17,19 @@ import { Icon, ICON_SCALE, type IconName } from './Icon';
  * mistaken for a message from either party. Same visual weight as CallLogRow and
  * DayDivider, which it sits beside. No accessibilityRole override: TalkBack
  * reads the child Text as content, which is correct for a non-interactive line.
+ *
+ * The one exception is the presence prompt, which may carry a `sub` line and a
+ * single `action` button. The line and its sub read as one text; the button is
+ * its own focus stop and a `Button`, so it is 48dp or more and narrates itself.
+ * No motion is added: a chat prompt is seen on every open.
  */
 function SystemMessageRowView({
   text,
   tone = 'notice',
   icon,
   emoji,
+  sub,
+  action,
 }: {
   text: string;
   /** Session boundary (green) or a notice about the chat (yellow). */
@@ -35,23 +43,50 @@ function SystemMessageRowView({
    * take `styles.text.color` the way the Icon glyph does.
    */
   emoji?: string;
+  /** A quieter second line under `text`. */
+  sub?: string;
+  /** One button under the text. Only `recharge` is accent-filled. */
+  action?: { label: string; kind: 'call' | 'recharge'; onPress: () => void };
 }) {
   const styles = useStyles(makeStyles);
   const ink = tone === 'session' ? styles.session : styles.notice;
   return (
     <View style={styles.row}>
       <View style={styles.pill}>
-        {icon !== undefined ? (
-          <Icon name={icon} size={TOKENS.icon.xs} color={ink.color as string} />
+        <View
+          style={styles.body}
+          accessible={sub !== undefined}
+          accessibilityLabel={sub === undefined ? undefined : `${text} ${sub}`}
+        >
+          <View style={styles.line}>
+            {icon !== undefined ? (
+              <Icon name={icon} size={TOKENS.icon.xs} color={ink.color as string} />
+            ) : null}
+            {emoji !== undefined ? (
+              <Text allowFontScaling={false} style={styles.emoji}>
+                {emoji}
+              </Text>
+            ) : null}
+            <Text allowFontScaling style={[styles.text, ink]}>
+              {text}
+            </Text>
+          </View>
+          {sub !== undefined ? (
+            <Text allowFontScaling style={styles.sub}>
+              {sub}
+            </Text>
+          ) : null}
+        </View>
+        {action !== undefined ? (
+          <View style={styles.action}>
+            <Button
+              label={action.label}
+              onPress={action.onPress}
+              kind={action.kind === 'recharge' ? 'primary' : 'secondary'}
+              testID="chat-presence-prompt-action"
+            />
+          </View>
         ) : null}
-        {emoji !== undefined ? (
-          <Text allowFontScaling={false} style={styles.emoji}>
-            {emoji}
-          </Text>
-        ) : null}
-        <Text allowFontScaling style={[styles.text, ink]}>
-          {text}
-        </Text>
       </View>
     </View>
   );
@@ -72,14 +107,9 @@ const makeStyles = (t: Theme) =>
       paddingVertical: TOKENS.space['2xs'],
     },
     pill: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      // The glyph stays BESIDE the text (Amit, 2026-10-04: the bell had
-      // wrapped onto its own line above a long notice). The text shrinks and
-      // wraps inside its own box (flexShrink below), so the row never needs
-      // to wrap and the pill still respects maxWidth.
-      justifyContent: 'center',
-      gap: TOKENS.space['2xs'],
+      // Column: the line, then the optional action. Children stretch, so the
+      // line gets the pill's own width and its text shrinks inside it.
+      gap: TOKENS.space.xs,
       paddingHorizontal: TOKENS.space.sm,
       paddingVertical: TOKENS.space['2xs'],
       // A card on the wallpaper, as WhatsApp draws it: raised fill and a soft
@@ -91,6 +121,28 @@ const makeStyles = (t: Theme) =>
       // Long notices wrap and stay centered rather than run edge to edge.
       maxWidth: '100%',
       alignSelf: 'center',
+    },
+    body: {
+      gap: TOKENS.space.hair,
+    },
+    line: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      // The glyph stays BESIDE the text (Amit, 2026-10-04: the bell had
+      // wrapped onto its own line above a long notice). The text shrinks and
+      // wraps inside its own box (flexShrink below), so the row never needs
+      // to wrap and the pill still respects maxWidth.
+      justifyContent: 'center',
+      gap: TOKENS.space['2xs'],
+    },
+    sub: {
+      ...TOKENS.typography.bodySmall,
+      textAlign: 'center',
+      color: t.color.text.secondary,
+    },
+    action: {
+      alignSelf: 'stretch',
+      paddingTop: TOKENS.space['2xs'],
     },
     text: {
       ...TOKENS.typography.bodySmall,

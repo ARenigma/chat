@@ -508,6 +508,19 @@ export function ChatScreenV2({
     },
     [startCall],
   );
+  // The presence prompt's button: the same call path as the header (so the
+  // provider confirm and the draft purge still apply) and the same refill
+  // sheet as the session band.
+  const onPresenceAction = useCallback(
+    (kind: 'call' | 'recharge') => {
+      if (kind === 'recharge') {
+        openRefill();
+        return;
+      }
+      startCall('audio');
+    },
+    [startCall],
+  );
   // Memoised so the list's prop identity is stable and the cell memo holds.
   const callPermissions = useMemo<ChatV2CallPermissions>(
     () => ({
@@ -918,6 +931,7 @@ export function ChatScreenV2({
           onRetry={onRetry}
           onOpenImage={onOpenImage}
           onCallBack={onCallBack}
+          onPresenceAction={onPresenceAction}
         />
         {/*
          * A failed fetch is not an empty thread, and neither is a thread that
