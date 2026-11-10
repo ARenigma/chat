@@ -92,10 +92,10 @@ export function StatCard({
             <span
               className={cn(
                 'inline-flex items-center gap-0.5 font-medium tabular-nums',
-                good ? 'text-success' : 'text-danger'
+                delta === 0 ? 'text-tertiary' : good ? 'text-success' : 'text-danger'
               )}
             >
-              {delta >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+              {delta === 0 ? null : delta > 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
               {Math.abs(delta).toFixed(1)}%
             </span>
           )}

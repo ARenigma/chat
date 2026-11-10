@@ -12,6 +12,26 @@ import type {
 
 export const dynamic = 'force-dynamic';
 
+// PostgREST caps one response (1000 rows by default), so page through the ids:
+// a single select would drop providers past the cap and break prev/next for them.
+async function fetchProviderIds(svc: ReturnType<typeof createServiceClient>): Promise<string[]> {
+  const PAGE = 1000;
+  const ids: string[] = [];
+  for (let from = 0; from < 20 * PAGE; from += PAGE) {
+    const { data, error } = await svc
+      .schema('admin')
+      .from('providers_list')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .range(from, from + PAGE - 1)
+      .returns<{ id: string }[]>();
+    if (error || !data) break;
+    ids.push(...data.map(r => r.id));
+    if (data.length < PAGE) break;
+  }
+  return ids;
+}
+
 interface Earning {
   status: string;
   provider_tokens: number;
@@ -42,7 +62,7 @@ export default async function ProviderDetailPage({
     svc.from('provider_tax_profile').select('status, updated_at').eq('provider_id', id).maybeSingle(),
     svc.from('provider_payout_accounts').select('verification_status, is_default').eq('provider_id', id).eq('is_default', true).maybeSingle(),
     // Same ordering as the list, so prev/next walk the list the admin came from.
-    svc.schema('admin').from('providers_list').select('id').order('created_at', { ascending: false }).returns<{ id: string }[]>(),
+    fetchProviderIds(svc),
   ]);
 
   const allEarnings = earnings.data ?? [];
@@ -50,7 +70,7 @@ export default async function ProviderDetailPage({
   const paidTokens = allEarnings.filter(e => e.status === 'paid').reduce((s, e) => s + e.provider_tokens, 0);
 
   let nav: ProviderNav | null = null;
-  const ids = order.data?.map(r => r.id) ?? [];
+  const ids = order;
   const at = ids.indexOf(id);
   if (at >= 0) {
     nav = { position: at + 1, total: ids.length, prevId: ids[at - 1] ?? null, nextId: ids[at + 1] ?? null };

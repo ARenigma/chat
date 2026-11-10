@@ -282,7 +282,7 @@ export function ConfigEditorView(p: ConfigEditorViewProps) {
                 </KbdGroup>
               </AsyncButton>
             )}
-            {p.hasSavedDraft && (
+            {canPublish && (
               <Button type="button" size="sm" onClick={p.onOpenPublish}>
                 Publish to production…
                 <KbdGroup aria-hidden="true">

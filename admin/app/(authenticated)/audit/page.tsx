@@ -88,7 +88,7 @@ export default async function AuditPage({
   const filters: AuditFilters = {
     actor: sp.actor?.trim() || undefined,
     action: (AUDIT_ACTIONS as readonly string[]).includes(sp.action ?? '') ? (sp.action as AuditAction) : undefined,
-    range: sp.range && sp.range in AUDIT_RANGES ? (sp.range as AuditRange) : undefined,
+    range: sp.range && Object.hasOwn(AUDIT_RANGES, sp.range) ? (sp.range as AuditRange) : undefined,
   };
   const now = new Date();
 

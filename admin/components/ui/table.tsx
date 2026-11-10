@@ -189,7 +189,13 @@ export function ListRow({
   )
   if (href) {
     return (
-      <Link href={href} role="listitem" data-selected={selected || undefined} className={cls}>
+      <Link
+        href={href}
+        role="listitem"
+        data-selected={selected || undefined}
+        className={cls}
+        {...(props as Omit<React.ComponentProps<typeof Link>, "href">)}
+      >
         {children}
       </Link>
     )
