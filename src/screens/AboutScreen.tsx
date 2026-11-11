@@ -26,6 +26,11 @@ interface Props {
   onBack: () => void;
 }
 
+// The legal operator, shown here so a member can see who runs the service; it is the
+// name the website footer and the Play developer profile use.
+const OPERATOR_NAME = 'Axionix Technologies Private Limited';
+const SUPPORT_EMAIL = 'hello@pappal.live';
+
 const POLICIES: readonly {
   key: 'terms' | 'privacy' | 'guidelines' | 'refund';
   title: string;
@@ -112,6 +117,28 @@ export function AboutScreen({ onBack }: Props) {
             chevron={false}
           />
         </View>
+        <View style={styles.operator} testID="about-operator">
+          <Text allowFontScaling style={styles.operatorText}>
+            {`Pappal is operated by ${OPERATOR_NAME}.`}
+          </Text>
+          <Text allowFontScaling style={styles.operatorText}>
+            {`© 2026 ${OPERATOR_NAME}.`}
+          </Text>
+          <Pressable
+            onPress={() => {
+              Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => undefined);
+            }}
+            testID="about-support-email"
+            accessibilityRole="link"
+            accessibilityLabel={`Email ${SUPPORT_EMAIL}`}
+            press="none"
+            highlight="dim"
+            style={styles.operatorLink}>
+            <Text allowFontScaling style={styles.operatorLinkText}>
+              {SUPPORT_EMAIL}
+            </Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </View>
   );
@@ -160,5 +187,24 @@ const makeStyles = (t: Theme) =>
     // SettingsList.Divider: full width, my_sm.
     rule: {
       marginVertical: TOKENS.space.xs,
+    },
+    operator: {
+      paddingHorizontal: TOKENS.space.lg,
+      paddingTop: TOKENS.space.md,
+      gap: TOKENS.space['2xs'],
+    },
+    operatorText: {
+      ...TOKENS.typography.textSm,
+      color: t.color.text.secondary,
+    },
+    operatorLink: {
+      minHeight: TOKENS.interaction.minTarget,
+      justifyContent: 'center',
+      alignSelf: 'flex-start',
+    },
+    operatorLinkText: {
+      ...TOKENS.typography.textSm,
+      color: t.color.text.primary,
+      textDecorationLine: 'underline',
     },
   });
