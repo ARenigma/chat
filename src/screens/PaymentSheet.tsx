@@ -61,9 +61,10 @@ interface Props {
  * app uses.
  *
  * Payment routing:
- *   - CASHFREE_SANDBOX_CHECKOUT true (non-prod): Cashfree WebCheckout via SDK.
- *   - MOCK_PAYMENTS true + sandbox false: mock_recharge RPC (dev only).
- *   - Production: gated behind PAYMENTS_ENABLED (ADR-0022).
+ *   - PAYMENTS_ENABLED: Cashfree via the SDK in every build. The SDK runs in
+ *     SANDBOX when CASHFREE_SANDBOX_CHECKOUT (non-prod builds), PRODUCTION
+ *     otherwise (billing.ts), so a production build takes real money.
+ *   - PAYMENTS_ENABLED false + MOCK_PAYMENTS: mock_recharge RPC (dev only).
  */
 const METHODS = ['Google Pay', 'PhonePe', 'Paytm', 'BHIM'] as const;
 
@@ -142,7 +143,7 @@ export function PaymentSheet({ visible, amount, onClose, autoStart }: Props) {
     if (
       visible &&
       autoStart &&
-      CASHFREE_SANDBOX_CHECKOUT &&
+      PAYMENTS_ENABLED &&
       mockPhase === 'idle' &&
       !discountPending
     ) {
@@ -233,7 +234,9 @@ export function PaymentSheet({ visible, amount, onClose, autoStart }: Props) {
     setMockPhase('success');
   };
 
-  const isCashfree = CASHFREE_SANDBOX_CHECKOUT;
+  // Cashfree is the rail in every build once payments are on; only the SDK
+  // environment (and the 'Test mode' label) follows CASHFREE_SANDBOX_CHECKOUT.
+  const isCashfree = PAYMENTS_ENABLED;
 
   const sheetTitle =
     mockPhase === 'success'
@@ -269,7 +272,7 @@ export function PaymentSheet({ visible, amount, onClose, autoStart }: Props) {
       : mockPhase === 'processing'
       ? `Paying via ${isCashfree ? 'Cashfree' : method}`
       : isCashfree
-      ? `Add ${formatRupees(amount)}  ·  Test mode`
+      ? `Add ${formatRupees(amount)}${CASHFREE_SANDBOX_CHECKOUT ? '  ·  Test mode' : ''}`
       : `Add ${formatRupees(amount)}`;
 
   // ONE sheet for every phase: success used to be a second <Sheet>, so the

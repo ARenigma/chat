@@ -143,3 +143,6 @@ android/app/src/main/assets/
 
 # secrets / data removed in history cleanup
 play-upload/06-testers/internal-testers-emails.txt
+
+# Local production-build env (APP_ENV=production), never committed
+.env.production
